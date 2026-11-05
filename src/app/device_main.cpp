@@ -74,6 +74,8 @@ extern "C" int main(void) {
         p.service = h.service;
         p.sampleRateMilliHz = board::kSampleRateMilliHz;   // MCLK / 256 = 44,117,647 mHz
         p.midi = h.midi;
+        p.bigMem = reinterpret_cast<uint8_t*>(board::kSdramBase);   // 16 MB SDRAM: the kit ROM image
+        p.bigMemSize = board::kSdramSize;
         p.name = "K66 180 MHz";
         p.cycleCounter = &dwtCycles;
         p.driverStats = &driverStats;

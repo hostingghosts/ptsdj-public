@@ -102,6 +102,7 @@ struct Machine {
     SdlAudio sdlAudio;
     ManualAudio manualAudio;
     std::unique_ptr<appns::App> app;
+    std::vector<uint8_t> bigMem = std::vector<uint8_t>(2u << 20);
     static Machine* self;
 
     bool start(const Options& o, bool headless) {
@@ -128,6 +129,8 @@ struct Machine {
         p.clock = &clock;
         p.sampleRateMilliHz = 44100000;   // the host device; the K66 runs 44,117,647
         p.name = "simulator (host time)";
+        p.bigMem = bigMem.data();
+        p.bigMemSize = uint32_t(bigMem.size());
         p.cycleCounter = headless ? nullptr : &hostCycles;   // headless: deterministic
         app.reset(new appns::App());
         if (!app->init(p)) {

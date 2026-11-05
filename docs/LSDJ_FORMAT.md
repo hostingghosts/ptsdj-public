@@ -65,3 +65,13 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   (0 manual .. 3), b10/b11 = length/speed of the frame animation (not modelled: only the first frame plays).
 - Pulse/noise: byte 9 with bits 7-6 set replaces the release rate after the first step (low nibble as the release digit).
 - B (command byte 2) is used on kit instruments in the demos and its effect is unknown; Z (random) cannot match the ROM's random numbers.
+
+## Wave animation and kits (measured)
+- Wave instrument: b3 = first frame; b9 = play mode (0 manual, 1 once, 2 and 3 loop in the ROM); b11 = speed, one frame update every (int8 b11 + 4) ticks;
+  b10 = length: N = 16 - b10 frames per pass, frame = min(15, floor(k * 16 / (15 - b10))); b2 low nibble = loop-back frame (15 acts as 0).
+  Every frame change repeats the note-start sequence: DAC off, 16 bytes, DAC on, trigger with 0x7E0, real frequency. Frame sequences match the ROM.
+- Kit instrument (type 2): b9 = kit number (ROM bank 8 + n; kits above the ROM's own come from the owner's patched ROM or .kit files), note n = sample n-1.
+  Kit bank: 15 little-endian sample offsets (0x4000 based) at 0, names 3 chars each at 0x22, kit name near 0x52, samples are raw 4-bit data.
+  Playback = 16-byte chunks (32 samples) written to wave RAM every 11712 cycles, each with the note-start sequence and frequency 0x749. Sample lengths and chunk timing match the ROM.
+- Noise: NR43 index = note index (mod 120) in the measured table; S xy adds 16*x + y (signed nibbles) to it, table transposes add to it directly.
+  P and C on noise (S every tick / every second tick) are not modelled correctly yet.

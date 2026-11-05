@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "gb/apu.h"
+#include "gb/kits.h"
 #include "gb/seq.h"
 #include "gb/song.h"
 
@@ -31,6 +32,8 @@ public:
     // Audio: `n` stereo frames at `rate` Hz, 16-bit interleaved. Each output sample is the box-filtered mix.
     void render(int16_t* out, int n, int rate);
     void mute(int ch, bool m) { muted_[ch] = m; }
+    void setKits(const KitSource* k) { kits_ = k; }
+    void setWaveHook(void (*f)(int frame, int tick)) { waveHook_ = f; }
 
 private:
     struct Voice {
@@ -56,6 +59,9 @@ private:
         double slideSemis = 0, slideStep = 0; int slideLeft = 0;   // L: remaining offset to the target, per-step change
         double bendRate = 0, bendSemis = 0;                          // P
         int chord[3] = {0, 0, 0}; bool chordOn = false; int chordCnt = 0, chordOfs = 0;   // C
+        int kBegin = 0, kEnd = 0, kPos = 0; bool kPlay = false; Kit kit;   // kit sample being streamed
+        double wPos = 0; int wDir = 1, wCnt = 0; bool wAnim = false;   // wave frame animation
+        int noiseS = 0, noiseC = 0, noiseTick = 0;                  // noise P / C: S applied every (second) tick
         int retrig = -1, retrigCnt = 0;                              // R: period in ticks, -1 off
         int fine = -1, tune2 = 0;                                    // F override (fine -1 = use the instrument byte)
     };
@@ -71,6 +77,10 @@ private:
     void refreshPitch(int ch);
     void writeDuty(int ch, int duty);
     void retrigger(int ch);
+    void loadWave(int frame);
+    void kitChunk();
+    void startKit(const StepEvent& e);
+    void waveTick();
     void masterVol(uint8_t val);
     void writePan();
     uint8_t* instr(int i) { return s_.instrument(i & 63); }
@@ -80,7 +90,11 @@ private:
     Apu apu_;
     Voice v_[4];
     bool muted_[4] = {false, false, false, false};
+    const KitSource* kits_ = nullptr;
+    double nextKit_ = 0;
     uint8_t nr50_ = 0x77;
+    void (*waveHook_)(int, int) = nullptr;
+    int tickNo_ = 0;
     bool running_ = false;
     int tempo_ = 128;
     double nextTick_ = 0, next360_ = 0;

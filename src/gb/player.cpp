@@ -12,6 +12,7 @@ namespace {
 const uint8_t kEnvPeriod[16] = {0, 1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 86, 115};
 constexpr double kTick = 10485760.0;      // cycles per tick = kTick / tempo
 constexpr double kSub = 4194304.0 / 360.0;
+constexpr double kKitChunk = 11712.0;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
 }  // namespace
 
 void Player::start(int row) {
@@ -24,6 +25,7 @@ void Player::start(int row) {
     if (tempo_ < 40) tempo_ = 40;
     nr50_ = 0x77;
     seq_.start(row);
+    tickNo_ = -1;
     running_ = true;
     hpInit_ = false;
     now_ = 0;
@@ -66,6 +68,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.bendRate = v.bendSemis = 0;
     v.chordOn = false; v.chordOfs = 0;
     v.retrig = -1;
+    v.noiseS = v.noiseC = 0;
     if (!v.slideLeft) v.slideSemis = 0;
     v.on = true;
     v.envCount = 0;
@@ -89,16 +92,11 @@ void Player::noteOn(int ch, const StepEvent& e) {
             break;
         }
         case 2: {
-            const uint16_t f = kWaveFreq[n];
+            if ((in[0] & 3) == 2) { startKit(e); break; }
+            v.kPlay = false;
             apu_.write(0xFF1C, in[1]);
-            apu_.write(0xFF1A, 0x00);
-            const uint8_t* w = s_.wave(in[3]);   // wave instrument: byte 3 = first wave frame (synth x 16)
-            for (int i = 0; i < 16; ++i) apu_.write(0xFF30 + i, w[i]);
-            apu_.write(0xFF1A, 0x80);
-            apu_.write(0xFF1D, 0xE0);
-            apu_.write(0xFF1E, 0x87);
-            apu_.write(0xFF1D, uint8_t(f & 0xFF));
-            apu_.write(0xFF1E, uint8_t(((in[7] & 0x40) ? 0x40 : 0) | (f >> 8)));
+            v.wPos = 0; v.wDir = 1; v.wCnt = 0; v.wAnim = (in[9] & 3) != 0;
+            loadWave(in[3]);
             break;
         }
         default:
@@ -110,6 +108,76 @@ void Player::noteOn(int ch, const StepEvent& e) {
             break;
     }
     if (in[6] & 0x20) startTable(ch, in[6] & 0x1F); else v.tbl = -1;
+}
+
+// A new wave frame: DAC off, load the 16 bytes, DAC on, trigger with a dummy frequency, then the real one (as LSDJ does).
+void Player::startKit(const StepEvent& e) {
+    Voice& v = v_[2];
+    const uint8_t* in = instr(v.instr);
+    v.kPlay = false;
+    v.wAnim = false;
+    if (!kits_) return;
+    v.kit = kits_->kit(in[9]);                 // kit number: byte 9 (bank 8 + n of the ROM)
+    int b, en;
+    if (!v.kit.range(e.note - 1, b, en)) return;
+    v.kBegin = b; v.kPos = b; v.kEnd = en; v.kPlay = true;
+    apu_.write(0xFF1C, in[1]);
+    nextKit_ = double(now_);
+    kitChunk();
+    nextKit_ = double(now_) + kKitChunk;
+}
+
+void Player::kitChunk() {
+    Voice& v = v_[2];
+    if (!v.kPlay || muted_[2]) return;
+    if (v.kPos + 16 > v.kEnd) { v.kPlay = false; apu_.write(0xFF1A, 0x00); return; }
+    const uint8_t* w = v.kit.data + v.kPos;
+    v.kPos += 16;
+    if (waveHook_) waveHook_(v.kPos, tickNo_);
+    apu_.write(0xFF1A, 0x00);
+    for (int i = 0; i < 16; ++i) apu_.write(0xFF30 + i, w[i]);
+    apu_.write(0xFF1A, 0x80);
+    apu_.write(0xFF1D, 0xE0);
+    apu_.write(0xFF1E, 0x87);
+    apu_.write(0xFF1D, 0x49);                  // 0x749: one chunk lasts one kit interval
+    apu_.write(0xFF1E, 0x07);
+}
+
+void Player::loadWave(int frame) {
+    Voice& v = v_[2];
+    const uint8_t* in = instr(v.instr);
+    const uint16_t f = kWaveFreq[std::clamp(v.base + v.tTrans + v.chordOfs, 1, 127)];
+    if (waveHook_) waveHook_(frame & 255, tickNo_);
+    apu_.write(0xFF1A, 0x00);
+    const uint8_t* w = s_.wave(frame & 255);
+    for (int i = 0; i < 16; ++i) apu_.write(0xFF30 + i, w[i]);
+    apu_.write(0xFF1A, 0x80);
+    apu_.write(0xFF1D, 0xE0);
+    apu_.write(0xFF1E, 0x87);
+    apu_.write(0xFF1D, uint8_t(f & 0xFF));
+    apu_.write(0xFF1E, uint8_t(((in[7] & 0x40) ? 0x40 : 0) | (f >> 8)));
+}
+
+void Player::waveTick() {
+    Voice& v = v_[2];
+    if (!v.on || !v.wAnim || muted_[2]) return;
+    const uint8_t* in = instr(v.instr);
+    const int interval = std::max(1, int(int8_t(in[11])) + 4);
+    if (++v.wCnt < interval) return;
+    v.wCnt = 0;
+    const int len = in[10] & 15;
+    // N = 16 - len frames per pass, frame = min(15, floor(k * 16 / (15 - len))) (fitted to the ROM's sequences)
+    const int n = 16 - len;
+    const double step = len >= 15 ? 99.0 : 16.0 / (15 - len);
+    const int rep = (in[2] & 15) == 15 ? 0 : (in[2] & 15);
+    const int mode = in[9] & 3;
+    int k = int(v.wPos) + 1;
+    if (k >= n) {
+        if (mode == 1) { v.wAnim = false; return; }       // once: hold the last frame
+        k = 0; while (k < n - 1 && std::floor(k * step) < rep) ++k;   // loop back to the repeat point
+    }
+    v.wPos = k;
+    loadWave(in[3] + std::min(15, int(std::floor(k * step + 1e-9))));
 }
 
 void Player::writeDuty(int ch, int duty) {
@@ -143,10 +211,15 @@ void Player::refreshPitch(int ch) {
     if (!v.on || muted_[ch]) return;
     const uint8_t* in = instr(v.instr);
     int n = v.base + v.tTrans + v.chordOfs + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
+    if (ch == 3) {                                    // noise: the note index wraps modulo 120 (S and table transposes just add to it)
+        n = ((n % 120) + 120) % 120;
+        v.note = n;
+        apu_.write(0xFF22, kNoiseNr43[n]);
+        return;
+    }
     n = std::clamp(n, 1, 127);
     v.note = n;
     const uint8_t lenEn = (in[3] & 0x40) ? 0x40 : 0;
-    if (ch == 3) { apu_.write(0xFF22, kNoiseNr43[n]); return; }
     uint16_t f = ch == 2 ? kWaveFreq[n] : kPulseFreq[n];
     const double semis = v.vibSemis + v.slideSemis + v.bendSemis;
     if (semis != 0.0) {
@@ -241,16 +314,22 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
             break;
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
         case kCmdP: {
+            if (ch == 3) break;                              // noise P (S every tick): the ROM's accumulation is not worked out yet
             const int sv = int8_t(val); const double a = std::abs(sv);
             v.bendRate = (sv < 0 ? -1.0 : 1.0) * (0.00163 * a + 0.0005 * a * a);
             break;
         }
         case kCmdC:
+            if (ch == 3) break;                              // noise C: same
             v.chord[0] = 0; v.chord[1] = val >> 4; v.chord[2] = val & 15; v.chordOn = val != 0; v.chordCnt = -1; v.chordOfs = 0;
             break;
         case kCmdR: v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = 0; break;
         case kCmdS:
-            if (ch == 0) {
+            if (ch == 3) {
+                const int x = int8_t((val >> 4) << 4) >> 4, y = int8_t((val & 15) << 4) >> 4;
+                v.chordOfs += x * 16 + y;                 // shape: added to the noise index, kept until the next note
+                refreshPitch(3);
+            } else if (ch == 0) {
                 const int x = val >> 4, y = val & 15;
                 const uint8_t b = x ? uint8_t(0x7F + (x - 1) * 16 + y) : uint8_t(0x7F + y);
                 apu_.write(0xFF10, uint8_t(~b));
@@ -293,6 +372,7 @@ void Player::onStep(const StepEvent& e) {
 }
 
 void Player::tick() {
+    ++tickNo_;
     for (int c = 0; c < 4; ++c) {
         Voice& v = v_[c];
         if (v.kill > 0 && --v.kill == 0) killNote(c);
@@ -306,8 +386,15 @@ void Player::tick() {
             if (v.chordCnt < 0) v.chordCnt = 1;                    // the tick the command ran on: unchanged, then x, y, 0, x ...
             else { v.chordOfs = v.chord[v.chordCnt % 3]; ++v.chordCnt; refreshPitch(c); }
         }
+        if (c == 3 && (v.noiseS || v.noiseC)) {
+            auto sh = [](int val) { return (int8_t((val >> 4) << 4) >> 4) * 16 + (int8_t((val & 15) << 4) >> 4); };
+            if (v.noiseS) v.chordOfs += sh(v.noiseS);
+            if (v.noiseC && (++v.noiseTick & 1) == 0) v.chordOfs += sh(v.noiseC);
+            refreshPitch(3);
+        }
         if (v.retrig > 0 && ++v.retrigCnt >= v.retrig) { v.retrigCnt = 0; retrigger(c); }
     }
+    waveTick();
     for (int c = 0; c < 4; ++c) tableTick(c);
     if (!seq_.playing()) running_ = false;
 }
@@ -354,8 +441,10 @@ void Player::run(uint32_t cycles) {
     const long long end = now_ + cycles;
     while (now_ < end) {
         double nextEv = running_ ? std::min(nextTick_, next360_) : double(end);
+        if (v_[2].kPlay) nextEv = std::min(nextEv, nextKit_);
         long long t = std::min<long long>(end, std::max<long long>(now_, (long long)std::ceil(nextEv)));
         if (t > now_) { apu_.advance(uint32_t(t - now_)); now_ = t; }
+        if (v_[2].kPlay && now_ >= (long long)std::ceil(nextKit_)) { kitChunk(); nextKit_ += kKitChunk; continue; }
         if (!running_) continue;
         if (now_ >= (long long)std::ceil(next360_) && next360_ <= nextTick_) { sub360(); next360_ += kSub; }
         else if (now_ >= (long long)std::ceil(nextTick_)) { tick(); nextTick_ += kTick / tempo_; }

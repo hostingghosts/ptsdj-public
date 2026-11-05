@@ -30,6 +30,8 @@ struct Platform {
     void (*service)() = nullptr;       // HAL housekeeping, once per loop pass
     uint32_t sampleRateMilliHz = 44100000;
     ot::IMidiPort* midi = nullptr;
+    uint8_t* bigMem = nullptr;         // large scratch RAM (SDRAM on the device) for the kit ROM image
+    uint32_t bigMemSize = 0;
     const char* name = "host";
     uint32_t (*cycleCounter)() = nullptr;
     bool (*driverStats)(DriverStats& out) = nullptr;
@@ -58,6 +60,9 @@ public:
     bool loadSong(const char* path);
     bool saveSong(const char* path, const char* name);
     static constexpr const char* kSongDir = "GB/Songs";
+    static constexpr const char* kRomPath = "GB/LSDJ.GB";   // the owner's own LSDJ ROM: its sample kits are read from it
+    bool loadKits();                             // false when there is no ROM on the card
+    gb::RomKits kits;
 
 private:
     Platform p_;

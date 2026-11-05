@@ -1,5 +1,6 @@
 #include "atw/app.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace atw {
@@ -53,10 +54,28 @@ bool App::saveSong(const char* path, const char* name) {
     return ok;
 }
 
+bool App::loadKits() {
+    if (!p_.storage || !p_.bigMem || p_.bigMemSize < (1u << 20)) return false;
+    const ot::IStorage::Handle h = p_.storage->open(kRomPath, ot::IStorage::kRead);
+    if (h < 0) return false;
+    uint32_t got = 0;
+    while (got < (1u << 20)) {
+        const int32_t n = p_.storage->read(h, p_.bigMem + got, std::min<uint32_t>(32768, (1u << 20) - got));
+        if (n <= 0) break;
+        got += uint32_t(n);
+    }
+    p_.storage->close(h);
+    if (got < (1u << 19)) return false;
+    kits.setRom(p_.bigMem, got);
+    player.setKits(&kits);
+    return true;
+}
+
 void App::boot() {
     if (!p_.storage) return;
     p_.storage->mkdir("GB");
     p_.storage->mkdir(kSongDir);
+    loadKits();
     loadSong("GB/AUTOLOAD.LSDSNG");   // development convenience: opens this song at start when it exists
 }
 
