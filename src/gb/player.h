@@ -62,7 +62,8 @@ private:
         double vibPhase = 0;
         double vibSemis = 0;
         int startedTick = -1;                                         // tick the note started on
-        bool hwEnv = false;                                           // E: the hardware envelope (NR12 pace) does the fading, not the player
+        bool hwEnv = false;                                           // E is fading the volume (the normal envelope stages are off)
+        int ePace = 0; bool eUp = false; double eAcc = 0;            // E: one volume step per pace * 65536 cycles, up when the digit is 8 or more
         int chordAge = 0;                                             // ticks since the chord started (byte 8 sets how many each note lasts)
         int bendDelay = 0;                                            // sub-steps to wait before a slide starts moving
         bool bendTgt = false;                                         // L: the accumulator slides to 0 and stops there

@@ -119,5 +119,6 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   starts one sub-step late when the bend was idle. Wave instruments use the linear table at 00:09B9 (~19.2 per index), pulse the exponential one at 01:40FA.
 - Instrument byte 8 (pulse): ticks per chord note minus one (0 = one tick each).
 - Not solved: a table transpose of -128 with L (SETBARLO/INFORMAL kick drums) - the ROM keeps sweeping down to frequency 44 instead of returning.
-- E xy on pulse/noise uses the chip's hardware envelope: NR12 = x<<4 | y (bit 3 up, bits 0-2 pace; pace 0 holds) followed by a trigger; the player stops stepping the volume itself.
-  One pace unit = 65536 cycles (5.6 sub-steps). LIQUID now matches the ROM exactly over the first 200 ticks.
+- E xy on pulse/noise: the volume is set to x, then stepped by the player every (y & 7) * 65536 cycles (5.6 sub-steps per unit), down, or up when y >= 8 (y & 7 = 0 holds);
+  the ROM's NR12 log shows plain volume writes (x<<4|8 and the usual 09/11/18 down-steps), not the chip's own envelope. The normal envelope stages are off after E.
+  LIQUID now matches the ROM exactly over the first 200 ticks.

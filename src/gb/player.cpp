@@ -461,11 +461,10 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         case kCmdK: if (val == 0) killNote(ch); else v.kill = val; break;
         case kCmdE:
             if (ch == 2) apu_.write(0xFF1C, uint8_t(val == 0 ? 0 : val == 1 ? 0x60 : val == 2 ? 0x40 : 0x20));
-            else if (!muted_[ch]) {                         // measured: NR12 = volume | up/down | pace, then a trigger; the chip steps the volume (pace * 5.6 sub-steps)
+            else if (!muted_[ch]) {                         // measured: set the volume, then step it by one every pace * 65536 cycles (software, via the usual NR12 writes)
                 v.hwEnv = true;
-                v.vol = v.baseVol = val >> 4;
-                apu_.write(ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21, uint8_t((val & 0xF0) | (val & 15)));
-                retrigger(ch);
+                v.ePace = val & 7; v.eUp = (val & 8) != 0; v.eAcc = 0;
+                setVolume(ch, val >> 4);
             }
             break;
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
@@ -604,7 +603,18 @@ void Player::sub360() {
     }
     for (int c : {0, 1, 3}) {
         Voice& v = v_[c];
-        if (!v.on || muted_[c] || v.hwEnv) continue;
+        if (!v.on || muted_[c]) continue;
+        if (v.hwEnv) {
+            if (v.ePace) {
+                v.eAcc += kSub;
+                while (v.eAcc >= v.ePace * 65536.0) {
+                    v.eAcc -= v.ePace * 65536.0;
+                    setVolume(c, v.eUp ? std::min(v.vol + 1, 15) : std::max(v.vol - 1, 0));
+                    v.baseVol = v.vol;
+                }
+            }
+            continue;
+        }
         const uint8_t* in = instr(v.instr);
         // three-stage envelope (measured): byte 1 = start level and rate down to the level in byte 9's high nibble, byte 9's low nibble is the rate from there
         // down to byte 10's high nibble, byte 10's low nibble the rate to silence; a rate of 0 holds. An E fade overrides all stages.
