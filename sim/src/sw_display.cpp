@@ -46,7 +46,7 @@ uint32_t rd32(const std::vector<uint8_t>& m, uint32_t a) {
 
 bool SwDisplay::bindFontSet(int set) {
 #ifdef OT_NO_CUSTOM_FONTS
-    return false;   // the Atari build has no custom fonts: ROM fonts only
+    return false;   // the GB build has no custom fonts: ROM fonts only
 #endif
     if (!fontsUploaded_) fontsUploaded_ = writeRamG(ot::fontdata::kRamGBase, ot::fontdata::kBlob, ot::fontdata::kBlobSize);
     fontSet_ = set == 1 ? 1 : 0;
