@@ -1,4 +1,4 @@
-// Atari tracker -- MIDI input parser. Running status; real-time bytes (F8-FF) are skipped wherever they come; SysEx is skipped.
+// GB tracker -- MIDI input parser. Running status; real-time bytes (F8-FF) are skipped wherever they come; SysEx is skipped.
 // Only what the tracker uses is reported: note on / off and "all notes off" (CC 123), on any channel.
 #pragma once
 

@@ -1,14 +1,14 @@
-// Atari tracker -- colours and drawing helpers shared by the screens (screen.h).
+// GB tracker -- colours and drawing helpers shared by the screens (screen.h).
 #include "atw/ui/screen.h"
 
 namespace atw {
 namespace ui {
 
 namespace col {
-// Warm black panels, Atari orange for the cursor and the logo, Atari blue for the second logo word and instruments.
-uint32_t kBg = 0x0F0C0A, kPanel = 0x1D1916, kPanelHi = 0x322A24, kRowHi = 0x261F1A, kText = 0xF0E6D8, kDim = 0x7A6C5E, kFaint = 0x3E352D,
-         kCursor = 0xD2541E, kEdit = 0xD83A2B, kPlayRow = 0x3A2A14, kNote = 0xF8F0E0, kInst = 0x6FC3E8, kCmd = 0xF2C230, kAccent1 = 0xF08A24,
-         kAccent2 = 0x4FA3D8, kWarn = 0xF2C230, kBad = 0xFF5A4A, kGood = 0x6FD08C, kOnCursor = 0xFFFFFF;
+// Game Boy greens (the DMG palette: 0F380F, 306230, 8BAC0F, 9BBC0F) and a few signal colours.
+uint32_t kBg = 0x0F380F, kPanel = 0x1B4A1B, kPanelHi = 0x306230, kRowHi = 0x153F15, kText = 0x9BBC0F, kDim = 0x6E8C14, kFaint = 0x2A5A2A,
+         kCursor = 0x8BAC0F, kEdit = 0xD83A2B, kPlayRow = 0x24501E, kNote = 0xB4D21A, kInst = 0x8BAC0F, kCmd = 0xB4D21A, kAccent1 = 0x9BBC0F,
+         kAccent2 = 0x6E8C14, kWarn = 0xE0D040, kBad = 0xE05040, kGood = 0x9BBC0F, kOnCursor = 0x0F380F;
 }  // namespace col
 
 char hexDigit(int v) { return "0123456789ABCDEF"[v & 15]; }

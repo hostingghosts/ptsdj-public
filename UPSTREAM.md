@@ -1,18 +1,19 @@
-# Upstream and provenance
+# Provenance
 
-This directory is the firmware for the Atari-mode Polyend Tracker. It starts from **SIDTracker 0.2** by Marcin Spoczynski
-(https://github.com/sandlbn/SidTracker, MIT licence, see `LICENSE`), copied on 2026-11-03, which in turn vendors the hardware layer of
-**OpenTracker**, a clean-room firmware for the same hardware (MIT, `src/platform/LICENSE.OpenTracker`, details in
-`src/platform/PROVENANCE.md`). Third-party code keeps its own licence: PJRC Teensy core (`third_party/teensy3/LICENSE.txt`),
-FatFs (`third_party/fatfs/LICENSE.txt`), Roboto fonts (`third_party/fonts`).
+`polyend-gb` started on 2026-11-04 as a copy of `atari-fw` (the Atari-mode firmware project next to it, itself a fork of
+SIDTracker 0.2 by Marcin Spoczynski, MIT, which vendors the OpenTracker hardware layer, MIT). The first commit of this
+repository is that copy unchanged (without `build/` and the `atari_core` symlink, which pointed outside the tree).
+`git show HEAD~1:...` therefore still has the Atari sequencer, UI screens and tests if anything is wanted back.
 
-## What was left out of the copy
-* `fixtures/private/` (third-party GoatTracker songs of unknown licence) and `examples/` (SID songs), the 9 MB of screenshots in `docs/`.
-* The upstream manual and design notes are kept as text in `docs/upstream/`; they describe the SID product, not this one.
-* `README.md` of upstream is `README.upstream.md`.
+The second commit strips the Atari parts. What was removed: the `src/atw` song model, sequencer, audio engine, exporters,
+project and Mac-session files, undo, the seven Atari screens, the old `Ui` shell (instrument picker, pad keyboard, pop-ups
+all depended on the song), `atari_core`, the 6502 players and the Atari tests, plus `tools/release` and `tools/sidlink`
+(SID-product tooling). What was kept: `src/platform` and `third_party` unchanged (one macro renamed, see below),
+the `Screen` interface and colour/drawing helpers (`src/atw/ui/screen.h`, `frame.cpp`), the simulator, the host-test
+harness, `tools/check_image.py`, `tools/sync_hal.sh`, and `docs/upstream/`.
 
-## Local changes (newest first)
-4. `src/atw/app.*`, `src/atw/ui/*` (new): the Atari app and UI; `app/device_main.cpp` and `sim/src/main.cpp` run it when `ATARI_BUILD` is defined (alias `appns`); `sim/scripts/atari_smoke.txt`.
-3. `src/atw/` (new): the Atari song model, sequencer and audio engine, with `tests/atari_song_test.cpp`; `tests/Makefile` compiles the core sources it needs.
-2. `src/app/engine.*`, `Makefile`, `sim/Makefile`: `ATARI_BUILD` makes the POKEY engine of `core/src` (reached through the symlink `atari_core/atari`) the audio engine of the device image and the simulator; pads play POKEY voices 0-3. The SID code is still compiled and unused; host tests build without `ATARI_BUILD`.
-1. `sim/Makefile`: `src/c64` added to the portable sources (the 0.2 snapshot did not link without it).
+Changes inside the kept hardware layer:
+* `src/platform/core/ui/fonts/fonts.h`: the build macro `ATARI_BUILD` is now `GB_BUILD` (same effect: the 126 KB custom font
+  blob is left out of the image).
+* The Makefile no longer defines `SIDT_USB_STRINGS`, so the USB manufacturer/product strings read "OpenTracker" (the default
+  branch already in `third_party/teensy3/usb_desc.h`). VID:PID is still the pid.codes test pair 1209:0001.

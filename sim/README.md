@@ -1,14 +1,13 @@
-# SIDTracker desktop simulator
+# GB tracker desktop simulator
 
-The portable app (`src/app`, `src/ui`, `src/sid`, `src/tracker`,
-`src/audio`) runs unchanged against host implementations of the HAL
+The portable app (`src/atw`) runs unchanged against host implementations of the HAL
 interfaces. The host HALs in `sim/src` (all files except `main.cpp`) are
 vendored from OpenTracker (`src/platform/PROVENANCE.md`); `sim/src/main.cpp`
-is SIDTracker's.
+is ours.
 
 ```
-make -C sim                       # build/sim/sidtracker-sim
-build/sim/sidtracker-sim          # window; SD card = ~/.sidtracker-sd
+make -C sim                       # build/sim/gb-sim
+build/sim/gb-sim          # window; SD card = ~/.gbtracker-sd
 make -C sim check                 # headless smoke run -> build/sim/smoke-*.png, smoke.wav
 ```
 
@@ -16,8 +15,7 @@ Options: `--sd DIR`, `--scale 2`, `--no-audio`, `--quit-after MS`; headless:
 `--script FILE`, `--screenshot OUT.png`, `--panel`, `--wav OUT.wav`.
 
 Differences from the device: audio runs at 44,100 Hz (device 44,117.6 Hz;
-pitch is exact on both because the SID clock step uses the real rate); the
-benchmark page shows host time scaled to 180 MHz, not K66 cycles; there is
+pitch must be computed for the real rate); there is
 no underrun counter and no firmware update; the FT81x display-list size
 limit is not modelled.
 
@@ -32,7 +30,7 @@ Tab or Caps Lock switches between COMMAND and PAD mode.
 | arrows, Shift, Space (Play), Insert, Delete, Enter (jog push) | as labelled |
 | Page Up / Page Down, mouse wheel, `[` `]` | jog wheel |
 | COMMAND mode: R Rec, C Copy, N / I / X / V Note / Instr / Fx1 / Fx2 | |
-| COMMAND mode: 1 Instrument, 2 Perform, 3 File, 4 Settings, 5 Benchmark, 0 Song | module keys |
+| COMMAND mode: keys 1..0 = module keys 0x08..0x11 | module keys |
 | PAD mode: `1`…`=`, `Q`…`]`, `A`…`\`, `Z`…`/` | pad rows 0–3 (bottom row = octave) |
 | Ctrl+Q | quit |
 

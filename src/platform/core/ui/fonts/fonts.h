@@ -44,9 +44,9 @@ enum SmallSymbol : uint8_t {
 
 #include "ui/fonts/font_data.h"
 
-// The Atari firmware never binds the custom fonts (its UI uses the display's ROM fonts), so the 126 KB image is left out of its builds
-// (OT_NO_CUSTOM_FONTS, set for ATARI_BUILD): kBlob is then a stub that nothing reads and nothing is uploaded to RAM_G.
-#if defined(ATARI_BUILD) && !defined(OT_KEEP_CUSTOM_FONTS)
+// The GB firmware never binds the custom fonts (its UI uses the display's ROM fonts), so the 126 KB image is left out of its builds
+// (OT_NO_CUSTOM_FONTS, set for GB_BUILD): kBlob is then a stub that nothing reads and nothing is uploaded to RAM_G.
+#if defined(GB_BUILD) && !defined(OT_KEEP_CUSTOM_FONTS)
 #define OT_NO_CUSTOM_FONTS 1
 extern const uint8_t kBlob[4];
 #else

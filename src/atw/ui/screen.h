@@ -1,4 +1,4 @@
-// Atari tracker -- screen interface, colours, layout constants and drawing helpers (frame.cpp).
+// GB tracker -- screen interface, colours, layout constants and drawing helpers (frame.cpp).
 #pragma once
 
 #include <cstdint>
@@ -60,7 +60,7 @@ protected:
 // One colour layer of ROM-font-18 glyphs in a single BEGIN(BITMAPS): one
 // VERTEX2II word per visible glyph. CMD_TEXT costs several words per call,
 // and a full grid of per-field CMD_TEXTs overflows the FT81x's 2048-word
-// display list (tests/app_test.cpp display_list_fits_with_a_full_pattern).
+// display list (tests/gb_ui_test.cpp display_list_stays_within_budget).
 // VERTEX2II x is 9 bits: glyphs at x >= 512 go through VERTEX_TRANSLATE_X.
 class GlyphLayer {
 public:

@@ -1,8 +1,8 @@
-// SIDTracker device entry point (MK66FX1M0). Boot order kept exactly as in
+// GB tracker device entry point (MK66FX1M0). Boot order kept exactly as in
 // OpenTracker (docs/firmware-map.md): USB diagnostics first, then rail + SD
 // and the ot_restore.txt escape hatch before any other driver, then the
-// rest of the board, then the app (only with working SDRAM: the patterns
-// live there), else the hardware selftest.
+// rest of the board, then the app (only with working SDRAM, as in OpenTracker's
+// boot order; the song data will live there), else the hardware selftest.
 #include <Arduino.h>
 #include <cstring>
 
@@ -23,10 +23,6 @@ namespace {
 
 using namespace ot;
 
-// SDRAM layout (16 MB at 0x70000000, spec 01 §2): the pattern bank.
-constexpr uint32_t kPatternBytes = sizeof(appns::Pattern) * appns::kPatternCount;
-static_assert(kPatternBytes <= board::kSdramSize, "SDRAM layout exceeds 16 MB");
-
 appns::App gApp;
 
 uint32_t dwtCycles() { return ARM_DWT_CYCCNT; }
@@ -41,14 +37,10 @@ bool driverStats(appns::DriverStats& d) {
 
 void setRawDetents(bool on) { hal::input().setRawDetents(on); }
 
-// hal::powerOff() calls this with the audio still running. The UI has been fading the sound since the button went down
-// (the shutdown bar), so this only makes sure it is silent, stops the voices and keeps the work.
+// hal::powerOff() calls this with the audio still running: make sure it is silent.
 void powerOffHook() {
-    gApp.engine.stop();
-    gApp.engine.setMasterVolume(0);
+    gApp.quiesce();
     delay(40);   // let the audio callback apply it
-    gApp.engine.panic();
-    gApp.autosave();
 }
 
 }  // namespace
@@ -81,7 +73,6 @@ extern "C" int main(void) {
         p.clock = h.clock;
         p.service = h.service;
         p.sampleRateMilliHz = board::kSampleRateMilliHz;   // MCLK / 256 = 44,117,647 mHz
-        p.patterns = reinterpret_cast<appns::Pattern*>(board::kSdramBase);
         p.midi = h.midi;
         p.name = "K66 180 MHz";
         p.cycleCounter = &dwtCycles;

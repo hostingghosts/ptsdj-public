@@ -1,9 +1,8 @@
-// SIDTracker desktop simulator: the portable app (src/app, src/ui, src/sid,
-// src/tracker, src/audio) against the host HALs vendored from OpenTracker
+// GB tracker desktop simulator: the portable app (src/atw) against the host HALs vendored from OpenTracker
 // (sim/src, src/platform/PROVENANCE.md).
 //
-//   sidtracker-sim [--sd DIR] [--scale 1|2] [--no-audio] [--quit-after MS]
-//   sidtracker-sim --script FILE [--screenshot OUT.png] [--panel] [--wav OUT.wav] [--sd DIR]
+//   gb-sim [--sd DIR] [--scale 1|2] [--no-audio] [--quit-after MS]
+//   gb-sim --script FILE [--screenshot OUT.png] [--panel] [--wav OUT.wav] [--sd DIR]
 //
 // Key map and script language: sim/README.md.
 #include <SDL.h>
@@ -45,8 +44,8 @@ struct Options {
 
 void usage() {
     std::printf(
-        "usage: sidtracker-sim [options]\n"
-        "  --sd DIR          SD card root (default ~/.sidtracker-sd)\n"
+        "usage: gb-sim [options]\n"
+        "  --sd DIR          SD card root (default ~/.gbtracker-sd)\n"
         "  --scale N         window scale 1 or 2\n"
         "  --no-audio        do not open an audio device\n"
         "  --quit-after MS   exit after MS milliseconds (interactive)\n"
@@ -81,7 +80,7 @@ bool parseArgs(int argc, char** argv, Options& o) {
     }
     if (o.sd.empty()) {
         const char* home = std::getenv("HOME");
-        o.sd = std::string(home ? home : ".") + "/.sidtracker-sd";
+        o.sd = std::string(home ? home : ".") + "/.gbtracker-sd";
     }
     return true;
 }
@@ -102,7 +101,6 @@ struct Machine {
     HostStorage storage;
     SdlAudio sdlAudio;
     ManualAudio manualAudio;
-    std::unique_ptr<appns::Pattern[]> patterns;
     std::unique_ptr<appns::App> app;
     static Machine* self;
 
@@ -121,7 +119,6 @@ struct Machine {
         } else if (!o.noAudio) {
             audio = &sdlAudio;
         }
-        patterns.reset(new appns::Pattern[appns::kPatternCount]);
         appns::Platform p;
         p.display = &display;
         p.audio = audio;
@@ -130,7 +127,6 @@ struct Machine {
         p.leds = &leds;
         p.clock = &clock;
         p.sampleRateMilliHz = 44100000;   // the host device; the K66 runs 44,117,647
-        p.patterns = patterns.get();
         p.name = "simulator (host time)";
         p.cycleCounter = headless ? nullptr : &hostCycles;   // headless: deterministic
         app.reset(new appns::App());
@@ -143,8 +139,7 @@ struct Machine {
     }
     void step() { app->loop(); }
     void shutdown() {
-        app->engine.stop();
-        if (app->dirty()) app->autosave();
+        app->quiesce();
         if (app->platform().audio) app->platform().audio->stop();
     }
 };
@@ -320,7 +315,7 @@ int runInteractive(Machine& m, const Options& o) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
-    SDL_Window* win = SDL_CreateWindow("SIDTracker simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    SDL_Window* win = SDL_CreateWindow("GB tracker simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        Panel::kW * o.scale, Panel::kH * o.scale, SDL_WINDOW_RESIZABLE);
     if (!win) {
         std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
