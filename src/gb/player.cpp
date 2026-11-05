@@ -72,7 +72,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.vibSemis = 0;
     v.bendRate = v.bendSemis = 0;
     v.chordOn = false; v.chordOfs = 0;
-    v.retrig = -1;
+    v.retrig = -1; v.retrigDv = 0;
     v.noiseS = 0; v.shapeOfs = 0; v.shapeAcc = 0;
     if (!v.slideLeft) v.slideSemis = 0;
     v.on = true;
@@ -93,7 +93,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
             apu_.write(base + 2, uint8_t((in[1] & 0xF0) | 8));
             apu_.write(base + 3, uint8_t(f & 0xFF));
             apu_.write(base + 4, uint8_t(0x80 | lenEn | (f >> 8)));
-            v.vol = in[1] >> 4;
+            v.vol = v.baseVol = in[1] >> 4;
             break;
         }
         case 2: {
@@ -109,7 +109,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
             apu_.write(0xFF21, uint8_t((in[1] & 0xF0) | 8));
             apu_.write(0xFF22, kNoiseNr43[n]);
             apu_.write(0xFF23, uint8_t(0x80 | lenEn));
-            v.vol = in[1] >> 4;
+            v.vol = v.baseVol = in[1] >> 4;
             break;
     }
     if (ch < 2) refreshPitch(ch);                   // pulse 2 tune and the fine tune apply from the first moment
@@ -233,6 +233,7 @@ void Player::setVolume(int ch, int target) {
     if (ch == 2 || muted_[ch]) return;
     const uint16_t r = ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21;
     target = std::clamp(target, 0, 15);
+    v.baseVol = target;
     while (v.vol < target) { apu_.write(r, 0x08); ++v.vol; }
     while (v.vol > target) { apu_.write(r, 0x09); apu_.write(r, 0x11); apu_.write(r, 0x18); --v.vol; }
 }
@@ -242,7 +243,8 @@ static const double kVibDepth[16] = {0, 0.25, 0.375, 0.5, 0.75, 1, 1.5, 2, 2.5, 
 static double vibShape(int shape, double ph) {
     ph -= std::floor(ph);
     switch (shape) {
-        case 1: return 1.0 - 2.0 * ph;                   // saw
+        case 1: return 2.0 * ph - 1.0;                   // saw: pitch always rises, then jumps back (measured)
+        case 3: return 0.0;                              // shape 3: no vibrato (measured)
         case 2: return ph < 0.5 ? 1.0 : -1.0;            // square
         default: return ph < 0.25 ? 4 * ph : ph < 0.75 ? 2 - 4 * ph : 4 * ph - 4;   // triangle (the ROM's default shape is not a sine)
     }
@@ -323,9 +325,19 @@ void Player::tableTick(int ch) {
     refreshPitch(ch);
 }
 
+void Player::retrigVolume(int ch) {
+    Voice& v = v_[ch];
+    if (!v.retrigDv || ch == 2 || !v.on || muted_[ch]) return;
+    v.baseVol = std::clamp(v.baseVol + v.retrigDv, 0, 15);
+    v.vol = v.baseVol;
+    v.envCount = 0;
+    apu_.write(ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21, uint8_t(v.vol << 4 | 8));
+}
+
 void Player::retrigger(int ch) {
     Voice& v = v_[ch];
     if (!v.on || muted_[ch]) return;
+    retrigVolume(ch);
     const uint8_t* in = instr(v.instr);
     const uint8_t lenEn = (in[3] & 0x40) ? 0x40 : 0;
     const uint16_t f = ch == 2 ? kWaveFreq[v.note] : kPulseFreq[v.note];
@@ -388,7 +400,13 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
                 if (was && !v.chordOn) refreshPitch(ch);
             }
             break;
-        case kCmdR: v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = 0; break;
+        case kCmdR: {
+            v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = fromTable ? 0 : -1;   // a phrase command runs before this tick's count, a table row after it
+            const int x = val >> 4;
+            v.retrigDv = x == 0 || x == 8 ? 0 : x < 8 ? x : x - 16;       // measured: signed volume step per retrigger, also applied when the command runs
+            if (v.retrigDv) retrigger(ch);                                 // volume steps need the trigger to take effect
+            break;
+        }
         case kCmdS:
             if (ch == 3) {
                 const int x = int8_t((val >> 4) << 4) >> 4, y = int8_t((val & 15) << 4) >> 4;
@@ -491,9 +509,9 @@ void Player::sub360() {
         Voice& v = v_[c];
         if (!v.on || !v.vibDepth || c == 3) continue;
         const uint8_t b5 = instr(v.instr)[5];
-        const double sign = (b5 & 1) ? 1.0 : -1.0;
         v.vibPhase += (v.vibSpeed + 1) / 64.0;
-        v.vibSemis = sign * kVibDepth[v.vibDepth] * vibShape((b5 >> 1) & 3, v.vibPhase);
+        // the direction bit is a half-period phase shift (for the saw too: it never runs backwards)
+        v.vibSemis = kVibDepth[v.vibDepth] * vibShape((b5 >> 1) & 3, v.vibPhase + ((b5 & 1) ? 0.0 : 0.5));
         refreshPitch(c);
     }
     for (int c : {0, 1, 3}) {

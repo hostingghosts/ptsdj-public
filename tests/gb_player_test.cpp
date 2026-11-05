@@ -157,3 +157,25 @@ TEST(z_in_table_column_two_ignores_column_one) {
     const auto a = playPulse(in, {{0, 0, 0, kCmdO, 1}, {0, kCmdZ, 3, 0, 0}, {0, kCmdH, 1, 0, 0}}, {0}, 30);
     for (int t = 0; t < 30; ++t) CHECK_EQ(a[t].pan & 0x11, 0x10);   // left only on channel 1
 }
+
+TEST(r_first_digit_is_a_signed_volume_step) {
+    // measured: start volume F, R93 -> 8, then 1 on the next retrigger (3 ticks later), then 0
+    const uint8_t in[16] = {0, 0xF0, 0, 0, 0x7F, 1, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0};
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, 0) = 0;
+    s.note(0, 0) = 25; s.phraseInstr(0, 0) = 0; s.phraseCmd(0, 0) = kCmdR; s.phraseVal(0, 0) = 0x93;
+    for (int i = 0; i < 16; ++i) s.instrument(0)[i] = in[i];
+    s.at(off::kTempo) = 128;
+    Player p(s);
+    p.start(0);
+    int vol[8];
+    long long done = 0;
+    for (int t = 0; t < 8; ++t) {
+        const long long until = (long long)((t + 0.9) * 10485760.0 / 128);
+        p.run(uint32_t(until - done)); done = until;
+        vol[t] = p.apu().state(0).vol;
+    }
+    CHECK_EQ(vol[0], 8); CHECK_EQ(vol[2], 8); CHECK_EQ(vol[3], 1); CHECK_EQ(vol[5], 1); CHECK_EQ(vol[6], 0);
+}

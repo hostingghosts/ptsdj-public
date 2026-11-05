@@ -49,6 +49,8 @@ private:
         int base = 0;           // note with chain and project transposes
         int tTrans = 0;         // current table transpose
         int fade = -1;          // release nibble override (E command), -1 = instrument's
+        int baseVol = 0;        // volume last programmed (start volume, E, table amplitude): a retrigger reloads this, not the decayed volume
+        int retrigDv = 0;       // R: volume change per retrigger (signed first digit)
         int tbl = -1;           // running table or -1
         int tGen = 0;           // counts table starts, so a table row that runs A does not overwrite the new table's position
         int stepTbl = -1;       // table kept between notes while the instrument runs it per note (byte 5 bit 3)
@@ -76,6 +78,7 @@ private:
     void killNote(int ch);
     void command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool again = false);   // again: Z re-applies it, keeping running phases
     void startTable(int ch, int t);
+    void retrigVolume(int ch);
     void tableTick(int ch);
     void setVolume(int ch, int target);
     void refreshPitch(int ch);

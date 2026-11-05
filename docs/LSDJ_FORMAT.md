@@ -109,3 +109,6 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - Vibrato default shape is a triangle (rises 1/16 of the peak per step at speed 0), not a sine; first step after the command is 0.
 - The sub-tick clock (envelope, vibrato, slide, bend steps) runs 6 times per video frame (70224/6 = 11704 cycles), not at 360 Hz: vibrato aliasing against ticks gives a beat of exactly 64 ticks at tempo 128 (7 steps per tick). Residual drift at tempo 100 (<= 12 register units over 70 ticks) is unexplained.
 - Table started by A begins at its row 0 on the next tick; a table row that runs A must not overwrite the new table's position.
+- R xy: x is a signed volume step (1-7 up, 9-F down by 16-x, 0 and 8 none), applied when the command runs and at every retrigger; a retrigger reloads the last programmed
+  volume (start, E, table amplitude) plus the steps, not the decayed volume; y = 0 applies the step once. Vibrato: shape field (b5 bits 1-2) 0 triangle, 1 saw (pitch
+  always rises), 2 square, 3 none; b5 bit 0 clear is a half-period phase shift. Saw with bit 0 clear runs ~1/1.4 as fast as expected (unexplained).
