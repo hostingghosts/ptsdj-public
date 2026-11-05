@@ -10,7 +10,8 @@ namespace {
 #include "gb/tables.inc"
 // Envelope step period in 1/360 s for release digit 1..15 (measured).
 const uint8_t kEnvPeriod[16] = {0, 1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 86, 115};
-constexpr int kSlideDelay = 1;
+constexpr int kSlideDelay = 0;
+constexpr bool kAStartsNow = false;
 constexpr double kTick = 10485760.0;      // cycles per tick = kTick / tempo
 constexpr double kSub = 70224.0 / 6.0;   // six steps per video frame (358.4 Hz), measured from vibrato beat periods
 constexpr double kKitChunk = 11712.0;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
@@ -31,8 +32,8 @@ void Player::start(int row) {
     running_ = true;
     hpInit_ = false;
     now_ = 0;
-    nextTick_ = 0;
-    next360_ = kSub;
+    next360_ = 0;
+    tickAcc_ = 896 - tempo_;                              // the first tick comes with the first sub-step
 }
 
 void Player::writePan() {
@@ -360,7 +361,7 @@ void Player::startTable(int ch, int t) {
     v.tbl = t & 31;
     ++v.tGen;
     v.tStep = v.tStepNow = false;                         // a table started by A runs per tick (measured)
-    v.tRow = 0; v.tWait = 0; v.eRow = 0; v.eWait = 0; v.tGroove = 0xFF;
+    v.tRow = 0; v.tWait = 0; v.eRow = 0; v.eWait = 0; v.tGroove = 0xFF; v.tGroovePos = 0;
     std::memset(v.hop, 0, sizeof v.hop);
 }
 
@@ -394,9 +395,14 @@ void Player::tableTick(int ch) {
                 else v.hop[row] = 0;
             } else if (c) { slot_ = 1 + k; command(ch, c, val, true); slot_ = 0; }
         }
-        if (v.tGen != gen) { refreshPitch(ch); return; }       // A started another table: it begins at its row 0 next tick
+        if (v.tGen != gen) { refreshPitch(ch); if (kAStartsNow && !inA_) { inA_ = true; tableTick(ch); inA_ = false; } return; }   // A started another table: its row 0 runs now
         if (hopped) continue;
-        if (v.tGroove != 0xFF) { const uint8_t* g = s_.groove(v.tGroove); v.tWait = g[0] ? g[0] : 1; }
+        if (v.tGroove != 0xFF) {
+            const uint8_t* g = s_.groove(v.tGroove);
+            if (v.tGroovePos > 15 || (v.tGroovePos && !g[v.tGroovePos])) v.tGroovePos = 0;
+            v.tWait = g[v.tGroovePos] ? g[v.tGroovePos] : 1;
+            ++v.tGroovePos;
+        }
         row = (row + 1) & 15;
         break;
     }
@@ -456,7 +462,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
     if (!again && cmd != kCmdA && cmd != kCmdK) { v.lastCmd[slot_] = cmd; v.lastVal[slot_] = val; }   // Z always starts from the original value
     switch (cmd) {
         case kCmdA: if (val == 0x20) v.tbl = -1; else startTable(ch, val & 31); break;
-        case kCmdG: if (fromTable) v.tGroove = val & 31; else seq_.setGroove(ch, val); break;
+        case kCmdG: if (fromTable) { v.tGroove = val & 31; v.tGroovePos = 0; } else seq_.setGroove(ch, val); break;
         case kCmdT: tempo_ = std::clamp<int>(val, 40, 255); break;
         case kCmdK: if (val == 0) killNote(ch); else v.kill = val; break;
         case kCmdE:
@@ -470,7 +476,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
         case kCmdP: {
             if (ch == 3) { v.noiseS = val; v.shapeAcc = v.shapeOfs; v.noiseFresh = true; break; }   // noise P
-            v.bendDelay = (fromTable && v.startedTick != tickNo_ && !v.bendRate) ? 1 : 0;
+            v.bendDelay = 0;
             v.bendRate = bendRateOf(val); v.bendTgt = false;   // a table row on a later tick starts a sub-step late
             break;
         }
@@ -505,8 +511,8 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         case kCmdM: masterVol(val); break;
         case kCmdF: if (ch < 2) { v.fine = val & 15; v.tune2 = int(val >> 4); refreshPitch(ch); } break;
         case kCmdV:   // the first step after the command is still 0
+            if (!again && !v.vibDepth) v.vibPhase = -((val >> 4) + 1) / 64.0;   // running V again (or changing it) keeps the phase, like C
             v.vibSpeed = val >> 4; v.vibDepth = val & 15;
-            if (!again) v.vibPhase = -(v.vibSpeed + 1) / 64.0;
             if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); }
             break;
         case kCmdL: startSlide(ch, val); refreshPitch(ch); break;
@@ -638,14 +644,18 @@ void Player::sub360() {
 void Player::run(uint32_t cycles) {
     const long long end = now_ + cycles;
     while (now_ < end) {
-        double nextEv = running_ ? std::min(nextTick_, next360_) : double(end);
+        double nextEv = running_ ? next360_ : double(end);
         if (v_[2].kPlay) nextEv = std::min(nextEv, nextKit_);
         long long t = std::min<long long>(end, std::max<long long>(now_, (long long)std::ceil(nextEv)));
         if (t > now_) { apu_.advance(uint32_t(t - now_)); now_ = t; }
         if (v_[2].kPlay && now_ >= (long long)std::ceil(nextKit_)) { kitChunk(); nextKit_ += kKitChunk; continue; }
         if (!running_) continue;
-        if (now_ >= (long long)std::ceil(next360_) && next360_ <= nextTick_) { sub360(); next360_ += kSub; }
-        else if (now_ >= (long long)std::ceil(nextTick_)) { tick(); nextTick_ += kTick / tempo_; }
+        if (now_ >= (long long)std::ceil(next360_)) {
+            sub360();                                                       // the ROM's 358 Hz interrupt: sub-step first, then the tempo accumulator decides on a tick
+            next360_ += kSub;
+            tickAcc_ += tempo_;
+            if (tickAcc_ >= 896) { tickAcc_ -= 896; tick(); }
+        }
     }
 }
 

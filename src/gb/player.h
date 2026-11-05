@@ -56,7 +56,7 @@ private:
         int stepTbl = -1;       // table kept between notes while the instrument runs it per note (byte 5 bit 3)
         bool tStep = false, tStepNow = false;   // step mode: a row runs only on the tick a note starts
         int tRow = 0, tWait = 0, eRow = 0, eWait = 0;
-        uint8_t tGroove = 0xFF;
+        uint8_t tGroove = 0xFF; int tGroovePos = 0;   // table groove and its position (each row takes the next entry)
         uint8_t hop[16] = {};
         int vibSpeed = 0, vibDepth = 0;   // V command (depth 0 = off)
         double vibPhase = 0;
@@ -102,6 +102,7 @@ private:
     unsigned rng();                       // LSDJ's generator: S = 17 * S + 0x5C93 (16 bit), the result is the high byte
     int randMax(int m) { return m ? int(rng() % unsigned(m + 1)) : 0; }   // 0..m, no generator call for 0
     uint16_t rngState_ = 0x0052;
+    bool inA_ = false;                    // a table row is already being run on behalf of A (no recursion)
     int slot_ = 0;                        // which Z memory a command belongs to: 0 phrase, 1 table column 1, 2 table column 2
     void writePan();
     uint8_t* instr(int i) { return s_.instrument(i & 63); }
@@ -118,7 +119,8 @@ private:
     int tickNo_ = 0;
     bool running_ = false;
     int tempo_ = 128;
-    double nextTick_ = 0, next360_ = 0;
+    double next360_ = 0;                  // next sub-step (every 11704 cycles); ticks come from it: tickAcc_ += tempo, a tick at 896
+    int tickAcc_ = 0;
     long long now_ = 0;
     // render state
     double carry_ = 0;

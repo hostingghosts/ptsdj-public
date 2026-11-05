@@ -122,3 +122,7 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - E xy on pulse/noise: the volume is set to x, then stepped by the player every (y & 7) * 65536 cycles (5.6 sub-steps per unit), down, or up when y >= 8 (y & 7 = 0 holds);
   the ROM's NR12 log shows plain volume writes (x<<4|8 and the usual 09/11/18 down-steps), not the chip's own envelope. The normal envelope stages are off after E.
   LIQUID now matches the ROM exactly over the first 200 ticks.
+- Scheduler (measured): one 358 Hz interrupt (11704 cycles); each interrupt runs the sub-step (envelope, vibrato, bend, slide) first, then adds tempo to an accumulator and
+  runs a sequencer tick when it reaches 896 (so a tick is 896 / tempo sub-steps: 7 at tempo 128, mean tick spacing 81927 cycles in the ROM log). With this ordering no
+  extra "one sub-step late" rules are needed: table V/P/L started on any tick match the ROM (tools/oracle/timing_check.py, 0 mismatches).
+- Table groove (G in a table): each row takes the next groove entry in turn. A table started by A runs its row 0 on the next tick. Re-running V keeps the vibrato phase.
