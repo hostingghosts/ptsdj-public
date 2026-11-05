@@ -59,9 +59,9 @@ private:
         double slideSemis = 0, slideStep = 0; int slideLeft = 0;   // L: remaining offset to the target, per-step change
         double bendRate = 0, bendSemis = 0;                          // P
         int chord[3] = {0, 0, 0}; bool chordOn = false; int chordCnt = 0, chordOfs = 0;   // C
-        int kBegin = 0, kEnd = 0, kPos = 0; bool kPlay = false; Kit kit;   // kit sample being streamed
+        int kPos = 0, kChunks = 0, kLimit = 0, kBeg[2] = {0, 0}, kEnd[2] = {0, 0}, kFreq = 0x749; bool kPlay = false, kLoop = false, kHas[2] = {false, false}; Kit kit[2];   // kit samples being streamed
         double wPos = 0; int wDir = 1, wCnt = 0; bool wAnim = false;   // wave frame animation
-        int noiseS = 0, noiseC = 0, noiseTick = 0;                  // noise P / C: S applied every (second) tick
+        int noiseS = 0, shapeOfs = 0; double shapeAcc = 0; bool noiseFresh = false;           // noise: P value, and the S / P shape offset in index steps
         int retrig = -1, retrigCnt = 0;                              // R: period in ticks, -1 off
         int fine = -1, tune2 = 0;                                    // F override (fine -1 = use the instrument byte)
     };

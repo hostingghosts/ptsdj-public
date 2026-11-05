@@ -4,10 +4,12 @@
 #include <vector>
 #include "gb/player.h"
 #include "gb/kits.h"
+#include "gb/upgrade.h"
 static void hook(int frame, int tick) { std::fprintf(stderr, "W %d %d\n", tick, frame); }
 int main(int argc, char** argv) {
     FILE* f = std::fopen(argv[1], "rb"); std::vector<uint8_t> b(gb::kSavSize); size_t n = std::fread(b.data(), 1, b.size(), f); std::fclose(f);
     gb::Song s; if (!s.readSav(b.data(), n)) return 1;
+    gb::upgradeSong(s);
     static std::vector<uint8_t> rom; gb::RomKits kits;
     if (const char* rp = std::getenv("GB_ROM")) { if (FILE* rf = std::fopen(rp, "rb")) { rom.resize(1 << 20); rom.resize(std::fread(rom.data(), 1, rom.size(), rf)); std::fclose(rf); kits.setRom(rom.data(), rom.size()); } }
     gb::Player p(s); p.setKits(&kits); if (std::getenv("WAVELOG")) p.setWaveHook(hook); p.start(0);

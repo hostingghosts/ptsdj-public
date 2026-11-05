@@ -1,6 +1,7 @@
 #include "atw/app.h"
 
 #include <algorithm>
+#include "gb/upgrade.h"
 #include <cstring>
 
 namespace atw {
@@ -39,6 +40,7 @@ bool App::loadSong(const char* path) {
     player.stop();
     gb::Song fresh;
     if (!gb::loadLsdsng(fresh, buf, size_t(n))) return false;
+    if (!gb::upgradeSong(fresh)) return false;       // songs saved by older LSDJ versions
     std::memcpy(song.mem(), fresh.mem(), gb::kMemSize);
     return true;
 }

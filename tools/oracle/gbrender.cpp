@@ -4,13 +4,14 @@
 #include <cstring>
 #include <vector>
 #include "gb/lsdsng.h"
+#include "gb/upgrade.h"
 #include "gb/player.h"
 int main(int argc, char** argv) {
     if (argc < 4) return 1;
     FILE* f = std::fopen(argv[1], "rb"); if (!f) return 1;
     std::vector<uint8_t> b(1 << 18); size_t n = std::fread(b.data(), 1, b.size(), f); std::fclose(f);
     gb::Song s;
-    if (!(n >= gb::kMemSize && s.readSav(b.data(), n)) && !gb::loadLsdsng(s, b.data(), n)) { std::fprintf(stderr, "cannot read song\n"); return 1; }
+    if (!(n >= gb::kMemSize && s.readSav(b.data(), n)) && !(gb::loadLsdsng(s, b.data(), n) && gb::upgradeSong(s))) { std::fprintf(stderr, "cannot read song\n"); return 1; }
     const int rate = argc > 4 ? std::atoi(argv[4]) : 44100, frames = int(std::atof(argv[2]) * rate);
     gb::Player p(s); p.start(0);
     std::vector<int16_t> pcm(size_t(frames) * 2);

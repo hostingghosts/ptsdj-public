@@ -68,7 +68,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.bendRate = v.bendSemis = 0;
     v.chordOn = false; v.chordOfs = 0;
     v.retrig = -1;
-    v.noiseS = v.noiseC = 0;
+    v.noiseS = 0; v.shapeOfs = 0; v.shapeAcc = 0;
     if (!v.slideLeft) v.slideSemis = 0;
     v.on = true;
     v.envCount = 0;
@@ -110,17 +110,27 @@ void Player::noteOn(int ch, const StepEvent& e) {
     if (in[6] & 0x20) startTable(ch, in[6] & 0x1F); else v.tbl = -1;
 }
 
-// A new wave frame: DAC off, load the 16 bytes, DAC on, trigger with a dummy frequency, then the real one (as LSDJ does).
+// Kit instrument: note n = 16 * b + a plays sample a-1 of kit 1 (byte 9) and sample b-1 of kit 2 (byte 2); both together are mixed
+// nibble by nibble as clip(x + y - 8). Byte 8 shifts the wave frequency (signed), byte 11 limits the length in chunks (0 = whole
+// sample), byte 13 is the start offset in chunks, bits 5-6 of byte 5 loop the sample (all measured on LSDJ 9.4.2).
 void Player::startKit(const StepEvent& e) {
     Voice& v = v_[2];
     const uint8_t* in = instr(v.instr);
     v.kPlay = false;
     v.wAnim = false;
     if (!kits_) return;
-    v.kit = kits_->kit(in[9]);                 // kit number: byte 9 (bank 8 + n of the ROM)
-    int b, en;
-    if (!v.kit.range(e.note - 1, b, en)) return;
-    v.kBegin = b; v.kPos = b; v.kEnd = en; v.kPlay = true;
+    v.kit[0] = kits_->kit(in[9] & 0x7F);
+    v.kit[1] = kits_->kit(in[2] & 0x7F);
+    const int a = e.note & 15, bb = e.note >> 4;
+    v.kHas[0] = a > 0 && v.kit[0].range(a - 1, v.kBeg[0], v.kEnd[0]);
+    v.kHas[1] = bb > 0 && v.kit[1].range(bb - 1, v.kBeg[1], v.kEnd[1]);
+    if (!v.kHas[0] && !v.kHas[1]) return;
+    v.kPos = in[13] * 16;
+    v.kChunks = 0;
+    v.kLimit = in[11];
+    v.kLoop = (in[5] & 0x60) != 0;
+    v.kFreq = std::clamp(0x749 + int8_t(in[8]), 0, 0x7FF);
+    v.kPlay = true;
     apu_.write(0xFF1C, in[1]);
     nextKit_ = double(now_);
     kitChunk();
@@ -130,19 +140,37 @@ void Player::startKit(const StepEvent& e) {
 void Player::kitChunk() {
     Voice& v = v_[2];
     if (!v.kPlay || muted_[2]) return;
-    if (v.kPos + 16 > v.kEnd) { v.kPlay = false; apu_.write(0xFF1A, 0x00); return; }
-    const uint8_t* w = v.kit.data + v.kPos;
+    int len[2] = {0, 0}, longest = 0;
+    for (int k = 0; k < 2; ++k) if (v.kHas[k]) { len[k] = v.kEnd[k] - v.kBeg[k]; longest = std::max(longest, len[k]); }
+    if (v.kPos + 16 > longest || (v.kLimit && v.kChunks >= v.kLimit)) {
+        if (v.kLoop && (!v.kLimit || v.kChunks < v.kLimit)) { v.kPos = 0; }
+        else { v.kPlay = false; apu_.write(0xFF1A, 0x00); return; }
+    }
+    uint8_t w[16];
+    for (int i = 0; i < 16; ++i) {
+        int nib[2] = {8, 8};
+        int hi = 8, lo = 8;
+        auto fetch = [&](int k, int byte) -> uint8_t { return (v.kHas[k] && byte < len[k]) ? v.kit[k].data[v.kBeg[k] + byte] : 0x88; };
+        const uint8_t x = fetch(0, v.kPos + i), y = fetch(1, v.kPos + i);
+        if (v.kHas[0] && v.kHas[1]) {
+            hi = std::clamp((x >> 4) + (y >> 4) - 8, 0, 15); lo = std::clamp((x & 15) + (y & 15) - 8, 0, 15);
+            w[i] = uint8_t(hi << 4 | lo);
+        } else w[i] = v.kHas[0] ? x : y;
+        (void)nib;
+    }
     v.kPos += 16;
+    ++v.kChunks;
     if (waveHook_) waveHook_(v.kPos, tickNo_);
     apu_.write(0xFF1A, 0x00);
     for (int i = 0; i < 16; ++i) apu_.write(0xFF30 + i, w[i]);
     apu_.write(0xFF1A, 0x80);
     apu_.write(0xFF1D, 0xE0);
     apu_.write(0xFF1E, 0x87);
-    apu_.write(0xFF1D, 0x49);                  // 0x749: one chunk lasts one kit interval
-    apu_.write(0xFF1E, 0x07);
+    apu_.write(0xFF1D, uint8_t(v.kFreq & 0xFF));
+    apu_.write(0xFF1E, uint8_t(v.kFreq >> 8));
 }
 
+// A new wave frame: DAC off, load the 16 bytes, DAC on, trigger with a dummy frequency, then the real one (as LSDJ does).
 void Player::loadWave(int frame) {
     Voice& v = v_[2];
     const uint8_t* in = instr(v.instr);
@@ -210,7 +238,7 @@ void Player::refreshPitch(int ch) {
     Voice& v = v_[ch];
     if (!v.on || muted_[ch]) return;
     const uint8_t* in = instr(v.instr);
-    int n = v.base + v.tTrans + v.chordOfs + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
+    int n = v.base + v.tTrans + v.chordOfs + (ch == 3 ? v.shapeOfs : 0) + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
     if (ch == 3) {                                    // noise: the note index wraps modulo 120 (S and table transposes just add to it)
         n = ((n % 120) + 120) % 120;
         v.note = n;
@@ -314,20 +342,19 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
             break;
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
         case kCmdP: {
-            if (ch == 3) break;                              // noise P (S every tick): the ROM's accumulation is not worked out yet
+            if (ch == 3) { v.noiseS = val; v.shapeAcc = v.shapeOfs; v.noiseFresh = true; break; }   // noise P
             const int sv = int8_t(val); const double a = std::abs(sv);
             v.bendRate = (sv < 0 ? -1.0 : 1.0) * (0.00163 * a + 0.0005 * a * a);
             break;
         }
         case kCmdC:
-            if (ch == 3) break;                              // noise C: same
             v.chord[0] = 0; v.chord[1] = val >> 4; v.chord[2] = val & 15; v.chordOn = val != 0; v.chordCnt = -1; v.chordOfs = 0;
             break;
         case kCmdR: v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = 0; break;
         case kCmdS:
             if (ch == 3) {
                 const int x = int8_t((val >> 4) << 4) >> 4, y = int8_t((val & 15) << 4) >> 4;
-                v.chordOfs += x * 16 + y;                 // shape: added to the noise index, kept until the next note
+                v.shapeOfs += x * 16 + y; v.shapeAcc = v.shapeOfs;   // shape: added to the noise index, kept until the next note
                 refreshPitch(3);
             } else if (ch == 0) {
                 const int x = val >> 4, y = val & 15;
@@ -384,13 +411,15 @@ void Player::tick() {
         if (!v.on) continue;
         if (v.chordOn) {
             if (v.chordCnt < 0) v.chordCnt = 1;                    // the tick the command ran on: unchanged, then x, y, 0, x ...
-            else { v.chordOfs = v.chord[v.chordCnt % 3]; ++v.chordCnt; refreshPitch(c); }
+            else {
+                v.chordOfs = v.chord[2] == 0 ? ((v.chordCnt & 1) ? v.chord[1] : 0) : v.chord[v.chordCnt % 3];   // Cx0 alternates x, 0
+                ++v.chordCnt;
+                refreshPitch(c);
+            }
         }
-        if (c == 3 && (v.noiseS || v.noiseC)) {
-            auto sh = [](int val) { return (int8_t((val >> 4) << 4) >> 4) * 16 + (int8_t((val & 15) << 4) >> 4); };
-            if (v.noiseS) v.chordOfs += sh(v.noiseS);
-            if (v.noiseC && (++v.noiseTick & 1) == 0) v.chordOfs += sh(v.noiseC);
-            refreshPitch(3);
+        if (c == 3 && v.noiseS) {                                    // noise P: the shape index moves by value/4 per tick
+            if (v.noiseFresh) v.noiseFresh = false;                  // starts the tick after the command
+            else { v.shapeAcc += int8_t(v.noiseS) / 4.0; v.shapeOfs = int(v.shapeAcc); refreshPitch(3); }
         }
         if (v.retrig > 0 && ++v.retrigCnt >= v.retrig) { v.retrigCnt = 0; retrigger(c); }
     }

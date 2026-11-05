@@ -75,3 +75,15 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   Playback = 16-byte chunks (32 samples) written to wave RAM every 11712 cycles, each with the note-start sequence and frequency 0x749. Sample lengths and chunk timing match the ROM.
 - Noise: NR43 index = note index (mod 120) in the measured table; S xy adds 16*x + y (signed nibbles) to it, table transposes add to it directly.
   P and C on noise (S every tick / every second tick) are not modelled correctly yet.
+
+## Upgrading older songs (measured with the ROM's own file-screen load; src/gb/upgrade.cpp, tools/oracle/upgradecheck.cpp)
+- Format byte 0x7FFF: 0x07, 0x09, 0x0A, 0x0B (old) -> 0x16. Loading an .lsdsng through the ROM (Project > Load/Save song, slot, A) converts it;
+  tools/oracle/lsdsng.py builds the file table, probe.run drives the keys, a screenshot command in drive.cpp shows the screen.
+- Version 7 only: no B command, phrase and table command codes >= 2 go up by one.
+- Pulse/noise envelope release digit old -> new: 0->0, 1..7 -> 5,7,8,9,10,11,11; 8 -> 0 (none); 9..F as (n-8).
+- Wave: new b3 = old b2 & 0xF0 (first frame); version 7 also b2 low nibble 0 -> 15 else +1; play mode (before 0x0A) new = (old + 1) & 3.
+- The old default pulse instrument (b2 = 0x88, b5 = 0x7F, b6 = 1, b8 = 3) becomes `00 A0 00 00 FF 00 00 03 00 00 D0 00 00 00 F3 00`.
+- Noise notes: old notes depend on the instrument's old shape byte (b4); new note = index of a derived NR43 value (shift = 33 - hi - lo
+  for the nibbles of b4, extra shift spills into the divisor bits). Not converted yet.
+- Not converted: synth parameter bytes (0x3EB2..), project bytes 0x3FB6-0x3FB8 and 0x3FCA-B, the text tables at 0x1D00 (LSDJ leaves junk
+  there; a fresh song's are used).

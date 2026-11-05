@@ -6,7 +6,9 @@ def run(names=None, ticks=200):
         n = os.path.basename(f)
         if names and not any(x in n for x in names): continue
         m = lsdsng.decompress(open(f, 'rb').read()); sav = m + J.BASE[0x8000:]; tempo = m[0x3FB4]
-        try: bad = compare.compare(sav, tempo, ticks, chans=(0, 1, 2, 3))
+        cf = os.path.join(os.path.dirname(__file__), '../../reference/oracle/conv/%s.conv' % n[:-7])
+        romsav = (open(cf, 'rb').read() + J.BASE[0x8000:]) if m[0x7FFF] != 0x16 and os.path.exists(cf) else None   # the ROM plays its own conversion
+        try: bad = compare.compare(sav, tempo, ticks, chans=(0, 1, 2, 3), romsav=romsav)
         except Exception as e: print(n, 'ERR', e); continue
         import math
         def near(b):

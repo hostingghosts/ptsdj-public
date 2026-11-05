@@ -11,8 +11,8 @@ def mine_states(sav, ticks):
     # the ROM's tick 0 is its first note trigger: shift ours the same way
     shift = next((k for k in range(10**6) if any(raw.get((k, c), {}).get('en') for c in range(4))), 0) if raw else 0
     return {(k - shift, c): v for (k, c), v in raw.items() if k >= shift}
-def compare(sav, tempo, ticks, chans=(0, 1, 2, 3), fields=('en', 'vol', 'freq', 'duty', 'pan'), frames=None):
-    rom = replay.rom_states(sav, tempo, ticks, frames=frames or int(ticks / (tempo * 0.4) * 60) + 150)
+def compare(sav, tempo, ticks, chans=(0, 1, 2, 3), fields=('en', 'vol', 'freq', 'duty', 'pan'), frames=None, romsav=None):
+    rom = replay.rom_states(romsav or sav, tempo, ticks, frames=frames or int(ticks / (tempo * 0.4) * 60) + 150)
     me = mine_states(sav, ticks + 24)
     bad = []
     for k in range(ticks):
