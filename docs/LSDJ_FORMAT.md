@@ -32,3 +32,12 @@ APU (src/gb/apu.cpp, tools/oracle/apucmp.cpp): per side sum over routed DAC-on c
 apucmp is given a fitted c0; the reference applies volume writes lazily, so envelope write bursts differ for ~1000 samples.
 
 Todo: remaining instrument bytes per type, command bytes, tables/synth semantics, project bytes, kits, speech, compression.
+
+## Player rules measured so far (tools/oracle/compare.py, fuzzcompare.py)
+- Envelope: release digit n (1..15) steps volume down by one every {1,2,3,4,6,8,11,15,20,27,36,48,64,86,115}[n-1] x 1/360 s,
+  independent of tempo; 0 = no fade. LSDJ does it with the NR12 write sequence 09,11,18 (DMG "zombie" write, -1 volume).
+- Pulse: NR10 = ~byte4; NR11 = (byte7 & C0) | (byte3 & 3F); NR12 = (byte1 & F0) | 8; byte3 bit6 = length enable; byte7 bits0-1 pan (L,R).
+- Wave: NR32 = byte1 raw; per note: DAC off, load 16 wave bytes, DAC on, trigger with 0x7E0, then write the real frequency.
+- Noise: NR41 = byte3 & 3F, NR42 = (byte1 & F0) | 8, NR43 from the note table (chain transpose applies, project transpose does not).
+- Commands (byte = letter order, B=2 exists): D delay, G groove, H hop (replaces the step, destination step plays the same tick,
+  HFF stops the song and writes NR52=0), K kill (steps volume to 0 after n ticks), T tempo (not yet verified).
