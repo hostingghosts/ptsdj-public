@@ -107,3 +107,5 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   command of its own does nothing. Done. Column 2 quirk not modelled: with O1 then Z03 in column 2 the ROM changes the pan only every 16 ticks, not every pass.
 - C keeps its phase when run again (same or new value); only a note trigger, starting from off, or C00 resets it. A table C (runs after the chord step) spends its first tick: base, x, y.
 - Vibrato default shape is a triangle (rises 1/16 of the peak per step at speed 0), not a sine; first step after the command is 0.
+- The sub-tick clock (envelope, vibrato, slide, bend steps) runs 6 times per video frame (70224/6 = 11704 cycles), not at 360 Hz: vibrato aliasing against ticks gives a beat of exactly 64 ticks at tempo 128 (7 steps per tick). Residual drift at tempo 100 (<= 12 register units over 70 ticks) is unexplained.
+- Table started by A begins at its row 0 on the next tick; a table row that runs A must not overwrite the new table's position.

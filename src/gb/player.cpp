@@ -11,7 +11,7 @@ namespace {
 // Envelope step period in 1/360 s for release digit 1..15 (measured).
 const uint8_t kEnvPeriod[16] = {0, 1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 86, 115};
 constexpr double kTick = 10485760.0;      // cycles per tick = kTick / tempo
-constexpr double kSub = 4194304.0 / 360.0;
+constexpr double kSub = 70224.0 / 6.0;   // six steps per video frame (358.4 Hz), measured from vibrato beat periods
 constexpr double kKitChunk = 11712.0;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
 }  // namespace
 
@@ -277,6 +277,7 @@ void Player::refreshPitch(int ch) {
 void Player::startTable(int ch, int t) {
     Voice& v = v_[ch];
     v.tbl = t & 31;
+    ++v.tGen;
     v.tStep = v.tStepNow = false;                         // a table started by A runs per tick (measured)
     v.tRow = 0; v.tWait = 0; v.eRow = 0; v.eWait = 0; v.tGroove = 0xFF;
     std::memset(v.hop, 0, sizeof v.hop);
@@ -297,6 +298,7 @@ void Player::tableTick(int ch) {
     if (v.tStep) { if (!v.tStepNow) return; v.tStepNow = false; }
     else if (v.tWait > 0 && --v.tWait > 0) return;
     int row = v.tRow;
+    const int gen = v.tGen;
     for (int guard = 0; guard < 40; ++guard) {
         const int o = t * 16 + row;
         const uint8_t tr = s_.at(uint16_t(off::kTblTrans + o));
@@ -311,6 +313,7 @@ void Player::tableTick(int ch) {
                 else v.hop[row] = 0;
             } else if (c) { slot_ = 1 + k; command(ch, c, val, true); slot_ = 0; }
         }
+        if (v.tGen != gen) { refreshPitch(ch); return; }       // A started another table: it begins at its row 0 next tick
         if (hopped) continue;
         if (v.tGroove != 0xFF) { const uint8_t* g = s_.groove(v.tGroove); v.tWait = g[0] ? g[0] : 1; }
         row = (row + 1) & 15;

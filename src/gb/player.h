@@ -50,6 +50,7 @@ private:
         int tTrans = 0;         // current table transpose
         int fade = -1;          // release nibble override (E command), -1 = instrument's
         int tbl = -1;           // running table or -1
+        int tGen = 0;           // counts table starts, so a table row that runs A does not overwrite the new table's position
         int stepTbl = -1;       // table kept between notes while the instrument runs it per note (byte 5 bit 3)
         bool tStep = false, tStepNow = false;   // step mode: a row runs only on the tick a note starts
         int tRow = 0, tWait = 0, eRow = 0, eWait = 0;
