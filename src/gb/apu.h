@@ -18,7 +18,7 @@ public:
 
     // Run `cycles` T-cycles. The mix is integrated into the accumulators (value x cycles).
     void advance(uint32_t cycles);
-    // Instantaneous mix of the four channels: 0..(15*4*8) per side before scaling.
+    // Instantaneous mix per side: sum of (2 x level - 15) of the routed DAC-on channels, times (master volume + 1).
     void mixNow(int& l, int& r) const;
     // Take (and clear) the integral since the last call: average level over `cycles` for each side.
     void takeAverage(uint32_t cycles, float& l, float& r);
@@ -30,7 +30,7 @@ private:
     struct Pulse {
         bool enabled = false, dac = false, lenEn = false;
         uint8_t duty = 0, step = 0, vol = 0, envInit = 0, envPace = 0, envTimer = 0;
-        bool envUp = false;
+        bool envUp = false, envActive = false;
         uint16_t length = 0, freq = 0;
         int32_t timer = 0;
         // sweep (channel 1)
@@ -48,7 +48,7 @@ private:
     struct Noise {
         bool enabled = false, dac = false, lenEn = false;
         uint8_t vol = 0, envInit = 0, envPace = 0, envTimer = 0, shift = 0, div = 0;
-        bool envUp = false, narrow = false;
+        bool envUp = false, narrow = false, envActive = false;
         uint16_t length = 0, lfsr = 0x7FFF;
         int32_t timer = 0;
     };
@@ -61,7 +61,7 @@ private:
     void lengthTick();
     void sweepTick();
     void envTick();
-    static void envTickOne(uint8_t& vol, uint8_t& timer, uint8_t pace, bool up, bool enabled);
+    static void envTickOne(uint8_t& vol, uint8_t& timer, uint8_t pace, bool up, bool& active, bool enabled);
     bool sweepCalc(bool apply);
     int32_t pulsePeriod(const Pulse& p) const { return int32_t(2048 - p.freq) * 4; }
     int32_t wavePeriod() const { return int32_t(2048 - w_.freq) * 2; }

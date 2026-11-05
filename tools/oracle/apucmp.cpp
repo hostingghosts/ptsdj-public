@@ -19,6 +19,7 @@ int main(int argc, char** argv) {
       while (std::fread(&n, 4, 1, f) == 1) { size_t o = s.size(); s.resize(o + n); if (std::fread(&s[o], 4, n, f) != n) break; } std::fclose(f); }
     long long c0 = argc > 3 ? std::atoll(argv[3]) : 0;
     long long from = argc > 4 ? std::atoll(argv[4]) : 0, to = argc > 5 ? std::atoll(argv[5]) : (long long)s.size();
+    if (to > (long long)s.size()) to = (long long)s.size();
     gb::Apu apu;
     size_t wi = 0;
     long long bad = 0, n = 0, firstBad = -1;
@@ -30,7 +31,7 @@ int main(int argc, char** argv) {
         int l, r;
         apu.mixNow(l, r);
         const int gl = int16_t(s[k] >> 16), gr = int16_t(s[k] & 0xFFFF);
-        const int el = -l * 64, er = -r * 64;
+        const int el = l * 64, er = r * 64;
         ++n;
         if (gl != el || gr != er) { if (firstBad < 0) firstBad = k; ++bad; if (bad < 12 || (std::getenv("V") && bad < 200)) std::printf("  k=%lld gb=(%d,%d) mine=(%d,%d)\n", k, gl, gr, el, er); }
     }

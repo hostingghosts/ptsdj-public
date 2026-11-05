@@ -5,7 +5,8 @@
 namespace gb {
 
 namespace {
-const uint8_t kDuty[4][8] = {{0, 0, 0, 0, 0, 0, 0, 1}, {1, 0, 0, 0, 0, 0, 0, 1}, {1, 0, 0, 0, 0, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 1, 0}};
+// Step 0 is the step a triggered channel starts on; tables fitted to the reference emulator's output.
+const uint8_t kDuty[4][8] = {{0, 0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 1, 1}, {0, 0, 0, 0, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 0, 0}};
 }
 
 void Apu::reset() {
@@ -46,11 +47,15 @@ int Apu::channelLevel(int ch) const {
 }
 
 void Apu::recompute() {
+    // Each channel with its DAC on is bipolar: 2 x level - 15 (a stopped channel sits at -15); DAC off adds nothing.
     const int o[4] = {pulseOut(p1_), pulseOut(p2_), waveOut(), noiseOut()};
+    const bool dac[4] = {p1_.dac, p2_.dac, w_.dac, n_.dac};
     int l = 0, r = 0;
     for (int i = 0; i < 4; ++i) {
-        if (nr51_ & (0x10 << i)) l += o[i];
-        if (nr51_ & (1 << i)) r += o[i];
+        if (!dac[i]) continue;
+        const int v = 2 * o[i] - 15;
+        if (nr51_ & (0x10 << i)) l += v;
+        if (nr51_ & (1 << i)) r += v;
     }
     mixL_ = l * (((nr50_ >> 4) & 7) + 1);
     mixR_ = r * ((nr50_ & 7) + 1);
@@ -66,12 +71,23 @@ uint8_t Apu::read(uint16_t a) const {
     return 0xFF;
 }
 
-void Apu::envTickOne(uint8_t& vol, uint8_t& timer, uint8_t pace, bool up, bool enabled) {
-    if (!enabled || pace == 0) return;
-    if (timer > 0 && --timer == 0) {
-        timer = pace;
+// Writing NRx2 while the channel runs changes its volume ("zombie mode", DMG behaviour).
+static uint8_t nr2raw(uint8_t init, bool up, uint8_t pace) { return uint8_t(init << 4 | (up ? 8 : 0) | pace); }
+static void zombie(uint8_t& vol, bool& active, uint8_t oldNr2, uint8_t newNr2) {
+    if (!(oldNr2 & 7) && active) ++vol;
+    else if (!(oldNr2 & 8)) vol += 2;
+    if ((oldNr2 ^ newNr2) & 8) vol = uint8_t(16 - vol);
+    vol &= 15;
+}
+
+void Apu::envTickOne(uint8_t& vol, uint8_t& timer, uint8_t pace, bool up, bool& active, bool enabled) {
+    if (!enabled || !active) return;
+    if (--timer == 0) {
+        timer = pace ? pace : 8;
+        if (pace == 0) return;
         if (up && vol < 15) ++vol;
         else if (!up && vol > 0) --vol;
+        else active = false;
     }
 }
 
@@ -94,8 +110,10 @@ void Apu::trigger1() {
     p.enabled = p.dac;
     if (p.length == 0) p.length = 64;
     p.timer = pulsePeriod(p);
+    p.step = 0;
     p.vol = p.envInit;
     p.envTimer = p.envPace ? p.envPace : 8;
+    p.envActive = true;
     p.shadow = p.freq;
     p.swTimer = p.swPace ? p.swPace : 8;
     p.swOn = p.swPace || p.swShift;
@@ -106,8 +124,10 @@ void Apu::trigger2() {
     p.enabled = p.dac;
     if (p.length == 0) p.length = 64;
     p.timer = pulsePeriod(p);
+    p.step = 0;
     p.vol = p.envInit;
     p.envTimer = p.envPace ? p.envPace : 8;
+    p.envActive = true;
 }
 void Apu::trigger3() {
     w_.enabled = w_.dac;
@@ -121,6 +141,7 @@ void Apu::trigger4() {
     n_.timer = noisePeriod();
     n_.vol = n_.envInit;
     n_.envTimer = n_.envPace ? n_.envPace : 8;
+    n_.envActive = true;
     n_.lfsr = 0x7FFF;
 }
 
@@ -157,6 +178,7 @@ void Apu::write(uint16_t a, uint8_t v) {
             break;
         case 0xFF11: p1_.duty = v >> 6; p1_.length = 64 - (v & 63); break;
         case 0xFF12:
+            if (p1_.enabled) zombie(p1_.vol, p1_.envActive, nr2raw(p1_.envInit, p1_.envUp, p1_.envPace), v);
             p1_.envInit = v >> 4; p1_.envUp = (v & 8) != 0; p1_.envPace = v & 7; p1_.dac = (v & 0xF8) != 0;
             if (!p1_.dac) p1_.enabled = false;
             break;
@@ -168,6 +190,7 @@ void Apu::write(uint16_t a, uint8_t v) {
             break;
         case 0xFF16: p2_.duty = v >> 6; p2_.length = 64 - (v & 63); break;
         case 0xFF17:
+            if (p2_.enabled) zombie(p2_.vol, p2_.envActive, nr2raw(p2_.envInit, p2_.envUp, p2_.envPace), v);
             p2_.envInit = v >> 4; p2_.envUp = (v & 8) != 0; p2_.envPace = v & 7; p2_.dac = (v & 0xF8) != 0;
             if (!p2_.dac) p2_.enabled = false;
             break;
@@ -191,6 +214,7 @@ void Apu::write(uint16_t a, uint8_t v) {
             break;
         case 0xFF20: n_.length = 64 - (v & 63); break;
         case 0xFF21:
+            if (n_.enabled) zombie(n_.vol, n_.envActive, nr2raw(n_.envInit, n_.envUp, n_.envPace), v);
             n_.envInit = v >> 4; n_.envUp = (v & 8) != 0; n_.envPace = v & 7; n_.dac = (v & 0xF8) != 0;
             if (!n_.dac) n_.enabled = false;
             break;
@@ -227,9 +251,9 @@ void Apu::sweepTick() {
 }
 
 void Apu::envTick() {
-    envTickOne(p1_.vol, p1_.envTimer, p1_.envPace, p1_.envUp, p1_.enabled);
-    envTickOne(p2_.vol, p2_.envTimer, p2_.envPace, p2_.envUp, p2_.enabled);
-    envTickOne(n_.vol, n_.envTimer, n_.envPace, n_.envUp, n_.enabled);
+    envTickOne(p1_.vol, p1_.envTimer, p1_.envPace, p1_.envUp, p1_.envActive, p1_.enabled);
+    envTickOne(p2_.vol, p2_.envTimer, p2_.envPace, p2_.envUp, p2_.envActive, p2_.enabled);
+    envTickOne(n_.vol, n_.envTimer, n_.envPace, n_.envUp, n_.envActive, n_.enabled);
 }
 
 void Apu::frameStep() {
