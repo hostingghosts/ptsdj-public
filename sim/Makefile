@@ -30,13 +30,14 @@ $(OUT)/obj/sim/%.o: src/%.cpp
 $(BIN): $(CORE_OBJS) $(SIM_OBJS)
 	$(CXX) $^ $(LDLIBS) -o $@
 
-# Headless smoke test on a scratch SD folder: the first screen must be blank (every pixel the background colour).
+# Headless smoke test: a tour of every LSDJ screen (screenshots keep to the four DMG shades) and a demo song played to a WAV.
 check: $(BIN)
-	rm -rf $(OUT)/check-sd
-	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BIN) --sd $(OUT)/check-sd \
-	    --script scripts/blank_smoke.txt --wav $(OUT)/smoke.wav --screenshot $(OUT)/smoke-end.png
-	python3 -I scripts/check_blank.py $(OUT)/blank.png 0x0F380F
-	python3 -I scripts/check_wav.py $(OUT)/smoke.wav
+	rm -rf $(OUT)/check-sd $(OUT)/play-sd
+	mkdir -p $(OUT)/play-sd/GB && cp $(ROOT)/demos/kicks-v9.2.lsdsng $(OUT)/play-sd/GB/AUTOLOAD.LSDSNG
+	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BIN) --sd $(OUT)/check-sd --script scripts/lsdj_tour.txt
+	for s in song phrase chain instr table groove project; do python3 -I scripts/check_screen.py $(OUT)/lsdj-$$s.png || exit 1; done
+	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BIN) --sd $(OUT)/play-sd --script scripts/play_demo.txt --wav $(OUT)/play.wav
+	python3 -I scripts/check_wav.py $(OUT)/play.wav
 
 clean:
 	rm -rf $(OUT)

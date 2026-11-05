@@ -1,20 +1,19 @@
 # polyend-gb
 
-Firmware for the original Polyend Tracker (MK66, Teensy 3.6 core) that is meant to become a Game Boy tracker in the style of
-LSDJ and other Game Boy synths and trackers. **Personal use only, all rights reserved** (see `LICENSE`, `NOTICE.md`).
+LSDJ-style Game Boy tracker for the original Polyend Tracker (MK66). Personal use only (see `LICENSE`, `NOTICE.md`).
 
-State: an empty shell. It boots on the proven hardware layer, plays silence and shows a blank first screen (a 1.6 s
-"GB TRACKER" splash on the device only). No sequencer, sound engine or screens yet.
+State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (partial), LSDJ-look screens (Song, Chain, Phrase,
+Instrument, Table, Groove, Project). Not yet: synth/wave screens, kits, most commands, 8-channel dual engine, WAV export.
+Desktop simulator first; nothing tested on the Tracker.
+
+Controls (Game Boy key = Tracker key): D-pad = arrows, A = Insert, B = Delete, Select = Shift, Start = Play. Jog wheel =
+A+left/right (Shift: A+up/down). Pads enter notes in the phrase screen. Shift+arrows move between screens.
 
 ```
-make host-test                    # host unit tests (ASan/UBSan)
-make sim                          # desktop simulator: build/sim/gb-sim
-make -C sim check                 # headless run: first screen must be all background pixels, audio silent
-make CROSS=<path>/arm-none-eabi-  # device image: build/PolyendTracGBTrkv010.ptf (24 chars), checked by tools/check_image.py
-make check                        # host tests + simulator check + device image
+make host-test                    # unit tests
+make sim; build/sim/gb-sim        # simulator (keys: arrows, Insert, Delete, Shift, Space)
+make -C sim check                 # screen tour (4 DMG shades only) + demo song to WAV
+make CROSS=<path>/arm-none-eabi-  # build/PolyendTracGBTrkv010.ptf (24 chars, checked)
 ```
-
-The device build needs `arm-none-eabi-gcc` 10.3 (Polyend's tool-chain version). Install `libsdl2-dev` and `pkg-config` for the simulator.
-Copy the `.ptf` to `/Firmware` on a FAT32 card and read `LEARNINGS.md` and `docs/upstream/hardware-test-plan.md` §0 first.
-
-Docs: `LEARNINGS.md` (rules), `docs/HARDWARE_MAP.md` (one page), `docs/upstream/` (notes from SIDTracker/OpenTracker), `UPSTREAM.md` (provenance).
+Songs: `GB/Songs/*.lsdsng` on the card (`GB/AUTOLOAD.LSDSNG` opens at start). `demos/` holds sample songs and kits.
+Docs: `LEARNINGS.md`, `docs/LSDJ_FORMAT.md`, `docs/HARDWARE_MAP.md`, `UPSTREAM.md`. `tools/oracle/` checks against an LSDJ ROM.

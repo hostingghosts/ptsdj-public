@@ -4,6 +4,7 @@
 #include <deque>
 
 #include "atw/app.h"
+#include "gb/ui/lsdj.h"
 #include "atw/midi_in.h"
 #include "test.h"
 #include "ui/buttons.h"
@@ -122,35 +123,42 @@ TEST(init_needs_display_input_and_clock) {
     CHECK(a.init(p));
 }
 
-TEST(first_screen_is_blank) {
+TEST(first_screen_is_the_song_screen_on_the_game_boy_lcd) {
     Rig r;
-    r.loop(50);
+    r.loop(100);
     CHECK(r.display.frames > 0);
-    CHECK_EQ(int(r.app.ui.current()), int(ui::ScreenId::kBlank));
-    CHECK_EQ(r.display.texts, 0u);   // the last frame carries no text at all
-    CHECK_EQ(int(r.display.clearR), 0x0F);
-    CHECK_EQ(int(r.display.clearG), 0x38);
-    CHECK_EQ(int(r.display.clearB), 0x0F);
+    CHECK_EQ(int(r.app.lsdj.screen()), int(gb::Scr::Song));
+    CHECK_EQ(r.display.texts, 0u);                     // no CMD_TEXT at all: the screen is one bitmap
+    CHECK(r.display.maxWords < 100);                   // and the display list stays tiny
 }
 
-TEST(splash_comes_first_then_the_blank_screen) {
+TEST(splash_comes_first_then_the_lcd) {
     Rig r;
     r.app.ui.showSplash(300);
     r.loop(100);
-    CHECK(r.display.texts > 0);      // the splash shows its name
+    CHECK(r.display.texts > 0);
     r.loop(400);
-    CHECK_EQ(r.display.texts, 0u);   // then nothing
+    CHECK_EQ(r.display.texts, 0u);
 }
 
-TEST(blank_screen_is_redrawn_at_least_once_a_second) {
+TEST(keys_edit_the_song_and_play_starts_the_player) {
     Rig r;
     r.loop(50);
-    const uint32_t before = r.display.frames;
-    r.loop(1100);
-    CHECK(r.display.frames > before);
+    ot::InputEvent e;
+    auto tap = [&](uint8_t id) { e.type = ot::InputEvent::kButtonDown; e.id = id; r.input.q.push_back(e); e.type = ot::InputEvent::kButtonUp; r.input.q.push_back(e); r.loop(30); };
+    tap(b::Insert);                                    // A on an empty song cell inserts a chain
+    CHECK_EQ(int(r.app.song.songCell(0, 0)), 0);
+    tap(b::Right);
+    CHECK_EQ(r.app.lsdj.songCh, 1);
+    r.app.song.chainPhrase(0, 0) = 0;                  // give chain 0 a phrase with a note so there is something to play
+    r.app.song.note(0, 0) = 25;
+    tap(b::Play);
+    CHECK(r.app.player.running());
+    tap(b::Play);
+    CHECK(!r.app.player.running());
 }
 
-TEST(audio_is_started_and_silent) {
+TEST(audio_is_started_and_silent_until_play) {
     Rig r;
     CHECK(r.audio.started);
     CHECK(r.audio.fn != nullptr);
@@ -180,19 +188,6 @@ TEST(power_hold_shows_the_shutdown_bar_and_mutes_then_cancel_restores) {
     r.loop(50);
     CHECK(!gMuted);
     CHECK_EQ(r.display.texts, 0u);
-}
-
-TEST(other_keys_leave_the_screen_blank) {
-    Rig r;
-    for (uint8_t id : {b::F1, b::F8, b::Shift, b::Play, b::Rec, b::Help}) {
-        r.push(ot::InputEvent::kButtonDown, id);
-        r.push(ot::InputEvent::kButtonUp, id);
-    }
-    r.push(ot::InputEvent::kPadDown, 3);
-    r.push(ot::InputEvent::kEncoder, 0);
-    r.loop(100);
-    CHECK_EQ(r.display.texts, 0u);
-    CHECK_EQ(int(r.app.ui.current()), int(ui::ScreenId::kBlank));
 }
 
 TEST(display_list_stays_within_budget) {

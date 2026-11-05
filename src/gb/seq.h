@@ -49,6 +49,11 @@ public:
     void setGroove(int c, uint8_t g) { ch_[c].groove = g & 31; ch_[c].gpos = 0; }
     bool playing() const { return ch_[0].active || ch_[1].active || ch_[2].active || ch_[3].active; }
     int row(int c) const { return ch_[c].row; }
+    bool active(int c) const { return ch_[c].active; }
+    int chainPos(int c) const { return ch_[c].cpos; }
+    int step(int c) const { return ch_[c].step; }
+    int phrase(int c) const { return ch_[c].phrase; }
+    int chain(int c) const { return ch_[c].chain; }
 
 private:
     struct Ch {

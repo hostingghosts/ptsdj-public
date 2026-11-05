@@ -1,6 +1,0 @@
-# GB tracker smoke test: the first screen is blank. Some input must not change that.
-wait 300
-screenshot ../build/sim/blank.png
-tap F1
-tap SHIFT
-wait 100

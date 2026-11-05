@@ -6,6 +6,10 @@
 #include <cstdint>
 
 #include "atw/ui/ui.h"
+#include "gb/lsdsng.h"
+#include "gb/player.h"
+#include "gb/song.h"
+#include "gb/ui/lsdj.h"
 #include "hal_api.h"
 
 namespace atw {
@@ -45,7 +49,15 @@ public:
     void quiesce();
 
     const Platform& platform() const { return p_; }
+    gb::Song song;
+    gb::Player player{song};
+    gb::Lsdj lsdj{song, player};
     ui::Ui ui;
+    void fill(int16_t* out, uint32_t frames);   // audio callback body
+    // Songs live on the card as .lsdsng files in GB/Songs (the format LSDJ's own tools use).
+    bool loadSong(const char* path);
+    bool saveSong(const char* path, const char* name);
+    static constexpr const char* kSongDir = "GB/Songs";
 
 private:
     Platform p_;

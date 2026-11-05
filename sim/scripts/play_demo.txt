@@ -1,0 +1,5 @@
+wait 300
+tap PLAY
+wait 6000
+tap PLAY
+wait 200

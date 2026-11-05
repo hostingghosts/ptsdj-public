@@ -13,9 +13,12 @@ namespace b = ot::btn;
 
 void Ui::init(App& app) {
     app_ = &app;
+    blank_.bind(&app.lsdj);
     for (int i = 0; i < int(ScreenId::kCount); ++i) screen(ScreenId(i))->attach(*this);
     show(ScreenId::kBlank);
 }
+
+ot::IDisplay& Ui::display() { return *app_->platform().display; }
 
 Screen* Ui::screen(ScreenId id) {
     switch (id) {
@@ -32,12 +35,13 @@ void Ui::show(ScreenId id) {
 
 void Ui::handle(const ot::InputEvent& ev) {
     dirty_ = true;
-    if (ev.type != ot::InputEvent::kButtonDown && ev.type != ot::InputEvent::kButtonUp) return;
-    const bool down = ev.type == ot::InputEvent::kButtonDown;
-    if (ev.id == b::Shift) {
-        shift = down;
+    if (ev.type == ot::InputEvent::kEncoder) { screen(current_)->encoder(ev.delta); return; }
+    if (ev.type == ot::InputEvent::kPadDown || ev.type == ot::InputEvent::kPadUp) {
+        screen(current_)->pad(ev.id, ev.type == ot::InputEvent::kPadDown, ev.velocity);
         return;
     }
+    if (ev.type != ot::InputEvent::kButtonDown && ev.type != ot::InputEvent::kButtonUp) return;
+    const bool down = ev.type == ot::InputEvent::kButtonDown;
     if (ev.id == b::Power) {
         if (down) {
             powerHeld_ = true;
@@ -108,6 +112,7 @@ void Ui::update(uint32_t nowMs) {
         dirty_ = true;
     }
     Screen& s = *screen(current_);
+    if (frames_ != 0 && nowMs - lastFrame_ >= (dirty_ ? 16u : (s.animated() ? 40u : 1000u))) s.prepare(*app_->platform().display);
     // Redraw on change, while the screen animates, and once a second otherwise (the first frame goes out at once).
     const uint32_t period = dirty_ ? 16u : (s.animated() ? 40u : 1000u);
     if (frames_ != 0 && nowMs - lastFrame_ < period) return;
@@ -120,6 +125,43 @@ void Ui::update(uint32_t nowMs) {
     g.endFrame();
     ++frames_;
 }
+
+}  // namespace ui
+}  // namespace atw
+
+namespace atw {
+namespace ui {
+
+void GbScreen::prepare(ot::IDisplay& d) {
+    if (!lsdj_) return;
+    lsdj_->draw(lcd_);
+    lcd_.prepare(d);
+}
+
+void GbScreen::draw(ot::Gfx& g) {
+    if (!lsdj_) return;
+    lcd_.draw(g.display());
+}
+
+bool GbScreen::button(uint8_t id, bool down) {
+    if (!lsdj_) return false;
+    using gb::Key;
+    switch (id) {
+        case ot::btn::Up: lsdj_->key(Key::Up, down); break;
+        case ot::btn::Down: lsdj_->key(Key::Down, down); break;
+        case ot::btn::Left: lsdj_->key(Key::Left, down); break;
+        case ot::btn::Right: lsdj_->key(Key::Right, down); break;
+        case ot::btn::Insert: lsdj_->key(Key::A, down); break;       // A
+        case ot::btn::Delete: lsdj_->key(Key::B, down); break;       // B
+        case ot::btn::Shift: lsdj_->key(Key::Select, down); break;   // Select
+        case ot::btn::Play: lsdj_->key(Key::Start, down); break;     // Start
+        default: return false;
+    }
+    return true;
+}
+
+void GbScreen::encoder(int delta) { if (lsdj_) lsdj_->encoder(delta); }
+bool GbScreen::pad(int p, bool down, uint8_t) { if (lsdj_ && down) lsdj_->padNote(p); return true; }
 
 }  // namespace ui
 }  // namespace atw

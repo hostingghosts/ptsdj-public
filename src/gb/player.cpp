@@ -23,6 +23,7 @@ void Player::start(int row) {
     if (tempo_ < 40) tempo_ = 40;
     seq_.start(row);
     running_ = true;
+    hpInit_ = false;
     now_ = 0;
     nextTick_ = 0;
     next360_ = kSub;
@@ -168,11 +169,12 @@ void Player::render(int16_t* out, int n, int rate) {
         run(c);
         float l, r;
         apu_.takeAverage(c ? c : 1, l, r);
+        if (!hpInit_) { prevL_ = l; prevR_ = r; hpL_ = hpR_ = 0; hpInit_ = true; }
         // one-pole high-pass: the real output stage is AC coupled
         hpL_ = l - prevL_ + 0.9995f * hpL_; prevL_ = l;
         hpR_ = r - prevR_ + 0.9995f * hpR_; prevR_ = r;
-        out[2 * i] = int16_t(std::clamp(hpL_ * 62.0f, -32767.0f, 32767.0f));
-        out[2 * i + 1] = int16_t(std::clamp(hpR_ * 62.0f, -32767.0f, 32767.0f));
+        out[2 * i] = int16_t(std::clamp(hpL_ * 50.0f, -32767.0f, 32767.0f));
+        out[2 * i + 1] = int16_t(std::clamp(hpR_ * 50.0f, -32767.0f, 32767.0f));
     }
 }
 

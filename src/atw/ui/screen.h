@@ -34,6 +34,7 @@ public:
     virtual ~Screen() = default;
     virtual const char* title() const = 0;
     virtual void enter() {}
+    virtual void prepare(ot::IDisplay&) {}   // before the display list starts: RAM_G uploads
     virtual void draw(ot::Gfx& g) = 0;
     // Bottom-bar labels for F1..F8 (null = empty).
     virtual void labels(const char* out[8]) { (void)out; }

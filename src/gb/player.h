@@ -24,6 +24,9 @@ public:
     bool running() const { return running_ && seq_.playing(); }
     void run(uint32_t cycles);                       // advance the whole machine
     Apu& apu() { return apu_; }
+    const Seq& seq() const { return seq_; }
+    bool voiceOn(int c) const { return v_[c].on; }
+    void setTempo(int t) { tempo_ = t; }
     int tempo() const { return tempo_; }
     // Audio: `n` stereo frames at `rate` Hz, 16-bit interleaved. Each output sample is the box-filtered mix.
     void render(int16_t* out, int n, int rate);
@@ -61,6 +64,7 @@ private:
     // render state
     double carry_ = 0;
     float hpL_ = 0, hpR_ = 0, prevL_ = 0, prevR_ = 0;
+    bool hpInit_ = false;
 };
 
 }  // namespace gb

@@ -5,6 +5,8 @@
 #include <cstdint>
 
 #include "atw/ui/screen.h"
+#include "gb/ui/lcd.h"
+#include "gb/ui/lsdj.h"
 #include "hal_api.h"
 #include "ui/buttons.h"
 
@@ -14,16 +16,27 @@ namespace ui {
 
 enum class ScreenId : uint8_t { kBlank, kCount };
 
-// The first screen: nothing but the background colour.
-class BlankScreen final : public Screen {
+// The LSDJ-style screens: one Screen that draws the 160 x 144 Game Boy display and maps the Tracker's controls to its keys.
+class GbScreen final : public Screen {
 public:
+    void bind(gb::Lsdj* l) { lsdj_ = l; }
     const char* title() const override { return ""; }
-    void draw(ot::Gfx&) override {}
+    void prepare(ot::IDisplay& d) override;
+    void draw(ot::Gfx& g) override;
+    bool button(uint8_t id, bool down) override;
+    void encoder(int delta) override;
+    bool pad(int p, bool down, uint8_t vel) override;
+    bool animated() const override { return true; }
+
+private:
+    gb::Lsdj* lsdj_ = nullptr;
+    gb::Lcd lcd_;
 };
 
 class Ui {
 public:
     void init(App& app);
+    ot::IDisplay& display();
     void handle(const ot::InputEvent& ev);   // one panel event
     void update(uint32_t nowMs);
     void show(ScreenId id);
@@ -40,7 +53,7 @@ private:
     void drawSplash(ot::Gfx& g);
 
     App* app_ = nullptr;
-    BlankScreen blank_;
+    GbScreen blank_;
     ScreenId current_ = ScreenId::kBlank;
     bool dirty_ = true;
     uint32_t now_ = 0, lastFrame_ = 0, frames_ = 0;
