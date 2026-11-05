@@ -59,3 +59,27 @@ TEST(old_default_pulse_instrument_becomes_the_new_default) {
     CHECK_EQ(int(s.instrument(5)[4]), 0xFF);
     CHECK_EQ(int(s.instrument(5)[10]), 0xD0);
 }
+
+TEST(noise_notes_follow_the_old_shape_byte) {
+    Song s;
+    s.mem()[0x7FFF] = 9;
+    uint8_t* n = s.instrument(3);
+    n[0] = 3; n[4] = 0x6F;                                  // old noise instrument, shape byte 0x6F
+    s.note(0, 0) = 37; s.phraseInstr(0, 0) = 3;             // octave 3: the shape byte is used as is -> new note 32 (measured)
+    s.note(0, 1) = 1;  s.phraseInstr(0, 1) = 3;             // three octaves down: high nibble 6 -> 3 -> new note 20
+    CHECK(upgradeSong(s));
+    CHECK_EQ(int(s.note(0, 0)), 32);
+    CHECK_EQ(int(s.note(0, 1)), 20);
+}
+
+TEST(retrigger_period_counts_from_one_now) {
+    Song s;
+    s.mem()[0x7FFF] = 9;
+    s.phraseCmd(0, 0) = 14; s.phraseVal(0, 0) = 0x51;
+    s.phraseCmd(0, 1) = 14; s.phraseVal(0, 1) = 0x8A;       // R8y stays
+    s.phraseCmd(0, 2) = 14; s.phraseVal(0, 2) = 0x2F;       // once stays
+    CHECK(upgradeSong(s));
+    CHECK_EQ(int(s.phraseVal(0, 0)), 0x52);
+    CHECK_EQ(int(s.phraseVal(0, 1)), 0x8A);
+    CHECK_EQ(int(s.phraseVal(0, 2)), 0x2F);
+}

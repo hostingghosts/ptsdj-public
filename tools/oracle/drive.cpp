@@ -9,6 +9,7 @@
 #include "gambatte.h"
 #include "inputgetter.h"
 struct In : gambatte::InputGetter { unsigned p = 0; unsigned operator()() override { return p; } };
+unsigned g_pc=0; FILE* g_trace=nullptr;
 gambatte::GB gb; In in;
 FILE* logf=nullptr; unsigned long frames=0;
 void onw(char p,char d,unsigned long c){ if(logf && (unsigned char)p>=0x10 && (unsigned char)p<0x40) fprintf(logf,"%lu %lu %02X %02X\n",frames,c,(unsigned char)p,(unsigned char)d);}
@@ -36,6 +37,7 @@ int main(int argc, char** argv) {
     if (c == "wait") wait(atoi(a.c_str()));
     else if (c == "press") { in.p = parse(a); wait(n ? n : 4); in.p = 0; wait(4); }
     else if (c == "save") gb.saveSavedata();
+    else if (c == "trace") { if (a=="off") { if(g_trace) fclose(g_trace); g_trace=nullptr; } else g_trace=fopen(a.c_str(),"w"); }
     else if (c == "shot") { FILE* o=fopen(a.c_str(),"wb"); fprintf(o,"P6 160 144 255\n"); for(int i=0;i<160*144;i++){unsigned p=vbuf[i]; fputc((p>>16)&255,o); fputc((p>>8)&255,o); fputc(p&255,o);} fclose(o); }
   }
   gb.saveSavedata();

@@ -56,9 +56,13 @@ void Player::noteOn(int ch, const StepEvent& e) {
     if (e.instr != 0xFF) v.instr = e.instr & 63;
     const uint8_t* in = instr(v.instr);
     int n = e.note;
-    n += e.transpose;
-    if (ch != 3) n += int8_t(s_.at(off::kTranspose));
-    n = std::clamp(n, 1, 127);
+    {   // transposes that would leave the note range are ignored below it and wrap above it (measured on LSDJ 9.4.2)
+        const int base0 = n;
+        n += e.transpose;
+        if (ch != 3) n += int8_t(s_.at(off::kTranspose));
+        if (n < 1) n = base0; else if (n > 135) n -= 136;
+        n = std::clamp(n, 1, 127);
+    }
     v.note = n;
     v.base = n;
     v.tTrans = 0;
@@ -107,6 +111,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
             v.vol = in[1] >> 4;
             break;
     }
+    if (ch < 2) refreshPitch(ch);                   // pulse 2 tune and the fine tune apply from the first moment
     if (in[6] & 0x20) startTable(ch, in[6] & 0x1F); else v.tbl = -1;
 }
 
