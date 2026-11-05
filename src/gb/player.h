@@ -61,8 +61,11 @@ private:
         int vibSpeed = 0, vibDepth = 0;   // V command (depth 0 = off)
         double vibPhase = 0;
         double vibSemis = 0;
-        double slideSemis = 0, slideStep = 0; int slideLeft = 0;   // L: remaining offset to the target, per-step change
-        double bendRate = 0, bendSemis = 0;                          // P
+        int startedTick = -1;                                         // tick the note started on
+        int chordAge = 0;                                             // ticks since the chord started (byte 8 sets how many each note lasts)
+        int bendDelay = 0;                                            // sub-steps to wait before a slide starts moving
+        bool bendTgt = false;                                         // L: the accumulator slides to 0 and stops there
+        int bendRate = 0; int16_t bendAcc = 0;      // P: rate and accumulator in 1/256 semitone (16 bit, as the ROM)                          // P
         int chord[3] = {0, 0, 0}; bool chordOn = false; int chordCnt = 0, chordOfs = 0;   // C
         int kPos = 0, kChunks = 0, kLimit = 0, kBeg[2] = {0, 0}, kEnd[2] = {0, 0}, kFreq = 0x749; bool kPlay = false, kLoop = false, kHas[2] = {false, false}; Kit kit[2];   // kit samples being streamed
         double wPos = 0; int wDir = 1, wCnt = 0; bool wAnim = false;   // wave frame animation
@@ -79,6 +82,11 @@ private:
     void command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool again = false);   // again: Z re-applies it, keeping running phases
     void startTable(int ch, int t);
     void retrigVolume(int ch);
+    void startSlide(int ch, int val);
+    static int pitchIndex(int ch, int n);
+    static int bendRateOf(uint8_t val);
+    static uint16_t pitchToFreq(const uint16_t* tab, int total, int16_t& bendAcc);
+    static int waveIndex(int n);
     void tableTick(int ch);
     void setVolume(int ch, int target);
     void refreshPitch(int ch);

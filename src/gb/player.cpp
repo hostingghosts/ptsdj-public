@@ -10,6 +10,7 @@ namespace {
 #include "gb/tables.inc"
 // Envelope step period in 1/360 s for release digit 1..15 (measured).
 const uint8_t kEnvPeriod[16] = {0, 1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 86, 115};
+constexpr int kSlideDelay = 1;
 constexpr double kTick = 10485760.0;      // cycles per tick = kTick / tempo
 constexpr double kSub = 70224.0 / 6.0;   // six steps per video frame (358.4 Hz), measured from vibrato beat periods
 constexpr double kKitChunk = 11712.0;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
@@ -70,11 +71,12 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.fade = -1;
     v.vibDepth = 0;
     v.vibSemis = 0;
-    v.bendRate = v.bendSemis = 0;
+    v.bendRate = v.bendAcc = 0;
     v.chordOn = false; v.chordOfs = 0;
     v.retrig = -1; v.retrigDv = 0;
     v.noiseS = 0; v.shapeOfs = 0; v.shapeAcc = 0;
-    if (!v.slideLeft) v.slideSemis = 0;
+    v.bendTgt = false;
+    v.startedTick = tickNo_;
     v.on = true;
     v.envCount = 0;
     v.envSteps = 0;
@@ -250,6 +252,82 @@ static double vibShape(int shape, double ph) {
     }
 }
 
+
+static const uint16_t kLinFreq[110] = {0,19,38,57,76,96,115,134,153,172,191,210,229,248,267,287,306,325,344,363,382,401,420,439,458,478,497,516,535,554,573,592,611,630,649,669,688,707,726,745,764,783,802,821,841,860,879,898,917,936,955,974,993,1012,1032,1051,1070,1089,1108,1127,1146,1165,1184,1203,1223,1242,1261,1280,1299,1318,1337,1356,1375,1395,1414,1433,1452,1471,1490,1509,1528,1547,1566,1586,1605,1624,1643,1662,1681,1700,1719,1738,1757,1777,1796,1815,1834,1853,1872,1891,1910,1929,1948,1968,1987,2006,2025,2044,59589,0};
+
+// Pitch index (x256) in the linear table whose frequency is the wave note's measured frequency.
+int Player::waveIndex(int n) {
+    static int cache[256];
+    static bool ready = false;
+    if (!ready) {
+        int16_t dummy = 0;
+        for (int i = 1; i < 128; ++i) {
+            int lo = 0, hi = 107 * 256;               // the table is monotone: find the first index reaching the wanted frequency
+            while (lo < hi) {
+                const int mid = (lo + hi) / 2;
+                if (int(pitchToFreq(kLinFreq, mid, dummy)) < int(kWaveFreq[i])) lo = mid + 1; else hi = mid;
+            }
+            int best = lo;
+            if (lo > 0 && std::abs(int(pitchToFreq(kLinFreq, lo - 1, dummy)) - int(kWaveFreq[i])) < std::abs(int(pitchToFreq(kLinFreq, lo, dummy)) - int(kWaveFreq[i]))) best = lo - 1;
+            cache[i] = best;
+        }
+        ready = true;
+    }
+    if (n >= 1 && n < 128) return cache[n];
+    return cache[n < 1 ? 1 : 127];
+}
+
+int Player::pitchIndex(int ch, int n) { return ch == 2 ? waveIndex(n) : (n - 1) * 256; }
+
+// L: slide the pitch accumulator to 0 in value + 1 sub-steps (value 0 jumps there); the rate is |acc| / (value + 1), truncated (ROM 02:4363).
+void Player::startSlide(int ch, int val) {
+    Voice& v = v_[ch];
+    if (val == 0) { v.bendAcc = 0; v.bendRate = 0; v.bendTgt = false; return; }
+    const int c = std::min(val + 1, 255);
+    const int mag = std::abs(int(v.bendAcc)) / c;
+    v.bendRate = v.bendAcc > 0 ? -mag : mag;
+    v.bendTgt = true;
+    v.bendDelay = kSlideDelay;
+}
+
+// Bend rate per sub-step for the P value (1/256 semitone): round(v*v/8 + v/2), mirrored for negative values (ROM table at 02:43D8).
+int Player::bendRateOf(uint8_t val) {
+    const int a = val < 128 ? val : 256 - val;
+    const int r = int(std::lround(a * a / 8.0 + a / 2.0));
+    return val < 128 ? r : -r;
+}
+
+// Pitch (note index * 256 + fraction) -> frequency register, as the ROM does it: indices past the table wrap by 108 (adjusting the bend), -8..-1 give 0,
+// and the fraction interpolates with the difference of the low bytes only.
+uint16_t Player::pitchToFreq(const uint16_t* tab, int total, int16_t& bendAcc) {
+    for (int guard = 0; guard < 4; ++guard) {
+        const int d = (total >> 8) & 255, e = total & 255;
+        if (d >= 0x6C) {
+            if (d >= 0xF8) return 0;
+            const int adj = d >= 0xB6 ? 0x6C00 : -0x6C00;
+            total += adj; bendAcc = int16_t(bendAcc + adj);
+            continue;
+        }
+        const uint16_t a = tab[d];
+        if (!e) return a;
+        const uint16_t b = tab[d + 1];
+        const int diff = ((b & 255) - (a & 255)) & 255;
+        unsigned hl = unsigned((diff * 2) & 255);
+        const unsigned carry0 = hl >> 7;
+        hl = ((hl << 1) & 255) << 8;
+        if (carry0) hl += unsigned(e);
+        for (int i = 0; i < 6; ++i) {
+            const unsigned c = (hl >> 15) & 1;
+            hl = (hl << 1) & 0xFFFF;
+            if (c) hl = (hl + unsigned(e)) & 0xFFFF;
+        }
+        unsigned h = hl >> 8;
+        if (hl & 0x80) ++h;
+        return uint16_t((a & 0x7FF) + (h & 255));
+    }
+    return 0;
+}
+
 void Player::refreshPitch(int ch) {
     Voice& v = v_[ch];
     if (!v.on || muted_[ch]) return;
@@ -261,15 +339,15 @@ void Player::refreshPitch(int ch) {
         apu_.write(0xFF22, kNoiseNr43[n]);
         return;
     }
-    n = std::clamp(n, 1, 127);
-    v.note = n;
+    v.note = std::clamp(n, 1, 127);
     const uint8_t lenEn = (in[3] & 0x40) ? 0x40 : 0;
-    uint16_t f = ch == 2 ? kWaveFreq[n] : kPulseFreq[n];
-    const double semis = v.vibSemis + v.slideSemis + v.bendSemis;
-    if (semis != 0.0) {
-        const double p = 2048.0 - f;
-        f = uint16_t(std::clamp(2048.0 - std::floor(p * std::pow(2.0, -semis / 12.0) + 0.5), 0.0, 2047.0));
-    }
+    // LSDJ keeps the pitch as note + 8-bit fraction (1/256 semitone) plus bend, vibrato and slide, and interpolates the frequency table (measured, ROM 00:1B28)
+    int total = (n - 1) * 256 + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
+    uint16_t f;
+    if (ch == 2) {                                   // wave instruments look the pitch up in the ROM's linear table (about 19.2 per index) at 00:09B9
+        total = waveIndex(n) + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
+        f = pitchToFreq(kLinFreq, total, v.bendAcc);
+    } else f = pitchToFreq(kPulseFreq + 1, total, v.bendAcc);
     if (ch < 2) { const int fine = v.fine >= 0 ? v.fine : in[11] * 30 / 255; f = uint16_t(std::clamp<int>(ch == 0 ? int(f) - fine : int(f) + fine, 0, 2047)); }
     const uint16_t base = ch == 0 ? 0xFF13 : ch == 1 ? 0xFF18 : 0xFF1D;
     apu_.write(base, uint8_t(f & 0xFF));
@@ -387,8 +465,8 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
         case kCmdP: {
             if (ch == 3) { v.noiseS = val; v.shapeAcc = v.shapeOfs; v.noiseFresh = true; break; }   // noise P
-            const int sv = int8_t(val); const double a = std::abs(sv);
-            v.bendRate = (sv < 0 ? -1.0 : 1.0) * (0.00163 * a + 0.0005 * a * a);
+            v.bendDelay = (fromTable && v.startedTick != tickNo_ && !v.bendRate) ? 1 : 0;
+            v.bendRate = bendRateOf(val); v.bendTgt = false;   // a table row on a later tick starts a sub-step late
             break;
         }
         case kCmdC:
@@ -426,6 +504,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
             if (!again) v.vibPhase = -(v.vibSpeed + 1) / 64.0;
             if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); }
             break;
+        case kCmdL: startSlide(ch, val); refreshPitch(ch); break;
         case kCmdO: v.pan = val & 3; writePan(); break;
         default: break;
     }
@@ -449,10 +528,9 @@ void Player::onStep(const StepEvent& e) {
     }
     if (e.cmd == kCmdL && e.note && v.on) {
         int n = std::clamp(e.note + e.transpose + (e.channel != 3 ? int8_t(s_.at(off::kTranspose)) : 0), 1, 127);
-        const double cur = v.base + v.slideSemis;
-        v.base = n; v.slideSemis = cur - n; v.slideLeft = e.val;
-        v.slideStep = e.val ? -v.slideSemis / e.val : 0;
-        if (!e.val) v.slideSemis = 0;
+        v.bendAcc = int16_t(v.bendAcc + pitchIndex(e.channel, v.base) - pitchIndex(e.channel, n));   // start from where the old note was, slide to the new one
+        v.base = n;
+        startSlide(e.channel, e.val);
         refreshPitch(e.channel);
         return;
     }
@@ -475,8 +553,8 @@ void Player::tick() {
         Voice& v = v_[c];
         if (!v.on) continue;
         if (v.chordOn) {
-            if (v.chordCnt < 0) v.chordCnt = 1;                    // the tick the command ran on: unchanged, then x, y, 0, x ...
-            else {
+            if (v.chordCnt < 0) { v.chordCnt = 1; v.chordAge = 0; }   // the tick the command ran on: unchanged, then x, y, 0, x ...
+            else if (++v.chordAge % (instr(v.instr)[8] + 1) == 0) {   // byte 8 + 1 ticks per chord note (measured)
                 v.chordOfs = v.chord[2] == 0 ? ((v.chordCnt & 1) ? v.chord[1] : 0) : v.chord[v.chordCnt % 3];   // Cx0 alternates x, 0
                 ++v.chordCnt;
                 refreshPitch(c);
@@ -491,7 +569,7 @@ void Player::tick() {
     waveTick();
     for (int c = 0; c < 4; ++c) {
         tableTick(c);
-        if (v_[c].chordOn && v_[c].chordCnt < 0) v_[c].chordCnt = 1;   // a table C ran after this tick's chord step: its first tick is spent
+        if (v_[c].chordOn && v_[c].chordCnt < 0) { v_[c].chordCnt = 1; v_[c].chordAge = 0; }   // a table C ran after this tick's chord step: its first tick is spent
     }
     if (!seq_.playing()) running_ = false;
 }
@@ -501,8 +579,12 @@ void Player::sub360() {
         Voice& v = v_[c];
         if (!v.on || c == 3) continue;
         bool ch = false;
-        if (v.slideLeft > 0) { v.slideSemis += v.slideStep; if (--v.slideLeft == 0) v.slideSemis = 0; ch = true; }
-        if (v.bendRate != 0.0) { v.bendSemis += v.bendRate; ch = true; }
+        if (v.bendDelay > 0) --v.bendDelay;
+        else if (v.bendRate) {
+            v.bendAcc = int16_t(v.bendAcc + v.bendRate);
+            if (v.bendTgt && (v.bendRate > 0 ? v.bendAcc >= 0 : v.bendAcc <= 0)) { v.bendAcc = 0; v.bendRate = 0; v.bendTgt = false; }   // arrived
+            ch = true;
+        }
         if (ch) refreshPitch(c);
     }
     for (int c = 0; c < 4; ++c) {

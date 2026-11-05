@@ -3,6 +3,7 @@
 #include "test.h"
 
 #include <array>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
@@ -178,4 +179,25 @@ TEST(r_first_digit_is_a_signed_volume_step) {
         vol[t] = p.apu().state(0).vol;
     }
     CHECK_EQ(vol[0], 8); CHECK_EQ(vol[2], 8); CHECK_EQ(vol[3], 1); CHECK_EQ(vol[5], 1); CHECK_EQ(vol[6], 0);
+}
+
+TEST(bend_matches_measured_register_values) {
+    // measured on LSDJ: note 25 with P40 gives these pulse 1 registers at the end of ticks 0-4 (the fifth wraps past the table end)
+    const uint8_t in[16] = {0, 0xF0, 0, 0, 0x7F, 1, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0};
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, 0) = 0;
+    s.note(0, 0) = 25; s.phraseInstr(0, 0) = 0; s.phraseCmd(0, 0) = kCmdP; s.phraseVal(0, 0) = 0x40;
+    for (int i = 0; i < 16; ++i) s.instrument(0)[i] = in[i];
+    s.at(off::kTempo) = 128;
+    Player p(s);
+    p.start(0);
+    const int want[6] = {1809, 1947, 2005, 2029, 2040, 375};
+    long long done = 0;
+    for (int t = 0; t < 6; ++t) {
+        const long long until = (long long)((t + 0.9) * 10485760.0 / 128);
+        p.run(uint32_t(until - done)); done = until;
+        CHECK(std::abs(p.apu().state(0).freq - want[t]) <= 1);
+    }
 }

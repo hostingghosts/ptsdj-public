@@ -112,3 +112,10 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - R xy: x is a signed volume step (1-7 up, 9-F down by 16-x, 0 and 8 none), applied when the command runs and at every retrigger; a retrigger reloads the last programmed
   volume (start, E, table amplitude) plus the steps, not the decayed volume; y = 0 applies the step once. Vibrato: shape field (b5 bits 1-2) 0 triangle, 1 saw (pitch
   always rises), 2 square, 3 none; b5 bit 0 clear is a half-period phase shift. Saw with bit 0 clear runs ~1/1.4 as fast as expected (unexplained).
+- Pitch pipeline (ROM 00:1B28, 02:4363, 02:43D8): pitch = (note - 1) * 256 + 16-bit accumulator (bend/slide) + vibrato, as index.fraction; frequency = table[index], the
+  fraction interpolates by (low-byte difference of the next entry) * fraction (shift-add, rounded). Index >= 0x6C wraps by 108 (the accumulator is adjusted too), 0xB6..0xF7
+  wraps up by 108, 0xF8..0xFF gives frequency 0. Bend rate per sub-step = round(v*v/8 + v/2) (mirrored for negatives), added to the accumulator each sub-step.
+  L (slide) = accumulator to 0 at |acc| / (value + 1) per sub-step (value 0 jumps), stops on arrival; a slide starts one sub-step late; a table P on a later tick
+  starts one sub-step late when the bend was idle. Wave instruments use the linear table at 00:09B9 (~19.2 per index), pulse the exponential one at 01:40FA.
+- Instrument byte 8 (pulse): ticks per chord note minus one (0 = one tick each).
+- Not solved: a table transpose of -128 with L (SETBARLO/INFORMAL kick drums) - the ROM keeps sweeping down to frequency 44 instead of returning.
