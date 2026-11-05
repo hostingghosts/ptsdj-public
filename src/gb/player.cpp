@@ -486,9 +486,12 @@ void Player::sub360() {
         Voice& v = v_[c];
         if (!v.on || muted_[c]) continue;
         const uint8_t* in = instr(v.instr);
-        const uint8_t first = v.fade >= 0 ? v.fade : (in[1] & 15);
-        // byte 9 with its top two bits set replaces the release rate after the first step (measured; its exact meaning is not known)
-        const uint8_t nib = (v.envSteps == 0 || v.fade >= 0 || (in[9] & 0xC0) != 0xC0) ? first : (in[9] & 15);
+        // three-stage envelope (measured): byte 1 = start level and rate down to the level in byte 9's high nibble, byte 9's low nibble is the rate from there
+        // down to byte 10's high nibble, byte 10's low nibble the rate to silence; a rate of 0 holds. An E fade overrides all stages.
+        const uint8_t nib = v.fade >= 0 ? uint8_t(v.fade)
+            : v.vol > (in[9] >> 4) ? uint8_t(in[1] & 15)
+            : v.vol > (in[10] >> 4) ? uint8_t(in[9] & 15)
+            : uint8_t(in[10] & 15);
         if (!nib || v.vol <= 0) continue;
         if (++v.envCount >= kEnvPeriod[nib]) {
             v.envCount = 0;
