@@ -37,6 +37,15 @@ int Apu::waveOut() const {
 }
 int Apu::noiseOut() const { return (n_.enabled && n_.dac && !(n_.lfsr & 1)) ? n_.vol : 0; }
 
+Apu::ChState Apu::state(int ch) const {
+    switch (ch) {
+        case 0: return {p1_.enabled, p1_.dac, p1_.vol, p1_.freq, p1_.duty};
+        case 1: return {p2_.enabled, p2_.dac, p2_.vol, p2_.freq, p2_.duty};
+        case 2: return {w_.enabled, w_.dac, w_.volCode, w_.freq, 0};
+        default: return {n_.enabled, n_.dac, n_.vol, n_.div | (n_.shift << 4) | (n_.narrow ? 8 : 0), 0};
+    }
+}
+
 int Apu::channelLevel(int ch) const {
     switch (ch) {
         case 0: return pulseOut(p1_);

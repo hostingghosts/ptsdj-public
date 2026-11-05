@@ -23,6 +23,9 @@ public:
     // Take (and clear) the integral since the last call: average level over `cycles` for each side.
     void takeAverage(uint32_t cycles, float& l, float& r);
 
+    struct ChState { bool enabled, dac; int vol, freq, duty; };
+    ChState state(int ch) const;                   // for tests and comparison tools
+    uint8_t pan() const { return nr51_; }
     bool on() const { return power_; }
     int channelLevel(int ch) const;                // digital 0..15 of one channel (for meters/tests)
 
