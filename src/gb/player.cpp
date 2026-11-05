@@ -367,7 +367,12 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         }
         case kCmdC:
             v.chord[0] = 0; v.chord[1] = val >> 4; v.chord[2] = val & 15;
-            if (!again) { v.chordOn = val != 0; v.chordCnt = -1; v.chordOfs = 0; }
+            if (!again) {                                 // running C again keeps the phase (ROM); only starting or stopping resets it
+                const bool was = v.chordOn;
+                v.chordOn = val != 0;
+                if (!was || !v.chordOn) { v.chordCnt = -1; v.chordOfs = 0; }
+                if (was && !v.chordOn) refreshPitch(ch);
+            }
             break;
         case kCmdR: v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = 0; break;
         case kCmdS:
@@ -452,7 +457,10 @@ void Player::tick() {
         if (v.retrig > 0 && ++v.retrigCnt >= v.retrig) { v.retrigCnt = 0; retrigger(c); }
     }
     waveTick();
-    for (int c = 0; c < 4; ++c) tableTick(c);
+    for (int c = 0; c < 4; ++c) {
+        tableTick(c);
+        if (v_[c].chordOn && v_[c].chordCnt < 0) v_[c].chordCnt = 1;   // a table C ran after this tick's chord step: its first tick is spent
+    }
     if (!seq_.playing()) running_ = false;
 }
 

@@ -98,6 +98,8 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   1 - (1 - x/15)(1 - y/15). B00 never plays, B0F and BFx always. A skipped step writes nothing. Verified against the ROM for B09, B04, B81.
 - Z vv (02:73CA): value = original value of the last non-Z command + (randMax(hi) << 4) + randMax(lo); the effect keeps running with the new value (a chord
   keeps its phase). Z always starts from the original value, not the previous random one. Exact against the ROM for chords.
-- One more consumer: 02:737C draws a full byte and compares it with (value & 0xF0) (a chance of hi/16): this is the noise "free" shape randomness; not ported,
-  so songs that use it drift apart from the ROM's random sequence.
+- 02:737C also draws from the generator but is editing code (cell edit; never runs in playback, checked with coverage on i'mpuzzled, Friendbender,
+  revision, kicks, TRAINJAM). Playback consumers are only B and Z; bank 1 uses it for song memory init. So the i'mpuzzled drift is not the generator.
+- Z state is per slot: phrase Z uses slot = channel; table col1 / col2 use shared slots 4 / 5 with the original value kept per table step (02:50DF, 02:73CA). Not modelled yet (ours is per channel).
+- C keeps its phase when run again (same or new value); only a note trigger, starting from off, or C00 resets it. A table C (runs after the chord step) spends its first tick: base, x, y.
 - Vibrato default shape is a triangle (rises 1/16 of the peak per step at speed 0), not a sine; first step after the command is 0.
