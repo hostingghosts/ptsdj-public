@@ -43,12 +43,28 @@ private:
         StepEvent delayed{};
         int kill = -1;          // ticks until the note is killed
         uint8_t pan = 3;        // bit0 left, bit1 right
+        int base = 0;           // note with chain and project transposes
+        int tTrans = 0;         // current table transpose
+        int fade = -1;          // release nibble override (E command), -1 = instrument's
+        int tbl = -1;           // running table or -1
+        int tRow = 0, tWait = 0, eRow = 0, eWait = 0;
+        uint8_t tGroove = 0xFF;
+        uint8_t hop[16] = {};
+        int vibSpeed = 0, vibDepth = 0;   // V command (depth 0 = off)
+        double vibPhase = 0;
+        double vibSemis = 0;
     };
     void tick();
     void sub360();
     void onStep(const StepEvent& e);
     void noteOn(int ch, const StepEvent& e);
     void killNote(int ch);
+    void command(int ch, uint8_t cmd, uint8_t val, bool fromTable);
+    void startTable(int ch, int t);
+    void tableTick(int ch);
+    void setVolume(int ch, int target);
+    void refreshPitch(int ch);
+    void writeDuty(int ch, int duty);
     void writePan();
     uint8_t* instr(int i) { return s_.instrument(i & 63); }
 

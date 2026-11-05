@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace gb {
 
@@ -56,6 +57,11 @@ void Player::noteOn(int ch, const StepEvent& e) {
     if (ch != 3) n += int8_t(s_.at(off::kTranspose));
     n = std::clamp(n, 1, 127);
     v.note = n;
+    v.base = n;
+    v.tTrans = 0;
+    v.fade = -1;
+    v.vibDepth = 0;
+    v.vibSemis = 0;
     v.on = true;
     v.envCount = 0;
     v.kill = -1;
@@ -97,6 +103,115 @@ void Player::noteOn(int ch, const StepEvent& e) {
             v.vol = in[1] >> 4;
             break;
     }
+    if (in[6] & 0x20) startTable(ch, in[6] & 0x1F); else v.tbl = -1;
+}
+
+void Player::writeDuty(int ch, int duty) {
+    const uint8_t* in = instr(v_[ch].instr);
+    const uint16_t r = ch == 0 ? 0xFF11 : 0xFF16;
+    apu_.write(r, uint8_t((duty & 3) << 6 | (in[3] & 0x3F)));
+}
+
+void Player::setVolume(int ch, int target) {
+    Voice& v = v_[ch];
+    if (ch == 2 || muted_[ch]) return;
+    const uint16_t r = ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21;
+    target = std::clamp(target, 0, 15);
+    while (v.vol < target) { apu_.write(r, 0x08); ++v.vol; }
+    while (v.vol > target) { apu_.write(r, 0x09); apu_.write(r, 0x11); apu_.write(r, 0x18); --v.vol; }
+}
+
+// Vibrato depth digit -> peak semitones (measured), and the wave shapes selected by the P+L+VIB byte.
+static const double kVibDepth[16] = {0, 0.25, 0.375, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8};
+static double vibShape(int shape, double ph) {
+    ph -= std::floor(ph);
+    switch (shape) {
+        case 1: return 1.0 - 2.0 * ph;                   // saw
+        case 2: return ph < 0.5 ? 1.0 : -1.0;            // square
+        default: return std::sin(6.283185307179586 * ph);
+    }
+}
+
+void Player::refreshPitch(int ch) {
+    Voice& v = v_[ch];
+    if (!v.on || muted_[ch]) return;
+    const uint8_t* in = instr(v.instr);
+    int n = v.base + v.tTrans + (ch == 1 ? int8_t(in[2]) : 0);
+    n = std::clamp(n, 1, 127);
+    v.note = n;
+    const uint8_t lenEn = (in[3] & 0x40) ? 0x40 : 0;
+    if (ch == 3) { apu_.write(0xFF22, kNoiseNr43[n]); return; }
+    uint16_t f = ch == 2 ? kWaveFreq[n] : kPulseFreq[n];
+    if (v.vibSemis != 0.0) {
+        const double p = 2048.0 - f;
+        f = uint16_t(std::clamp(2048.0 - std::floor(p * std::pow(2.0, -v.vibSemis / 12.0) + 0.5), 0.0, 2047.0));
+    }
+    if (ch < 2) { const int fine = in[11] * 30 / 255; f = uint16_t(std::clamp<int>(ch == 0 ? int(f) - fine : int(f) + fine, 0, 2047)); }
+    const uint16_t base = ch == 0 ? 0xFF13 : ch == 1 ? 0xFF18 : 0xFF1D;
+    apu_.write(base, uint8_t(f & 0xFF));
+    apu_.write(base + 1, uint8_t(lenEn | (f >> 8)));
+}
+
+void Player::startTable(int ch, int t) {
+    Voice& v = v_[ch];
+    v.tbl = t & 31;
+    v.tRow = 0; v.tWait = 0; v.eRow = 0; v.eWait = 0; v.tGroove = 0xFF;
+    std::memset(v.hop, 0, sizeof v.hop);
+}
+
+void Player::tableTick(int ch) {
+    Voice& v = v_[ch];
+    if (v.tbl < 0 || !v.on) return;
+    const int t = v.tbl;
+    // amplitude column: x = volume, y = ticks it lasts (rows with y = 0 are skipped)
+    if (v.eWait > 0) --v.eWait;
+    else {
+        for (int guard = 0; guard < 16 && v.eRow < 16; ++guard) {
+            const uint8_t e = s_.at(uint16_t(off::kTblEnv + t * 16 + v.eRow++));
+            if (e & 15) { setVolume(ch, e >> 4); v.eWait = (e & 15) - 1; break; }
+        }
+    }
+    if (v.tWait > 0 && --v.tWait > 0) return;
+    int row = v.tRow;
+    for (int guard = 0; guard < 40; ++guard) {
+        const int o = t * 16 + row;
+        const uint8_t tr = s_.at(uint16_t(off::kTblTrans + o));
+        v.tTrans = int8_t(tr);
+        bool hopped = false;
+        v.tWait = 1;
+        for (int k = 0; k < 2 && !hopped; ++k) {
+            const uint8_t c = s_.at(uint16_t((k ? off::kTblCmd2 : off::kTblCmd1) + o)), val = s_.at(uint16_t((k ? off::kTblVal2 : off::kTblVal1) + o));
+            if (c == kCmdH) {
+                const int n = val >> 4, dest = val & 15;
+                if (n == 0 || v.hop[row] < n) { if (n) ++v.hop[row]; row = dest; hopped = true; }
+                else v.hop[row] = 0;
+            } else if (c) command(ch, c, val, true);
+        }
+        if (hopped) continue;
+        if (v.tGroove != 0xFF) { const uint8_t* g = s_.groove(v.tGroove); v.tWait = g[0] ? g[0] : 1; }
+        row = (row + 1) & 15;
+        break;
+    }
+    v.tRow = row;
+    refreshPitch(ch);
+}
+
+void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
+    Voice& v = v_[ch];
+    switch (cmd) {
+        case kCmdA: if (val == 0x20) v.tbl = -1; else startTable(ch, val & 31); break;
+        case kCmdG: if (fromTable) v.tGroove = val & 31; else seq_.setGroove(ch, val); break;
+        case kCmdT: tempo_ = std::clamp<int>(val, 40, 255); break;
+        case kCmdK: if (val == 0) killNote(ch); else v.kill = val; break;
+        case kCmdE:
+            if (ch == 2) apu_.write(0xFF1C, uint8_t(val == 0 ? 0 : val == 1 ? 0x60 : val == 2 ? 0x40 : 0x20));
+            else { setVolume(ch, val >> 4); v.fade = val & 15; }
+            break;
+        case kCmdW: if (ch < 2) writeDuty(ch, val); break;
+        case kCmdV: v.vibSpeed = val >> 4; v.vibDepth = val & 15; v.vibPhase = 0; if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); } break;
+        case kCmdO: v.pan = val & 3; writePan(); break;
+        default: break;
+    }
 }
 
 void Player::onStep(const StepEvent& e) {
@@ -104,8 +219,6 @@ void Player::onStep(const StepEvent& e) {
     int delay = 0;
     switch (e.cmd) {
         case kCmdD: delay = e.val; break;
-        case kCmdT: tempo_ = std::clamp<int>(e.val, 40, 255); break;
-        case kCmdG: seq_.setGroove(e.channel, e.val); break;
         case kCmdH:
             if (e.val == 0xFF) { for (int c = 0; c < 4; ++c) seq_.stop(c); apu_.write(0xFF26, 0x00); running_ = false; return; }
             if (e.val < 0x10) { seq_.hopNext(e.channel, e.val); return; }   // the hop replaces the step: its note does not play
@@ -116,9 +229,7 @@ void Player::onStep(const StepEvent& e) {
         if (delay > 0) { v.pending = delay; v.delayed = e; }
         else noteOn(e.channel, e);
     }
-    if (e.cmd == kCmdK) {
-        if (e.val == 0) killNote(e.channel); else v.kill = e.val;
-    }
+    if (e.cmd && e.cmd != kCmdD && e.cmd != kCmdH) command(e.channel, e.cmd, e.val, false);
 }
 
 void Player::tick() {
@@ -128,14 +239,24 @@ void Player::tick() {
         if (v.pending > 0 && --v.pending == 0) noteOn(c, v.delayed);
     }
     seq_.tick([&](const StepEvent& e) { onStep(e); });
+    for (int c = 0; c < 4; ++c) tableTick(c);
     if (!seq_.playing()) running_ = false;
 }
 
 void Player::sub360() {
+    for (int c = 0; c < 4; ++c) {
+        Voice& v = v_[c];
+        if (!v.on || !v.vibDepth || c == 3) continue;
+        const uint8_t b5 = instr(v.instr)[5];
+        const double sign = (b5 & 1) ? 1.0 : -1.0;
+        v.vibPhase += (v.vibSpeed + 1) / 64.0;
+        v.vibSemis = sign * kVibDepth[v.vibDepth] * vibShape((b5 >> 1) & 3, v.vibPhase);
+        refreshPitch(c);
+    }
     for (int c : {0, 1, 3}) {
         Voice& v = v_[c];
         if (!v.on || muted_[c]) continue;
-        const uint8_t nib = instr(v.instr)[1] & 15;
+        const uint8_t nib = v.fade >= 0 ? v.fade : (instr(v.instr)[1] & 15);
         if (!nib || v.vol <= 0) continue;
         if (++v.envCount >= kEnvPeriod[nib]) {
             v.envCount = 0;

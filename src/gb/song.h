@@ -35,6 +35,9 @@ constexpr uint16_t kPhraseInstr = 0x7000;  // 255 x 16, 0xFF = none
 }  // namespace off
 
 constexpr size_t kMemSize = 0x8000;
+// Byte 0x7FFF of the song memory is the format version: 0x16 for LSDJ 9.x. Older songs (0x07, 0x09, 0x0A, 0x0B seen in the demos)
+// need LSDJ's upgrade step, which is not implemented, so they load but may sound wrong.
+constexpr uint8_t kFormatVersion = 0x16;
 constexpr size_t kSavSize = 0x20000;
 constexpr int kPhrases = 255, kChains = 128, kInstruments = 64, kTables = 32, kSynths = 16, kGrooves = 32, kSongRows = 256;
 
@@ -43,6 +46,7 @@ public:
     Song() { reset(); }
     void reset();                                   // a fresh song, as LSDJ makes after a memory reset
 
+    bool currentFormat() const { return m_[0x7FFF] == kFormatVersion; }
     uint8_t* mem() { return m_; }
     const uint8_t* mem() const { return m_; }
     uint8_t& at(uint16_t o) { return m_[o]; }

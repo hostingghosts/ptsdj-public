@@ -41,3 +41,14 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - Noise: NR41 = byte3 & 3F, NR42 = (byte1 & F0) | 8, NR43 from the note table (chain transpose applies, project transpose does not).
 - Commands (byte = letter order, B=2 exists): D delay, G groove, H hop (replaces the step, destination step plays the same tick,
   HFF stops the song and writes NR52=0), K kill (steps volume to 0 after n ticks), T tempo (not yet verified).
+
+## Tables, vibrato, more commands (measured)
+- Command letters in the ROM string: `-ABCDEFGHKLMOPRSTVWZ` (A=1 ... H=8, K=9, L=10, M=11, O=12, P=13, R=14, S=15, T=16, V=17, W=18, Z=19).
+- Song memory byte 0x7FFF = format version (0x16 for 9.x). Older songs are upgraded by LSDJ on load.
+- Table: one row per tick (G in a row changes its speed), loops after row 15; transpose is signed; H xy = hop x times (0 forever) to row y
+  and the destination row runs on the same tick; amplitude column x,y sets volume x for y ticks on its own pointer (y=0 skipped, no restart on wrap).
+  Volume up = NR12 write 0x08 per step, down = the 09,11,18 sequence per step.
+- Vibrato V sd: speed s -> period 64/(s+1) samples at 360 Hz; depth d -> peak semitones [.25,.375,.5,.75,1,1.5,2,2.5,3,3.5,4,5,6,7,8][d-1];
+  applied to the period (so register steps scale with 2048-f); P+L+VIB byte: bit0 direction, bits1-2 shape (sine, saw, square), 0x10 = per tick.
+- O: 0 none, 1 left, 2 right, 3 both (NR51 bits). Pulse 2 tune = byte 2 signed semitones; pulse fine = byte 11 (about -b*30/255 register units on pulse 1).
+- P (pitch bend) rate is not linear in the value and is not modelled yet. L, S, R, B, C, F, M, Z, W-on-wave not modelled yet.

@@ -27,9 +27,9 @@ class S:
         for i in range(16): self.m[0x1090+g*16+i] = ticks[i] if i < len(ticks) else 0
     def sav(self): return bytes(self.m) + BASE[0x8000:]
 
-def run(sav, frames=600, start='START', extra=None, aud=None):
+def run(sav, frames=600, start='START', extra=None, aud=None, pre=('press UP 700','press LEFT 200')):
     d = tempfile.mkdtemp(dir=probe.ORA); shutil.copy(probe.ROM, d + '/lsdj.gb'); open(d + '/lsdj.sav', 'wb').write(sav)
-    open(d + '/s.txt', 'w').write('wait 600\npress %s 4\nwait %d\n' % (start, frames))
+    open(d + '/s.txt', 'w').write('wait 600\n' + '\n'.join(pre) + '\npress %s 4\nwait %d\n' % (start, frames))
     env = dict(os.environ, REGLOG=d + '/reg.log')
     if aud: env['AUDLOG'] = aud
     subprocess.run([probe.ORA + '/drive', 'lsdj.gb', 's.txt'], cwd=d, env=env, check=True)
