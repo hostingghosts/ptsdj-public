@@ -1,0 +1,129 @@
+# Atari smoke test: pattern entry from pads, the effect and volume columns, playback, every screen, the instrument picker.
+screenshot ../build/sim/atari-pattern-empty.png
+tap REC
+# a bass line on track 1: instrument 1 (the Instr key, then pad 1), then notes
+tap INSTR
+pad 0 tap
+tap NOTE
+pad 24 tap
+pad 28 tap
+pad 31 tap
+pad 28 tap
+# track 2: instrument 4 (noise snare) on pad 4 of the instrument column
+press SHIFT
+tap RIGHT
+release SHIFT
+tap INSTR
+pad 3 tap
+tap NOTE
+pad 36 tap
+pad 36 tap
+# an effect on the next row: the Fx1 column, pad 3 = effect 3 (slide down s), then hex digits
+tap FX1
+pad 2 tap
+pad 4 tap
+pad 0 tap
+tap REC
+screenshot ../build/sim/atari-pattern.png
+tap PLAY
+wait 1500
+screenshot ../build/sim/atari-playing.png
+tap PLAY
+tap INSTRPARAMS
+screenshot ../build/sim/atari-instrument.png
+# ENVELOPE page: the step, then jog its volume (row 2)
+tap INSTRPARAMS
+tap DOWN
+enc 3
+screenshot ../build/sim/atari-inst-envelope.png
+tap F1
+# TABLE page and AUDCTL page
+tap INSTRPARAMS
+screenshot ../build/sim/atari-inst-table.png
+tap INSTRPARAMS
+tap DOWN
+tap DOWN
+tap DOWN
+enc 1
+screenshot ../build/sim/atari-inst-audctl.png
+# SOUNDS: try an RMT instrument on the pads, then keep it
+tap INSTRPARAMS
+tap DOWN
+tap LEFT
+tap RIGHT
+screenshot ../build/sim/atari-inst-sounds0.png
+tap UP
+enc 1
+tap DOWN
+enc 7
+pad 30 tap
+screenshot ../build/sim/atari-inst-sounds.png
+tap F8
+# GENERAL page again: name the instrument on the pad keyboard
+tap INSTRPARAMS
+tap F4
+pad 12 tap
+pad 13 tap
+pad 14 tap
+screenshot ../build/sim/atari-inst-keyboard.png
+tap F8
+screenshot ../build/sim/atari-inst-named.png
+tap SONG
+screenshot ../build/sim/atari-song.png
+tap CONFIG
+screenshot ../build/sim/atari-settings.png
+tap F4
+pad 12 tap
+pad 13 tap
+screenshot ../build/sim/atari-project-name.png
+tap F8
+wait 200
+screenshot ../build/sim/atari-project-saved.png
+tap F2
+wait 200
+screenshot ../build/sim/atari-project-open.png
+tap F7
+tap MASTER
+wait 300
+screenshot ../build/sim/atari-master.png
+tap PERFORMANCE
+wait 100
+screenshot ../build/sim/atari-perform.png
+tap FILE
+tap DOWN
+tap DOWN
+tap F8
+wait 300
+screenshot ../build/sim/atari-export.png
+tap CONFIG
+tap F5
+wait 100
+screenshot ../build/sim/atari-macname.png
+tap F8
+wait 200
+tap F6
+wait 200
+screenshot ../build/sim/atari-maclist.png
+tap F7
+tap PATTERN
+press INSTR
+wait 400
+screenshot ../build/sim/atari-picker.png
+release INSTR
+press NOTE
+wait 300
+screenshot ../build/sim/atari-notepad.png
+release NOTE
+press FX1
+wait 300
+screenshot ../build/sim/atari-fxpad.png
+release FX1
+press SHIFT
+wait 100
+screenshot ../build/sim/atari-shift.png
+release SHIFT
+tap CONFIG
+wait 100
+screenshot ../build/sim/atari-config.png
+tap HELP
+screenshot ../build/sim/atari-help.png
