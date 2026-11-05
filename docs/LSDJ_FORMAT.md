@@ -90,3 +90,14 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - Not converted: synth parameter bytes (0x3EB2..), project bytes 0x3FCA-B, and the text tables at 0x1D00 (LSDJ leaves junk there; a fresh song's are used).
 - Transposes: a note whose chain + project transpose would fall below 1 is played untransposed; above 135 it wraps by 136.
 - Pulse 2 tune (byte 2) and the fine tune apply from the moment the note starts.
+
+## Found by reading the ROM (bank 2 holds the player; tools/re/sm83.py, drive.cpp `cov`/`covdump`/`trace` commands)
+- Random generator (ROM 00:33EB): S = 17 * S + 0x5C93 (16 bit), result = high byte of the new S. Playback start sets S = 0x0052 (00:3818).
+  rand15() = result % 15; randMax(m) = 0 without a call when m = 0, else result % (m + 1).
+- B xy (command dispatch at 02:7715, handler 02:773B): two rand15 calls; the step's note is skipped only when r1 >= x and r2 >= y, so it plays with chance
+  1 - (1 - x/15)(1 - y/15). B00 never plays, B0F and BFx always. A skipped step writes nothing. Verified against the ROM for B09, B04, B81.
+- Z vv (02:73CA): value = original value of the last non-Z command + (randMax(hi) << 4) + randMax(lo); the effect keeps running with the new value (a chord
+  keeps its phase). Z always starts from the original value, not the previous random one. Exact against the ROM for chords.
+- One more consumer: 02:737C draws a full byte and compares it with (value & 0xF0) (a chance of hi/16): this is the noise "free" shape randomness; not ported,
+  so songs that use it drift apart from the ROM's random sequence.
+- Vibrato default shape is a triangle (rises 1/16 of the peak per step at speed 0), not a sine; first step after the command is 0.

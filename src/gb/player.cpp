@@ -24,6 +24,7 @@ void Player::start(int row) {
     tempo_ = s_.at(off::kTempo);
     if (tempo_ < 40) tempo_ = 40;
     nr50_ = 0x77;
+    rngState_ = 0x0052;                                   // LSDJ seeds the generator with 0x52 whenever playback starts
     seq_.start(row);
     tickNo_ = -1;
     running_ = true;
@@ -235,7 +236,7 @@ static double vibShape(int shape, double ph) {
     switch (shape) {
         case 1: return 1.0 - 2.0 * ph;                   // saw
         case 2: return ph < 0.5 ? 1.0 : -1.0;            // square
-        default: return std::sin(6.283185307179586 * ph);
+        default: return ph < 0.25 ? 4 * ph : ph < 0.75 ? 2 - 4 * ph : 4 * ph - 4;   // triangle (the ROM's default shape is not a sine)
     }
 }
 
@@ -322,6 +323,11 @@ void Player::retrigger(int ch) {
     refreshPitch(ch);
 }
 
+unsigned Player::rng() {
+    rngState_ = uint16_t(17u * rngState_ + 0x5C93u);
+    return rngState_ >> 8;
+}
+
 void Player::masterVol(uint8_t val) {
     uint8_t nr = nr50_;
     auto adj = [](int cur, int d) {
@@ -334,8 +340,15 @@ void Player::masterVol(uint8_t val) {
     apu_.write(0xFF24, nr50_);
 }
 
-void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
+void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool again) {
     Voice& v = v_[ch];
+    if (cmd == kCmdZ) {                                   // randomize the last command: + random(hi) * 16 + random(lo), then run it again
+        if (!v.lastCmd || v.lastCmd == kCmdH || v.lastCmd == kCmdG || v.lastCmd == kCmdD) return;
+        const int hi = randMax(val >> 4), lo = randMax(val & 15);
+        command(ch, v.lastCmd, uint8_t(v.lastVal + (hi << 4) + lo), fromTable, true);
+        return;
+    }
+    if (!again && cmd != kCmdA && cmd != kCmdK) { v.lastCmd = cmd; v.lastVal = val; }   // Z always starts from the original value
     switch (cmd) {
         case kCmdA: if (val == 0x20) v.tbl = -1; else startTable(ch, val & 31); break;
         case kCmdG: if (fromTable) v.tGroove = val & 31; else seq_.setGroove(ch, val); break;
@@ -353,7 +366,8 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
             break;
         }
         case kCmdC:
-            v.chord[0] = 0; v.chord[1] = val >> 4; v.chord[2] = val & 15; v.chordOn = val != 0; v.chordCnt = -1; v.chordOfs = 0;
+            v.chord[0] = 0; v.chord[1] = val >> 4; v.chord[2] = val & 15;
+            if (!again) { v.chordOn = val != 0; v.chordCnt = -1; v.chordOfs = 0; }
             break;
         case kCmdR: v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = 0; break;
         case kCmdS:
@@ -370,7 +384,11 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
             break;
         case kCmdM: masterVol(val); break;
         case kCmdF: if (ch < 2) { v.fine = val & 15; v.tune2 = int(val >> 4); refreshPitch(ch); } break;
-        case kCmdV: v.vibSpeed = val >> 4; v.vibDepth = val & 15; v.vibPhase = 0; if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); } break;
+        case kCmdV:   // the first step after the command is still 0
+            v.vibSpeed = val >> 4; v.vibDepth = val & 15;
+            if (!again) v.vibPhase = -(v.vibSpeed + 1) / 64.0;
+            if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); }
+            break;
         case kCmdO: v.pan = val & 3; writePan(); break;
         default: break;
     }
@@ -379,6 +397,11 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
 void Player::onStep(const StepEvent& e) {
     Voice& v = v_[e.channel];
     int delay = 0;
+    if (e.cmd == kCmdB) {                                 // B xy: the step's note plays with chance 1 - (1 - x/15) * (1 - y/15)
+        const unsigned x = e.val >> 4, y = e.val & 15;
+        const unsigned r1 = rng() % 15, r2 = rng() % 15;
+        if (r1 >= x && r2 >= y) return;
+    }
     switch (e.cmd) {
         case kCmdD: delay = e.val; break;
         case kCmdH:

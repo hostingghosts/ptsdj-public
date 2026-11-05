@@ -63,6 +63,7 @@ private:
         double wPos = 0; int wDir = 1, wCnt = 0; bool wAnim = false;   // wave frame animation
         int noiseS = 0, shapeOfs = 0; double shapeAcc = 0; bool noiseFresh = false;           // noise: P value, and the S / P shape offset in index steps
         int retrig = -1, retrigCnt = 0;                              // R: period in ticks, -1 off
+        uint8_t lastCmd = 0, lastVal = 0;                          // for Z
         int fine = -1, tune2 = 0;                                    // F override (fine -1 = use the instrument byte)
     };
     void tick();
@@ -70,7 +71,7 @@ private:
     void onStep(const StepEvent& e);
     void noteOn(int ch, const StepEvent& e);
     void killNote(int ch);
-    void command(int ch, uint8_t cmd, uint8_t val, bool fromTable);
+    void command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool again = false);   // again: Z re-applies it, keeping running phases
     void startTable(int ch, int t);
     void tableTick(int ch);
     void setVolume(int ch, int target);
@@ -82,6 +83,9 @@ private:
     void startKit(const StepEvent& e);
     void waveTick();
     void masterVol(uint8_t val);
+    unsigned rng();                       // LSDJ's generator: S = 17 * S + 0x5C93 (16 bit), the result is the high byte
+    int randMax(int m) { return m ? int(rng() % unsigned(m + 1)) : 0; }   // 0..m, no generator call for 0
+    uint16_t rngState_ = 0x0052;
     void writePan();
     uint8_t* instr(int i) { return s_.instrument(i & 63); }
 
