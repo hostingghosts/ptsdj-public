@@ -41,6 +41,7 @@ int Seq::grooveTicks(Ch& h) {
 bool Seq::hopNext(Ch& h) {
     if (enterChainPos(h, h.cpos + 1)) return true;
     if (enterRow(h, h.row + 1)) return true;
+    h.looped = true;
     if (enterRow(h, 0)) return true;
     h.active = false;
     return false;
@@ -51,6 +52,7 @@ void Seq::advance(Ch& h) {
     if (enterChainPos(h, h.cpos + 1)) return;
     if (enterRow(h, h.row + 1)) return;
     // past the last row: loop to the first row
+    h.looped = true;
     if (!enterRow(h, 0)) h.active = false;
 }
 

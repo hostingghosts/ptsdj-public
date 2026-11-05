@@ -19,7 +19,7 @@ enum class ScreenId : uint8_t { kBlank, kCount };
 // The LSDJ-style screens: one Screen that draws the 160 x 144 Game Boy display and maps the Tracker's controls to its keys.
 class GbScreen final : public Screen {
 public:
-    void bind(gb::Lsdj* l) { lsdj_ = l; }
+    void bind(gb::Lsdj* a, gb::Lsdj* b) { lsdjA_ = a; lsdjB_ = b; lsdj_ = a; }
     const char* title() const override { return ""; }
     void prepare(ot::IDisplay& d) override;
     void draw(ot::Gfx& g) override;
@@ -29,7 +29,9 @@ public:
     bool animated() const override { return true; }
 
 private:
-    gb::Lsdj* lsdj_ = nullptr;
+    gb::Lsdj* lsdj_ = nullptr;                      // the console on screen
+    gb::Lsdj* lsdjA_ = nullptr;
+    gb::Lsdj* lsdjB_ = nullptr;
     gb::Lcd lcd_;
 };
 

@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include "atw/ui/ui.h"
+#include "gb/dual.h"
 #include "gb/lsdsng.h"
 #include "gb/player.h"
 #include "gb/song.h"
@@ -51,20 +52,36 @@ public:
     void quiesce();
 
     const Platform& platform() const { return p_; }
-    gb::Song song;
-    gb::Player player{song};
-    gb::Lsdj lsdj{song, player};
+    // Two linked Game Boys: A (tracks 1-4, the one the older code and tests mean by song/player/lsdj) and B (tracks 5-8).
+    gb::Song song, songB;
+    gb::Player player{song}, playerB{songB};
+    gb::Lsdj lsdj{song, player}, lsdjB{songB, playerB};
+    gb::Dual dual{player, playerB};
     ui::Ui ui;
     void fill(int16_t* out, uint32_t frames);   // audio callback body
     // Songs live on the card as .lsdsng files in GB/Songs (the format LSDJ's own tools use).
-    bool loadSong(const char* path);
-    bool saveSong(const char* path, const char* name);
+    bool loadSong(const char* path, int console = 0);
+    bool saveSong(const char* path, const char* name, int console = 0);
+    // A linked session is two files, BASE_A.lsdsng and BASE_B.lsdsng in GB/Songs.
+    bool loadLinked(const char* base);
+    bool saveLinked(const char* base);
+    // Renders both songs once from their first rows until every channel has come round again (or `maxSeconds`); writes a 16-bit stereo WAV.
+    bool exportWav(const char* path, int rate = 44100, int maxSeconds = 600);
     static constexpr const char* kSongDir = "GB/Songs";
+    static constexpr const char* kExportDir = "GB/Export";   // WAV exports; the session is always called SESSION until a file browser exists
     static constexpr const char* kRomPath = "GB/LSDJ.GB";   // the owner's own LSDJ ROM: its sample kits are read from it
     bool loadKits();                             // false when there is no ROM on the card
     gb::RomKits kits;
 
 private:
+    bool exporting_ = false;
+    struct LinkedTransport final : gb::Transport {
+        App* app = nullptr;
+        void start(int console, int row) override;
+        void stop() override { app->dual.stop(); }
+        bool running() const override { return app->dual.running(); }
+        bool action(Action a) override;
+    } transport_;
     Platform p_;
 };
 

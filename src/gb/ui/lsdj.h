@@ -13,6 +13,16 @@ namespace gb {
 enum class Key : uint8_t { Up, Down, Left, Right, A, B, Select, Start };
 enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove };
 
+// Starts and stops playback for the whole machine (one or two consoles); the UI of a console calls it instead of its own player.
+struct Transport {
+    virtual ~Transport() = default;
+    virtual void start(int console, int row) = 0;   // the console whose Start was pressed and its row
+    virtual void stop() = 0;
+    virtual bool running() const = 0;
+    enum Action { kSavePair, kLoadPair, kExportWav };
+    virtual bool action(Action a) = 0;               // session actions from the Project screen; false = failed
+};
+
 class Lsdj {
 public:
     Lsdj(Song& s, Player& p) : s_(s), p_(p) {}
@@ -20,6 +30,8 @@ public:
     void encoder(int delta);                 // jog wheel: like A + right/left, with Select held A + up/down
     void padNote(int pad);                   // a pad enters a note in the phrase screen
     void draw(Lcd& l) const;
+    void setTransport(Transport* t, int console) { tr_ = t; console_ = console; }
+    int startRow() const { return scr_ == Scr::Song ? songRow : 0; }
     Scr screen() const { return scr_; }
     void show(Scr s) { scr_ = s; }
     // Absolute cursor access for tests and the simulator scripts.
@@ -30,6 +42,7 @@ public:
     int table = 0, tableRow = 0, tableCol = 0;
     int groove = 0, grooveStep = 0;
     int projRow = 0;
+    const char* status() const { return status_; }   // result of the last Project action, shown on the Project screen
 
 private:
     void press(Key k);
@@ -50,8 +63,11 @@ private:
 
     Song& s_;
     Player& p_;
+    Transport* tr_ = nullptr;
+    int console_ = 0;                         // 0 = tracks 1-4, 1 = tracks 5-8
     Scr scr_ = Scr::Song;
     bool a_ = false, b_ = false, sel_ = false;
+    const char* status_ = "";
     bool edited_ = false;                    // A was used with a direction: releasing it does not insert
     uint8_t lastChain_ = 0, lastPhrase_ = 0, lastNote_ = 25, lastInstr_ = 0, lastCmd_ = 0, lastVal_ = 0;
 };

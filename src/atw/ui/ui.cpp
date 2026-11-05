@@ -13,7 +13,7 @@ namespace b = ot::btn;
 
 void Ui::init(App& app) {
     app_ = &app;
-    blank_.bind(&app.lsdj);
+    blank_.bind(&app.lsdj, &app.lsdjB);
     for (int i = 0; i < int(ScreenId::kCount); ++i) screen(ScreenId(i))->attach(*this);
     show(ScreenId::kBlank);
 }
@@ -155,6 +155,7 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::Delete: lsdj_->key(Key::B, down); break;       // B
         case ot::btn::Shift: lsdj_->key(Key::Select, down); break;   // Select
         case ot::btn::Play: lsdj_->key(Key::Start, down); break;     // Start
+        case ot::btn::Song: if (down && lsdjB_) lsdj_ = lsdj_ == lsdjA_ ? lsdjB_ : lsdjA_; break;   // switch between tracks 1-4 and 5-8
         default: return false;
     }
     return true;

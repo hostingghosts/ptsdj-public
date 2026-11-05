@@ -6,6 +6,7 @@
 #include "atw/app.h"
 #include "gb/ui/lsdj.h"
 #include "atw/midi_in.h"
+#include "mem_storage.h"
 #include "test.h"
 #include "ui/buttons.h"
 
@@ -82,8 +83,9 @@ struct Rig {
     FakeClock clock;
     FakeAudio audio;
     App app;
-    explicit Rig(bool withAudio = true) {
+    explicit Rig(bool withAudio = true, ot::IStorage* st = nullptr) {
         Platform p;
+        p.storage = st;
         p.display = &display;
         p.input = &input;
         p.clock = &clock;
@@ -211,4 +213,94 @@ TEST(midi_parser_notes_with_running_status) {
     CHECK(m.feed(90, msg));          // running status
     CHECK(msg.type == MidiIn::Type::kNoteOn && msg.note == 62);
     CHECK_EQ(MidiIn::cellNote(60), 37);
+}
+
+namespace {
+// A one-note song on a channel: chain 0 / phrase 0 on song row 0, the note on step 0 with instrument 0 (a loud pulse), panned as asked.
+void oneNote(gb::Song& s, int ch, int note, uint8_t pan) {
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, ch) = 0;
+    s.note(0, 0) = uint8_t(note);
+    s.phraseInstr(0, 0) = 0;
+    uint8_t* in = s.instrument(0);
+    in[0] = ch == 3 ? 3 : ch == 2 ? 1 : 0;
+    in[1] = 0xF0; in[4] = 0x7F; in[5] = 1; in[7] = uint8_t(0x80 | pan);
+    s.at(gb::off::kTempo) = 255;
+}
+}  // namespace
+
+TEST(two_consoles_start_together_and_mix) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 1);    // A: pulse 1, left only
+    oneNote(r.app.songB, 1, 37, 2);   // B: pulse 2, right only
+    r.app.dual.start(0, 0);
+    CHECK(r.app.player.running() && r.app.playerB.running());
+    int16_t out[2 * 2048];
+    r.app.fill(out, 2048);
+    int peakL = 0, peakR = 0;
+    for (int i = 0; i < 2048; ++i) { peakL = std::max(peakL, std::abs(int(out[2 * i]))); peakR = std::max(peakR, std::abs(int(out[2 * i + 1]))); }
+    CHECK(peakL > 500);   // console A is heard on the left
+    CHECK(peakR > 500);   // console B on the right
+    CHECK(r.app.player.voiceOn(0));
+    CHECK(r.app.playerB.voiceOn(1));
+    CHECK(!r.app.player.voiceOn(1));   // each console only has its own notes
+}
+
+TEST(start_key_starts_both_consoles_and_song_key_switches_screen) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 3);
+    oneNote(r.app.songB, 2, 30, 3);
+    r.app.lsdj.key(gb::Key::Start, true);
+    r.app.lsdj.key(gb::Key::Start, false);
+    CHECK(r.app.player.running());
+    CHECK(r.app.playerB.running());
+    r.app.lsdjB.key(gb::Key::Start, true);   // Start on the other console stops everything
+    CHECK(!r.app.dual.running());
+}
+
+TEST(linked_session_saves_and_loads_as_two_files_and_exports_a_wav) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    oneNote(r.app.songB, 3, 49, 3);
+    CHECK(r.app.saveLinked("DEMO"));
+    CHECK(st.files.count("GB/Songs/DEMO_A.lsdsng") == 1);
+    CHECK(st.files.count("GB/Songs/DEMO_B.lsdsng") == 1);
+    r.app.songB.songCell(0, 3) = 0xFF;
+    CHECK(r.app.loadLinked("DEMO"));
+    CHECK_EQ(int(r.app.songB.songCell(0, 3)), 0);
+    CHECK(r.app.exportWav("GB/out.wav", 22050, 10));
+    const auto& w = st.files["GB/out.wav"];
+    CHECK(w.size() > 44u && std::memcmp(w.data(), "RIFF", 4) == 0);
+    CHECK(!r.app.dual.running());
+}
+
+TEST(wav_export_stops_when_the_song_loops) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    for (int r2 = 0; r2 < 256; ++r2) r.app.songB.songCell(r2, 0) = 0xFF;   // console B stays silent
+    r.app.song.at(gb::off::kTempo) = 255;
+    CHECK(r.app.exportWav("GB/loop.wav", 22050, 600));
+    // one pass is 16 steps of 6 ticks at 102 ticks/s (about 0.94 s): far less than the 600 s cap
+    CHECK(st.files["GB/loop.wav"].size() < 22050u * 4u * 3u);
+    CHECK(st.files["GB/loop.wav"].size() > 22050u * 4u / 2u);
+}
+
+TEST(project_screen_saves_loads_and_exports_the_session) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    r.app.lsdj.show(gb::Scr::Project);
+    auto tap = [&](gb::Key k) { r.app.lsdj.key(k, true); r.app.lsdj.key(k, false); };
+    for (int i = 0; i < 9; ++i) tap(gb::Key::Down);
+    tap(gb::Key::A);
+    CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
+    CHECK(st.files.count("GB/Songs/SESSION_A.lsdsng") == 1 && st.files.count("GB/Songs/SESSION_B.lsdsng") == 1);
+    tap(gb::Key::Down); tap(gb::Key::A);                       // LOAD SESSION
+    CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
+    tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT WAV
+    CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
+    CHECK(st.files["GB/Export/SESSION.wav"].size() > 44u);
 }

@@ -2,8 +2,9 @@
 
 LSDJ-style Game Boy tracker for the original Polyend Tracker (MK66). Personal use only (see `LICENSE`, `NOTICE.md`).
 
-State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (partial), LSDJ-look screens (Song, Chain, Phrase,
-Instrument, Table, Groove, Project). Not yet: synth/wave screens, kits, most commands, 8-channel dual engine, WAV export.
+State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (close to LSDJ 9.4.2, see `docs/LSDJ_FORMAT.md`), LSDJ-look
+screens (Song, Chain, Phrase, Instrument, Table, Groove, Project), 8 channels (two linked Game Boys, tracks 1-4 = song A, 5-8 = song B,
+summed stereo), WAV export. Not yet: synth/wave screens, file browser.
 Desktop simulator first; nothing tested on the Tracker.
 
 Controls (Game Boy key = Tracker key): D-pad = arrows, A = Insert, B = Delete, Select = Shift, Start = Play. Jog wheel =
@@ -15,5 +16,8 @@ make sim; build/sim/gb-sim        # simulator (keys: arrows, Insert, Delete, Shi
 make -C sim check                 # screen tour (4 DMG shades only) + demo song to WAV
 make CROSS=<path>/arm-none-eabi-  # build/PolyendTracGBTrkv010.ptf (24 chars, checked)
 ```
-Songs: `GB/Songs/*.lsdsng` on the card (`GB/AUTOLOAD.LSDSNG` opens at start). `demos/` holds sample songs and kits.
+Two consoles: the Song key switches the screen between tracks 1-4 (A) and 5-8 (B); Play starts and stops both together, each keeping its own
+tempo and L/R panning. Project screen: SAVE/LOAD SESSION A+B (`GB/Songs/SESSION_A/B.lsdsng`, each opens on a real LSDJ) and EXPORT WAV A+B
+(`GB/Export/SESSION.wav`, one pass until every channel loops; the screen waits while it renders).
+Songs: `GB/Songs/*.lsdsng` on the card (`GB/AUTOLOAD.LSDSNG` and `GB/AUTOLOAD_B.LSDSNG` open at start). `demos/` holds sample songs and kits.
 Docs: `LEARNINGS.md`, `docs/LSDJ_FORMAT.md`, `docs/HARDWARE_MAP.md`, `UPSTREAM.md`. `tools/oracle/` checks against an LSDJ ROM.

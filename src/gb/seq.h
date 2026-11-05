@@ -50,6 +50,7 @@ public:
     bool playing() const { return ch_[0].active || ch_[1].active || ch_[2].active || ch_[3].active; }
     int row(int c) const { return ch_[c].row; }
     bool active(int c) const { return ch_[c].active; }
+    bool allLooped() const { for (const Ch& h : ch_) if (h.active && !h.looped) return false; return true; }
     int chainPos(int c) const { return ch_[c].cpos; }
     int step(int c) const { return ch_[c].step; }
     int phrase(int c) const { return ch_[c].phrase; }
@@ -57,7 +58,7 @@ public:
 
 private:
     struct Ch {
-        bool active = false;
+        bool active = false, looped = false;     // looped: the channel has come round to song row 0 again
         int row = 0, cpos = 0, step = 0, gpos = 0, wait = 0;
         uint8_t chain = 0xFF, phrase = 0xFF, groove = 0;
         int hopStep = -1;

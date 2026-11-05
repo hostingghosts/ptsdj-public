@@ -27,6 +27,7 @@ public:
     Apu& apu() { return apu_; }
     const Seq& seq() const { return seq_; }
     bool voiceOn(int c) const { return v_[c].on; }
+    bool songLooped() const { return seq_.allLooped(); }   // every active channel has reached song row 0 again
     void setTempo(int t) { tempo_ = t; }
     int tempo() const { return tempo_; }
     // Audio: `n` stereo frames at `rate` Hz, 16-bit interleaved. Each output sample is the box-filtered mix.

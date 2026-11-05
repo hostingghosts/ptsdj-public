@@ -62,7 +62,8 @@ void Lsdj::key(Key k, bool down) {
     if (k == Key::Select) { sel_ = down; return; }
     if (!down) return;
     if (k == Key::Start) {
-        if (p_.running()) p_.stop(); else { p_.start(scr_ == Scr::Song ? songRow : 0); }
+        if (tr_) { if (tr_->running()) tr_->stop(); else tr_->start(console_, startRow()); }
+        else if (p_.running()) p_.stop(); else p_.start(startRow());
         return;
     }
     if (sel_) { navigate(k); return; }
@@ -121,7 +122,7 @@ void Lsdj::move(Key k) {
         case Scr::Instr: instrRow = clampi(instrRow + dy, 0, instrRows() - 1); break;
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
-        case Scr::Project: projRow = clampi(projRow + dy, 0, 9); break;
+        case Scr::Project: projRow = clampi(projRow + dy, 0, 11); break;
         default: break;
     }
 }
@@ -137,6 +138,12 @@ void Lsdj::press(Key) {
             if (phraseCol == 0) { uint8_t& n = s_.note(phrase, step); if (!n) { n = lastNote_; if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_; s_.markPhrase(phrase); } }
             else if (phraseCol == 1) { uint8_t& i = s_.phraseInstr(phrase, step); if (i == 0xFF) i = lastInstr_; }
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
+            break;
+        case Scr::Project:
+            if (tr_ && projRow >= 9) {
+                const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : Transport::kExportWav);
+                status_ = ok ? "DONE" : "FAILED";
+            }
             break;
         default: break;
     }
@@ -254,8 +261,8 @@ void Lsdj::drawPanel(Lcd& l) const {
     l.glyphAt(128, 24, '\x01', false, 3, 1);
     std::snprintf(b, sizeof b, "%d", s_.at(off::kTempo));
     for (int i = 0; b[i]; ++i) l.glyphAt(136 + i * 8, 24, b[i], false, 3, 1);
-    static const char lab[4] = {'1', '2', 'W', 'N'};
-    for (int c = 0; c < 4; ++c) l.glyphAt(136, 40 + c * 8, lab[c], p_.voiceOn(c), p_.voiceOn(c) ? 0 : 3, p_.voiceOn(c) ? 3 : 1);
+    static const char lab[2][4] = {{'1', '2', '3', '4'}, {'5', '6', '7', '8'}};
+    for (int c = 0; c < 4; ++c) l.glyphAt(136, 40 + c * 8, lab[console_][c], p_.voiceOn(c), p_.voiceOn(c) ? 0 : 3, p_.voiceOn(c) ? 3 : 1);
     // screen map
     auto mark = [&](int col, int row, char c, Scr s) { l.glyph(col, row, c, scr_ == s); };
     l.rect(120, 112, 40, 32, 0);
@@ -282,6 +289,7 @@ void Lsdj::draw(Lcd& l) const {
 
 void Lsdj::drawSong(Lcd& l) const {
     l.text(0, 0, "SONG");
+    l.text(5, 0, console_ ? "B 5-8" : "A 1-4");
     static const char* ch[4] = {"PU1", "PU2", "WAV", "NOI"};
     for (int c = 0; c < 4; ++c) l.text(0, 1, "", false), [&] { for (int i = 0; i < 3; ++i) l.glyphAt(18 + c * 26 + i * 8 - 2, 8, ch[c][i], false, 2, 0); }();
     const int base = std::max(0, std::min(songRow - 8, 256 - 16));
@@ -376,9 +384,11 @@ void Lsdj::drawProject(Lcd& l) const {
     row(11, "HELP", "", projRow == 6);
     row(12, "CLEAN SONG DATA", "", projRow == 7);
     row(13, "CLEAN INSTR DATA", "", projRow == 8);
-    row(14, "LOAD/SAVE SONG", "", projRow == 9);
+    row(10, "EXPORT WAV A+B", "", projRow == 11);
+    row(14, "SAVE SESSION A+B", "", projRow == 9);
+    row(15, "LOAD SESSION A+B", "", projRow == 10);
+    l.text(0, 17, status_);
     l.text(0, 16, "WORK TIME: 0:00");
-    l.text(0, 17, "TOTAL: 0:00");
 }
 
 void Lsdj::drawInstr(Lcd& l) const {
