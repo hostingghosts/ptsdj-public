@@ -126,3 +126,6 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   runs a sequencer tick when it reaches 896 (so a tick is 896 / tempo sub-steps: 7 at tempo 128, mean tick spacing 81927 cycles in the ROM log). With this ordering no
   extra "one sub-step late" rules are needed: table V/P/L started on any tick match the ROM (tools/oracle/timing_check.py, 0 mismatches).
 - Table groove (G in a table): each row takes the next groove entry in turn. A table started by A runs its row 0 on the next tick. Re-running V keeps the vibrato phase.
+- Noise: S is a plain signed byte added to the note index (SFF = -1); the index wraps modulo 120 on (n - 1); the per-tick P step (value / 4, fractional part kept) runs after
+  the tick's table rows and is skipped on the tick a P command ran. Noise P, S and tables now match the ROM (kicks: 12 mismatches in 200 ticks).
+- The ROM powers the APU on ~92600 cycles before the first tick; the player advances its frame sequencer by that much at start (small effect on sweeps).

@@ -10,6 +10,7 @@ namespace {
 #include "gb/tables.inc"
 // Envelope step period in 1/360 s for release digit 1..15 (measured).
 const uint8_t kEnvPeriod[16] = {0, 1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 86, 115};
+constexpr uint32_t kApuHead = 92628;
 constexpr int kSlideDelay = 0;
 constexpr bool kAStartsNow = false;
 constexpr double kTick = 10485760.0;      // cycles per tick = kTick / tempo
@@ -22,6 +23,7 @@ void Player::start(int row) {
     apu_.write(0xFF26, 0x80);
     apu_.write(0xFF24, 0x77);
     apu_.write(0xFF25, 0xFF);
+    apu_.advance(kApuHead);                               // the ROM powers the chip on about 92600 cycles before the first tick (frame sequencer phase)
     for (auto& v : v_) v = Voice();
     tempo_ = s_.at(off::kTempo);
     if (tempo_ < 40) tempo_ = 40;
@@ -336,7 +338,7 @@ void Player::refreshPitch(int ch) {
     const uint8_t* in = instr(v.instr);
     int n = v.base + v.tTrans + v.chordOfs + (ch == 3 ? v.shapeOfs : 0) + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
     if (ch == 3) {                                    // noise: the note index wraps modulo 120 (S and table transposes just add to it)
-        n = ((n % 120) + 120) % 120;
+        n = (((n - 1) % 120) + 120) % 120 + 1;               // ROM index n - 1 wraps modulo 120
         v.note = n;
         apu_.write(0xFF22, kNoiseNr43[n]);
         return;
@@ -475,9 +477,9 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
             break;
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
         case kCmdP: {
-            if (ch == 3) { v.noiseS = val; v.shapeAcc = v.shapeOfs; v.noiseFresh = true; break; }   // noise P
+            if (ch == 3) { v.noiseS = val; v.shapeAcc = v.shapeOfs; v.noiseFresh = true; break; }   // noise P: the same tick's step is skipped
             v.bendDelay = 0;
-            v.bendRate = bendRateOf(val); v.bendTgt = false;   // a table row on a later tick starts a sub-step late
+            v.bendRate = bendRateOf(val); v.bendTgt = false;
             break;
         }
         case kCmdC:
@@ -498,8 +500,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         }
         case kCmdS:
             if (ch == 3) {
-                const int x = int8_t((val >> 4) << 4) >> 4, y = int8_t((val & 15) << 4) >> 4;
-                v.shapeOfs += x * 16 + y; v.shapeAcc = v.shapeOfs;   // shape: added to the noise index, kept until the next note
+                v.shapeOfs += int8_t(val); v.shapeAcc = v.shapeOfs;               // noise S: a plain signed byte added to the note index (measured: SFF = -1)
                 refreshPitch(3);
             } else if (ch == 0) {
                 const int x = val >> 4, y = val & 15;
@@ -571,16 +572,19 @@ void Player::tick() {
                 refreshPitch(c);
             }
         }
-        if (c == 3 && v.noiseS) {                                    // noise P: the shape index moves by value/4 per tick
-            if (v.noiseFresh) v.noiseFresh = false;                  // starts the tick after the command
-            else { v.shapeAcc += int8_t(v.noiseS) / 4.0; v.shapeOfs = int(v.shapeAcc); refreshPitch(3); }
-        }
         if (v.retrig > 0 && ++v.retrigCnt >= v.retrig) { v.retrigCnt = 0; retrigger(c); }
     }
     waveTick();
     for (int c = 0; c < 4; ++c) {
         tableTick(c);
         if (v_[c].chordOn && v_[c].chordCnt < 0) { v_[c].chordCnt = 1; v_[c].chordAge = 0; }   // a table C ran after this tick's chord step: its first tick is spent
+    }
+    {   // noise P/shape step: after the table rows of the tick (measured), skipped on the tick a P command ran
+        Voice& v = v_[3];
+        if (v.on && v.noiseS) {
+            if (v.noiseFresh) v.noiseFresh = false;
+            else { v.shapeAcc += int8_t(v.noiseS) / 4.0; v.shapeOfs = int(v.shapeAcc); refreshPitch(3); }
+        }
     }
     if (!seq_.playing()) running_ = false;
 }
