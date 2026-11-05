@@ -8,7 +8,14 @@ def run(names=None, ticks=200):
         m = lsdsng.decompress(open(f, 'rb').read()); sav = m + J.BASE[0x8000:]; tempo = m[0x3FB4]
         try: bad = compare.compare(sav, tempo, ticks, chans=(0, 1, 2, 3))
         except Exception as e: print(n, 'ERR', e); continue
-        bad = [b for b in bad if not (b[2] == 'vol' and abs(b[3] - b[4]) <= 1)]
+        import math
+        def near(b):
+            if b[2] == 'vol': return abs(b[3] - b[4]) <= 1
+            if b[2] == 'freq' and b[1] != 3:
+                pa, pb = 2048 - b[3], 2048 - b[4]
+                return pa > 0 and pb > 0 and abs(12 * math.log2(pa / pb)) < 0.6     # vibrato/slide phase: within a semitone
+            return False
+        bad = [b for b in bad if not near(b)]
         cnt = {}
         for k, c, fld, a, b in bad: cnt[(c, fld)] = cnt.get((c, fld), 0) + 1
         print(n[:26].ljust(27), 'tempo', tempo, 'bad', len(bad), dict(sorted(cnt.items())), flush=True)

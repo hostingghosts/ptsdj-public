@@ -52,3 +52,16 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   applied to the period (so register steps scale with 2048-f); P+L+VIB byte: bit0 direction, bits1-2 shape (sine, saw, square), 0x10 = per tick.
 - O: 0 none, 1 left, 2 right, 3 both (NR51 bits). Pulse 2 tune = byte 2 signed semitones; pulse fine = byte 11 (about -b*30/255 register units on pulse 1).
 - P (pitch bend) rate is not linear in the value and is not modelled yet. L, S, R, B, C, F, M, Z, W-on-wave not modelled yet.
+
+## More commands (measured, tick-exact unless noted)
+- C xy: from the tick after the command the note cycles x, y, 0 semitones per tick (x, y, 0, x ...). Matches the ROM exactly.
+- R xy: retrigger every y ticks (y = 0 off). R with x >= 8 retriggers every ~4 steps of the 360 Hz clock: not modelled.
+- S xy (pulse 1): NR10 = ~b with b = 0x7F + (x-1)*16 + y (x = 0: 0x7F + y), then the note is retriggered.
+- M ld: absolute 0-7 per side; 8 = no change, 9-B = +1..+3, D-F = -3..-1; written to NR50.
+- F xy (pulse): fine = -y register units on pulse 1 (+y on pulse 2); x = pulse 2 tune in semitones.
+- L (slide, same step as a note): no retrigger; pitch moves linearly in semitones to the new note over `value` steps of the 360 Hz clock.
+- P v (signed): pitch bend in semitones per 360 Hz step = 0.00163*|v| + 0.0005*v^2 (fit; tick-level error about 1-3 register units).
+- Wave instrument bytes (type 1): b1 bits 6-5 = NR32 volume code, b3 = first wave frame (synth x 16), b7 bit6 = length enable, b9 = play mode
+  (0 manual .. 3), b10/b11 = length/speed of the frame animation (not modelled: only the first frame plays).
+- Pulse/noise: byte 9 with bits 7-6 set replaces the release rate after the first step (low nibble as the release digit).
+- B (command byte 2) is used on kit instruments in the demos and its effect is unknown; Z (random) cannot match the ROM's random numbers.

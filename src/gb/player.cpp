@@ -22,6 +22,7 @@ void Player::start(int row) {
     for (auto& v : v_) v = Voice();
     tempo_ = s_.at(off::kTempo);
     if (tempo_ < 40) tempo_ = 40;
+    nr50_ = 0x77;
     seq_.start(row);
     running_ = true;
     hpInit_ = false;
@@ -62,8 +63,13 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.fade = -1;
     v.vibDepth = 0;
     v.vibSemis = 0;
+    v.bendRate = v.bendSemis = 0;
+    v.chordOn = false; v.chordOfs = 0;
+    v.retrig = -1;
+    if (!v.slideLeft) v.slideSemis = 0;
     v.on = true;
     v.envCount = 0;
+    v.envSteps = 0;
     v.kill = -1;
     v.pan = in[7] & 3;
     writePan();
@@ -86,13 +92,13 @@ void Player::noteOn(int ch, const StepEvent& e) {
             const uint16_t f = kWaveFreq[n];
             apu_.write(0xFF1C, in[1]);
             apu_.write(0xFF1A, 0x00);
-            const uint8_t* w = s_.wave(0);
+            const uint8_t* w = s_.wave(in[3]);   // wave instrument: byte 3 = first wave frame (synth x 16)
             for (int i = 0; i < 16; ++i) apu_.write(0xFF30 + i, w[i]);
             apu_.write(0xFF1A, 0x80);
             apu_.write(0xFF1D, 0xE0);
             apu_.write(0xFF1E, 0x87);
             apu_.write(0xFF1D, uint8_t(f & 0xFF));
-            apu_.write(0xFF1E, uint8_t(lenEn | (f >> 8)));
+            apu_.write(0xFF1E, uint8_t(((in[7] & 0x40) ? 0x40 : 0) | (f >> 8)));
             break;
         }
         default:
@@ -136,17 +142,18 @@ void Player::refreshPitch(int ch) {
     Voice& v = v_[ch];
     if (!v.on || muted_[ch]) return;
     const uint8_t* in = instr(v.instr);
-    int n = v.base + v.tTrans + (ch == 1 ? int8_t(in[2]) : 0);
+    int n = v.base + v.tTrans + v.chordOfs + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
     n = std::clamp(n, 1, 127);
     v.note = n;
     const uint8_t lenEn = (in[3] & 0x40) ? 0x40 : 0;
     if (ch == 3) { apu_.write(0xFF22, kNoiseNr43[n]); return; }
     uint16_t f = ch == 2 ? kWaveFreq[n] : kPulseFreq[n];
-    if (v.vibSemis != 0.0) {
+    const double semis = v.vibSemis + v.slideSemis + v.bendSemis;
+    if (semis != 0.0) {
         const double p = 2048.0 - f;
-        f = uint16_t(std::clamp(2048.0 - std::floor(p * std::pow(2.0, -v.vibSemis / 12.0) + 0.5), 0.0, 2047.0));
+        f = uint16_t(std::clamp(2048.0 - std::floor(p * std::pow(2.0, -semis / 12.0) + 0.5), 0.0, 2047.0));
     }
-    if (ch < 2) { const int fine = in[11] * 30 / 255; f = uint16_t(std::clamp<int>(ch == 0 ? int(f) - fine : int(f) + fine, 0, 2047)); }
+    if (ch < 2) { const int fine = v.fine >= 0 ? v.fine : in[11] * 30 / 255; f = uint16_t(std::clamp<int>(ch == 0 ? int(f) - fine : int(f) + fine, 0, 2047)); }
     const uint16_t base = ch == 0 ? 0xFF13 : ch == 1 ? 0xFF18 : 0xFF1D;
     apu_.write(base, uint8_t(f & 0xFF));
     apu_.write(base + 1, uint8_t(lenEn | (f >> 8)));
@@ -196,6 +203,31 @@ void Player::tableTick(int ch) {
     refreshPitch(ch);
 }
 
+void Player::retrigger(int ch) {
+    Voice& v = v_[ch];
+    if (!v.on || muted_[ch]) return;
+    const uint8_t* in = instr(v.instr);
+    const uint8_t lenEn = (in[3] & 0x40) ? 0x40 : 0;
+    const uint16_t f = ch == 2 ? kWaveFreq[v.note] : kPulseFreq[v.note];
+    if (ch == 3) { apu_.write(0xFF23, uint8_t(0x80 | lenEn)); return; }
+    const uint16_t base = ch == 0 ? 0xFF13 : ch == 1 ? 0xFF18 : 0xFF1D;
+    apu_.write(base, uint8_t(f & 0xFF));
+    apu_.write(base + 1, uint8_t(0x80 | lenEn | (f >> 8)));
+    refreshPitch(ch);
+}
+
+void Player::masterVol(uint8_t val) {
+    uint8_t nr = nr50_;
+    auto adj = [](int cur, int d) {
+        if (d < 8) return d;                                    // 0-7 absolute
+        const int rel = d == 8 ? 0 : d <= 11 ? d - 8 : d >= 13 ? d - 16 : 0;   // 9-B up 1-3, D-F down 3-1
+        return std::clamp(cur + rel, 0, 7);
+    };
+    const int l = adj((nr >> 4) & 7, val >> 4), r = adj(nr & 7, val & 15);
+    nr50_ = uint8_t(l << 4 | r);
+    apu_.write(0xFF24, nr50_);
+}
+
 void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
     Voice& v = v_[ch];
     switch (cmd) {
@@ -208,6 +240,25 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable) {
             else { setVolume(ch, val >> 4); v.fade = val & 15; }
             break;
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
+        case kCmdP: {
+            const int sv = int8_t(val); const double a = std::abs(sv);
+            v.bendRate = (sv < 0 ? -1.0 : 1.0) * (0.00163 * a + 0.0005 * a * a);
+            break;
+        }
+        case kCmdC:
+            v.chord[0] = 0; v.chord[1] = val >> 4; v.chord[2] = val & 15; v.chordOn = val != 0; v.chordCnt = -1; v.chordOfs = 0;
+            break;
+        case kCmdR: v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = 0; break;
+        case kCmdS:
+            if (ch == 0) {
+                const int x = val >> 4, y = val & 15;
+                const uint8_t b = x ? uint8_t(0x7F + (x - 1) * 16 + y) : uint8_t(0x7F + y);
+                apu_.write(0xFF10, uint8_t(~b));
+                retrigger(0);
+            }
+            break;
+        case kCmdM: masterVol(val); break;
+        case kCmdF: if (ch < 2) { v.fine = val & 15; v.tune2 = int(val >> 4); refreshPitch(ch); } break;
         case kCmdV: v.vibSpeed = val >> 4; v.vibDepth = val & 15; v.vibPhase = 0; if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); } break;
         case kCmdO: v.pan = val & 3; writePan(); break;
         default: break;
@@ -225,6 +276,15 @@ void Player::onStep(const StepEvent& e) {
             break;
         default: break;
     }
+    if (e.cmd == kCmdL && e.note && v.on) {
+        int n = std::clamp(e.note + e.transpose + (e.channel != 3 ? int8_t(s_.at(off::kTranspose)) : 0), 1, 127);
+        const double cur = v.base + v.slideSemis;
+        v.base = n; v.slideSemis = cur - n; v.slideLeft = e.val;
+        v.slideStep = e.val ? -v.slideSemis / e.val : 0;
+        if (!e.val) v.slideSemis = 0;
+        refreshPitch(e.channel);
+        return;
+    }
     if (e.note) {
         if (delay > 0) { v.pending = delay; v.delayed = e; }
         else noteOn(e.channel, e);
@@ -239,11 +299,28 @@ void Player::tick() {
         if (v.pending > 0 && --v.pending == 0) noteOn(c, v.delayed);
     }
     seq_.tick([&](const StepEvent& e) { onStep(e); });
+    for (int c = 0; c < 4; ++c) {
+        Voice& v = v_[c];
+        if (!v.on) continue;
+        if (v.chordOn) {
+            if (v.chordCnt < 0) v.chordCnt = 1;                    // the tick the command ran on: unchanged, then x, y, 0, x ...
+            else { v.chordOfs = v.chord[v.chordCnt % 3]; ++v.chordCnt; refreshPitch(c); }
+        }
+        if (v.retrig > 0 && ++v.retrigCnt >= v.retrig) { v.retrigCnt = 0; retrigger(c); }
+    }
     for (int c = 0; c < 4; ++c) tableTick(c);
     if (!seq_.playing()) running_ = false;
 }
 
 void Player::sub360() {
+    for (int c = 0; c < 4; ++c) {
+        Voice& v = v_[c];
+        if (!v.on || c == 3) continue;
+        bool ch = false;
+        if (v.slideLeft > 0) { v.slideSemis += v.slideStep; if (--v.slideLeft == 0) v.slideSemis = 0; ch = true; }
+        if (v.bendRate != 0.0) { v.bendSemis += v.bendRate; ch = true; }
+        if (ch) refreshPitch(c);
+    }
     for (int c = 0; c < 4; ++c) {
         Voice& v = v_[c];
         if (!v.on || !v.vibDepth || c == 3) continue;
@@ -256,10 +333,14 @@ void Player::sub360() {
     for (int c : {0, 1, 3}) {
         Voice& v = v_[c];
         if (!v.on || muted_[c]) continue;
-        const uint8_t nib = v.fade >= 0 ? v.fade : (instr(v.instr)[1] & 15);
+        const uint8_t* in = instr(v.instr);
+        const uint8_t first = v.fade >= 0 ? v.fade : (in[1] & 15);
+        // byte 9 with its top two bits set replaces the release rate after the first step (measured; its exact meaning is not known)
+        const uint8_t nib = (v.envSteps == 0 || v.fade >= 0 || (in[9] & 0xC0) != 0xC0) ? first : (in[9] & 15);
         if (!nib || v.vol <= 0) continue;
         if (++v.envCount >= kEnvPeriod[nib]) {
             v.envCount = 0;
+            ++v.envSteps;
             const uint16_t r = c == 0 ? 0xFF12 : c == 1 ? 0xFF17 : 0xFF21;
             apu_.write(r, 0x09);                    // volume down by one through the DMG "zombie" write sequence
             apu_.write(r, 0x11);

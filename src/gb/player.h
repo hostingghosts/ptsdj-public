@@ -37,7 +37,7 @@ private:
         uint8_t instr = 0;
         int note = 0;           // after transposes
         int vol = 0;            // current envelope volume (pulse/noise)
-        int envCount = 0;
+        int envCount = 0, envSteps = 0;
         bool on = false;
         int pending = -1;       // ticks until a delayed note starts
         StepEvent delayed{};
@@ -53,6 +53,11 @@ private:
         int vibSpeed = 0, vibDepth = 0;   // V command (depth 0 = off)
         double vibPhase = 0;
         double vibSemis = 0;
+        double slideSemis = 0, slideStep = 0; int slideLeft = 0;   // L: remaining offset to the target, per-step change
+        double bendRate = 0, bendSemis = 0;                          // P
+        int chord[3] = {0, 0, 0}; bool chordOn = false; int chordCnt = 0, chordOfs = 0;   // C
+        int retrig = -1, retrigCnt = 0;                              // R: period in ticks, -1 off
+        int fine = -1, tune2 = 0;                                    // F override (fine -1 = use the instrument byte)
     };
     void tick();
     void sub360();
@@ -65,6 +70,8 @@ private:
     void setVolume(int ch, int target);
     void refreshPitch(int ch);
     void writeDuty(int ch, int duty);
+    void retrigger(int ch);
+    void masterVol(uint8_t val);
     void writePan();
     uint8_t* instr(int i) { return s_.instrument(i & 63); }
 
@@ -73,6 +80,7 @@ private:
     Apu apu_;
     Voice v_[4];
     bool muted_[4] = {false, false, false, false};
+    uint8_t nr50_ = 0x77;
     bool running_ = false;
     int tempo_ = 128;
     double nextTick_ = 0, next360_ = 0;
