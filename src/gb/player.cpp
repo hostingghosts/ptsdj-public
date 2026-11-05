@@ -456,7 +456,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
     Voice& v = v_[ch];
     if (cmd == kCmdZ) {                                   // randomize the last command: + random(hi) * 16 + random(lo), then run it again
         const uint8_t lc = v.lastCmd[slot_];
-        if (!lc || lc == kCmdH || lc == kCmdG || lc == kCmdD) return;
+        if (!lc || lc == kCmdH) return;   // Z over these draws nothing (measured with G)
         const int hi = randMax(val >> 4), lo = randMax(val & 15);
         command(ch, lc, uint8_t(v.lastVal[slot_] + (hi << 4) + lo), fromTable, true);
         return;
