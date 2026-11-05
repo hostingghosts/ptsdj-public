@@ -11,7 +11,7 @@ CXXFLAGS := -DGB_BUILD -DGB_VERSION=\"$(VERSION)\" -std=c++17 -O2 -g -Wall -Wext
             -I$(ROOT)/src/platform/core -Isrc $(SDL_CFLAGS)
 LDLIBS   := $(SDL_LIBS) -lpthread
 
-PORTABLE := $(shell find $(ROOT)/src/atw $(ROOT)/src/platform/core -name '*.cpp' ! -name 'device_*' 2>/dev/null)
+PORTABLE := $(shell find $(ROOT)/src/atw $(ROOT)/src/gb $(ROOT)/src/platform/core -name '*.cpp' ! -name 'device_*' 2>/dev/null)
 CORE_OBJS := $(patsubst $(ROOT)/src/%.cpp,$(OUT)/obj/%.o,$(PORTABLE))
 SIM_SRCS  := $(filter-out src/host_midi.cpp src/sim_nvstore.cpp,$(wildcard src/*.cpp))
 SIM_OBJS  := $(patsubst src/%.cpp,$(OUT)/obj/sim/%.o,$(SIM_SRCS))

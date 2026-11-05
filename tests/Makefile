@@ -8,7 +8,7 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined
             -fno-sanitize-recover=undefined -DGB_BUILD $(INCS) -MMD
 LDFLAGS  := -fsanitize=address,undefined
 
-PORTABLE := $(shell find $(ROOT)/src/atw $(ROOT)/src/platform/core -name '*.cpp' \
+PORTABLE := $(shell find $(ROOT)/src/atw $(ROOT)/src/gb $(ROOT)/src/platform/core -name '*.cpp' \
               ! -name 'device_*' 2>/dev/null)
 OBJS     := $(patsubst $(ROOT)/src/%.cpp,$(OUT)/obj/%.o,$(PORTABLE))
 TESTS    := $(wildcard *_test.cpp)
