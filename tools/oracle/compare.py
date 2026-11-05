@@ -3,7 +3,7 @@ import subprocess, tempfile, os
 import lsdjsav as J, probe, replay
 def mine_states(sav, ticks):
     d = tempfile.mktemp(suffix='.sav', dir=probe.ORA); open(d, 'wb').write(sav)
-    out = subprocess.run([probe.ORA + '/playdump', d, str(ticks)], capture_output=True, text=True).stdout; os.remove(d)
+    out = subprocess.run([probe.ORA + '/playdump', d, str(ticks)], capture_output=True, text=True, env=dict(os.environ, GB_ROM=probe.ROM)).stdout; os.remove(d)
     raw = {}
     for l in out.split('\n'):
         if l:
