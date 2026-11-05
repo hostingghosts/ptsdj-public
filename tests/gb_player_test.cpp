@@ -2,6 +2,7 @@
 #include "gb/player.h"
 #include "test.h"
 
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -96,4 +97,63 @@ TEST(chord_phase_survives_running_c_again) {
 TEST(chord_off_returns_to_the_note) {
     const auto a = chordFreqs({{0, 0x04}, {1, 0x00}}, 18);
     CHECK(a[17] == a[0]);
+}
+
+namespace {
+// Pulse 1 state per tick for instrument bytes `in` (16) and table 0 rows (trans, cmd1, val1, cmd2, val2), notes at the given phrase steps.
+struct Sample { int vol, freq, pan; };
+std::vector<Sample> playPulse(const uint8_t* in16, const std::vector<std::array<uint8_t, 5>>& rows, const std::vector<int>& noteSteps, int ticks) {
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, 0) = 0;
+    for (int st : noteSteps) { s.note(0, st) = 25; s.phraseInstr(0, st) = 0; }
+    for (int i = 0; i < 16; ++i) s.instrument(0)[i] = in16[i];
+    for (size_t i = 0; i < rows.size(); ++i) {
+        s.at(uint16_t(off::kTblTrans + i)) = rows[i][0];
+        s.at(uint16_t(off::kTblCmd1 + i)) = rows[i][1]; s.at(uint16_t(off::kTblVal1 + i)) = rows[i][2];
+        s.at(uint16_t(off::kTblCmd2 + i)) = rows[i][3]; s.at(uint16_t(off::kTblVal2 + i)) = rows[i][4];
+    }
+    s.at(off::kTempo) = 128;
+    Player p(s);
+    p.start(0);
+    std::vector<Sample> out;
+    long long done = 0;
+    for (int t = 0; t < ticks; ++t) {
+        const long long until = (long long)((t + 0.9) * 10485760.0 / 128);
+        p.run(uint32_t(until - done));
+        done = until;
+        const auto st = p.apu().state(0);
+        out.push_back({st.vol, st.freq, p.apu().pan()});
+    }
+    return out;
+}
+}  // namespace
+
+TEST(envelope_has_three_stages) {
+    // measured: 0x77 then byte 9 = 5D, byte 10 = 2F decays 7 -> 5 fast, 5 -> 2 slowly (rate D), 2 -> 0 very slowly (rate F)
+    const uint8_t in[16] = {0, 0x77, 12, 0, 0x7F, 1, 0x20, 3, 0, 0x5D, 0x2F, 0, 0, 0, 0, 0};
+    const auto a = playPulse(in, {{0, 0, 0, 0, 0}}, {0}, 60);
+    CHECK_EQ(a[0].vol, 7);
+    CHECK_EQ(a[3].vol, 5);
+    CHECK_EQ(a[10].vol, 5);      // holds at 5 for 9 ticks
+    CHECK_EQ(a[12].vol, 4);
+    CHECK_EQ(a[30].vol, 2);
+    CHECK_EQ(a[44].vol, 2);
+}
+
+TEST(table_runs_one_row_per_note_when_byte5_bit3_is_set) {
+    // measured: rows (0, +5, +7, +3); with byte 5 = 9 each note advances one row and the position carries over
+    const uint8_t in[16] = {0, 0xF0, 0, 0, 0x7F, 9, 0x20, 3, 0, 0, 0, 0, 0, 0, 0, 0};
+    const auto a = playPulse(in, {{0, 0, 0, 0, 0}, {5, 0, 0, 0, 0}, {7, 0, 0, 0, 0}}, {0, 4}, 40);
+    CHECK_EQ(a[0].freq, a[23].freq);
+    CHECK(a[24].freq != a[0].freq);
+    CHECK_EQ(a[24].freq, a[39].freq);
+}
+
+TEST(z_in_table_column_two_ignores_column_one) {
+    // measured: O1 in column 2 and Z03 in column 1 leaves the pan alone (Z only repeats its own column's command)
+    const uint8_t in[16] = {0, 0xF0, 0, 0, 0x7F, 1, 0x20, 3, 0, 0, 0, 0, 0, 0, 0, 0};
+    const auto a = playPulse(in, {{0, 0, 0, kCmdO, 1}, {0, kCmdZ, 3, 0, 0}, {0, kCmdH, 1, 0, 0}}, {0}, 30);
+    for (int t = 0; t < 30; ++t) CHECK_EQ(a[t].pan & 0x11, 0x10);   // left only on channel 1
 }

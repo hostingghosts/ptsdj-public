@@ -50,6 +50,8 @@ private:
         int tTrans = 0;         // current table transpose
         int fade = -1;          // release nibble override (E command), -1 = instrument's
         int tbl = -1;           // running table or -1
+        int stepTbl = -1;       // table kept between notes while the instrument runs it per note (byte 5 bit 3)
+        bool tStep = false, tStepNow = false;   // step mode: a row runs only on the tick a note starts
         int tRow = 0, tWait = 0, eRow = 0, eWait = 0;
         uint8_t tGroove = 0xFF;
         uint8_t hop[16] = {};
@@ -63,7 +65,7 @@ private:
         double wPos = 0; int wDir = 1, wCnt = 0; bool wAnim = false;   // wave frame animation
         int noiseS = 0, shapeOfs = 0; double shapeAcc = 0; bool noiseFresh = false;           // noise: P value, and the S / P shape offset in index steps
         int retrig = -1, retrigCnt = 0;                              // R: period in ticks, -1 off
-        uint8_t lastCmd = 0, lastVal = 0;                          // for Z
+        uint8_t lastCmd[3] = {0, 0, 0}, lastVal[3] = {0, 0, 0};   // for Z: phrase, table column 1, table column 2 (ROM keeps them apart)                          // for Z
         int fine = -1, tune2 = 0;                                    // F override (fine -1 = use the instrument byte)
     };
     void tick();
@@ -86,6 +88,7 @@ private:
     unsigned rng();                       // LSDJ's generator: S = 17 * S + 0x5C93 (16 bit), the result is the high byte
     int randMax(int m) { return m ? int(rng() % unsigned(m + 1)) : 0; }   // 0..m, no generator call for 0
     uint16_t rngState_ = 0x0052;
+    int slot_ = 0;                        // which Z memory a command belongs to: 0 phrase, 1 table column 1, 2 table column 2
     void writePan();
     uint8_t* instr(int i) { return s_.instrument(i & 63); }
 

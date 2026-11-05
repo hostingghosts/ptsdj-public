@@ -63,7 +63,10 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - P v (signed): pitch bend in semitones per 360 Hz step = 0.00163*|v| + 0.0005*v^2 (fit; tick-level error about 1-3 register units).
 - Wave instrument bytes (type 1): b1 bits 6-5 = NR32 volume code, b3 = first wave frame (synth x 16), b7 bit6 = length enable, b9 = play mode
   (0 manual .. 3), b10/b11 = length/speed of the frame animation (not modelled: only the first frame plays).
-- Pulse/noise: byte 9 with bits 7-6 set replaces the release rate after the first step (low nibble as the release digit).
+- Pulse/noise envelope has three stages (bytes 1, 9, 10): byte 1 = start level (high) and rate (low) down to byte 9's high nibble; byte 9's low nibble is the rate from there
+  down to byte 10's high nibble; byte 10's low nibble is the rate to 0; rate 0 holds; rates use the release-digit table. The old "byte 9 with 0xC0" finding was this with a target above the start.
+- Instrument byte 5 bit 3 (pulse and noise): the instrument's table advances one row per note (position carries over between notes) instead of one per tick.
+  A table started by A runs per tick. A B command inside a table does nothing.
 - B (command byte 2) is used on kit instruments in the demos and its effect is unknown; Z (random) cannot match the ROM's random numbers.
 
 ## Wave animation and kits (measured)
@@ -100,6 +103,7 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   keeps its phase). Z always starts from the original value, not the previous random one. Exact against the ROM for chords.
 - 02:737C also draws from the generator but is editing code (cell edit; never runs in playback, checked with coverage on i'mpuzzled, Friendbender,
   revision, kicks, TRAINJAM). Playback consumers are only B and Z; bank 1 uses it for song memory init. So the i'mpuzzled drift is not the generator.
-- Z state is per slot: phrase Z uses slot = channel; table col1 / col2 use shared slots 4 / 5 with the original value kept per table step (02:50DF, 02:73CA). Not modelled yet (ours is per channel).
+- Z memory is per slot: the phrase, table column 1 and table column 2 each remember their own last command (ROM 02:73CA, 02:50DF); Z in a column with no earlier
+  command of its own does nothing. Done. Column 2 quirk not modelled: with O1 then Z03 in column 2 the ROM changes the pan only every 16 ticks, not every pass.
 - C keeps its phase when run again (same or new value); only a note trigger, starting from off, or C00 resets it. A table C (runs after the chord step) spends its first tick: base, x, y.
 - Vibrato default shape is a triangle (rises 1/16 of the peak per step at speed 0), not a sine; first step after the command is 0.

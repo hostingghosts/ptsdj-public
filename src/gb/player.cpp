@@ -113,7 +113,15 @@ void Player::noteOn(int ch, const StepEvent& e) {
             break;
     }
     if (ch < 2) refreshPitch(ch);                   // pulse 2 tune and the fine tune apply from the first moment
-    if (in[6] & 0x20) startTable(ch, in[6] & 0x1F); else v.tbl = -1;
+    v.tStep = false;
+    if (in[6] & 0x20) {
+        const int tb = in[6] & 0x1F;
+        if (in[5] & 8) {                                  // byte 5 bit 3 (measured): one table row per note; the position carries over between notes
+            if (v.stepTbl != tb) { startTable(ch, tb); v.stepTbl = tb; }
+            else { v.tbl = tb; v.eRow = 0; v.eWait = 0; }
+            v.tStep = v.tStepNow = true;
+        } else { startTable(ch, tb); v.stepTbl = -1; }
+    } else { v.tbl = -1; v.stepTbl = -1; }
 }
 
 // Kit instrument: note n = 16 * b + a plays sample a-1 of kit 1 (byte 9) and sample b-1 of kit 2 (byte 2); both together are mixed
@@ -269,6 +277,7 @@ void Player::refreshPitch(int ch) {
 void Player::startTable(int ch, int t) {
     Voice& v = v_[ch];
     v.tbl = t & 31;
+    v.tStep = v.tStepNow = false;                         // a table started by A runs per tick (measured)
     v.tRow = 0; v.tWait = 0; v.eRow = 0; v.eWait = 0; v.tGroove = 0xFF;
     std::memset(v.hop, 0, sizeof v.hop);
 }
@@ -285,7 +294,8 @@ void Player::tableTick(int ch) {
             if (e & 15) { setVolume(ch, e >> 4); v.eWait = (e & 15) - 1; break; }
         }
     }
-    if (v.tWait > 0 && --v.tWait > 0) return;
+    if (v.tStep) { if (!v.tStepNow) return; v.tStepNow = false; }
+    else if (v.tWait > 0 && --v.tWait > 0) return;
     int row = v.tRow;
     for (int guard = 0; guard < 40; ++guard) {
         const int o = t * 16 + row;
@@ -299,7 +309,7 @@ void Player::tableTick(int ch) {
                 const int n = val >> 4, dest = val & 15;
                 if (n == 0 || v.hop[row] < n) { if (n) ++v.hop[row]; row = dest; hopped = true; }
                 else v.hop[row] = 0;
-            } else if (c) command(ch, c, val, true);
+            } else if (c) { slot_ = 1 + k; command(ch, c, val, true); slot_ = 0; }
         }
         if (hopped) continue;
         if (v.tGroove != 0xFF) { const uint8_t* g = s_.groove(v.tGroove); v.tWait = g[0] ? g[0] : 1; }
@@ -343,12 +353,13 @@ void Player::masterVol(uint8_t val) {
 void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool again) {
     Voice& v = v_[ch];
     if (cmd == kCmdZ) {                                   // randomize the last command: + random(hi) * 16 + random(lo), then run it again
-        if (!v.lastCmd || v.lastCmd == kCmdH || v.lastCmd == kCmdG || v.lastCmd == kCmdD) return;
+        const uint8_t lc = v.lastCmd[slot_];
+        if (!lc || lc == kCmdH || lc == kCmdG || lc == kCmdD) return;
         const int hi = randMax(val >> 4), lo = randMax(val & 15);
-        command(ch, v.lastCmd, uint8_t(v.lastVal + (hi << 4) + lo), fromTable, true);
+        command(ch, lc, uint8_t(v.lastVal[slot_] + (hi << 4) + lo), fromTable, true);
         return;
     }
-    if (!again && cmd != kCmdA && cmd != kCmdK) { v.lastCmd = cmd; v.lastVal = val; }   // Z always starts from the original value
+    if (!again && cmd != kCmdA && cmd != kCmdK) { v.lastCmd[slot_] = cmd; v.lastVal[slot_] = val; }   // Z always starts from the original value
     switch (cmd) {
         case kCmdA: if (val == 0x20) v.tbl = -1; else startTable(ch, val & 31); break;
         case kCmdG: if (fromTable) v.tGroove = val & 31; else seq_.setGroove(ch, val); break;
