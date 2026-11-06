@@ -29,6 +29,7 @@ public:
     bool voiceOn(int c) const { return v_[c].on; }
     bool songLooped() const { return seq_.allLooped(); }   // every active channel has reached song row 0 again
     void setTempo(int t) { tempo_ = t; }
+    void setTickPhase(int r) { tickAcc_ = 896 - tempo_ + r; }   // before the first run: sub-steps already counted toward the first tick (the ROM's leftover accumulator; tools only)
     int tempo() const { return tempo_; }
     // Audio: `n` stereo frames at `rate` Hz, 16-bit interleaved. Each output sample is the box-filtered mix.
     void render(int16_t* out, int n, int rate);
@@ -58,6 +59,8 @@ private:
         int stepTbl = -1;       // table kept between notes while the instrument runs it per note (byte 5 bit 3)
         bool tStep = false, tStepNow = false;   // step mode: a row runs only on the tick a note starts
         int tRow = 0, tWait = 0, eRow = 0, eWait = 0;
+        int noteTick = -1;      // tick of the last note start
+        int envStage = 1;       // instrument envelope stage: 1 towards byte 9's level, 2 towards byte 10's, 3 to silence
         uint8_t tGroove = 0xFF; int tGroovePos = 0;   // table groove and its position (each row takes the next entry)
         uint8_t hop[16] = {};
         int vibSpeed = 0, vibDepth = 0;   // V command (depth 0 = off)

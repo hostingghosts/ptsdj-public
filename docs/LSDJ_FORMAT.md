@@ -148,3 +148,12 @@ A table row that has an L command and a transpose that moves the pitch starts th
 
 ## Pulse fine tune (instrument byte 11, F y = byte y*8)
 Proportional to the note's period, not a fixed amount: pulse 1 period x (1 + fine * 2.306e-4), pulse 2 period x (1 - fine * 2.21e-4), rounded; within one divider step of the ROM (fitted on 8 notes x 24 fine values). Old songs set byte 11 on upgrade, so this was most of the remaining pitch error on them.
+
+## Envelope stages move up as well as down
+Byte 1 low nibble = rate towards byte 9's high nibble; byte 9 low nibble = rate towards byte 10's high nibble; byte 10 low nibble = rate to silence. A stage whose level is above the current volume ramps UP (one NR22 write of 0x08 per step, same periods as the down steps). The stage is remembered (starts at 1 on a note; a level set by E, the table amplitude column or R re-derives it by comparing with the two levels).
+
+## Wave channel
+Kill switches the wave DAC off (NR30 = 0), it does not just zero NR32. A bend started by a table row on the note's own tick makes its first step one sub-step later, and until that first step the base pitch is the whole table index (2006 instead of 2017 for note 73).
+
+## Pulse fine tune: see above. Tick phase
+The ROM's tick accumulator keeps a leftover from before Play, so tick edges sit at an arbitrary sub-step offset per run (no rule found from the tempo). tools/oracle: SUBSTEPS=1 compares per 358 Hz sub-step instead of per tick; TICKPHASE=r (playdump) sets the leftover to find the best alignment.

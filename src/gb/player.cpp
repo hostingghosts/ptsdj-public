@@ -50,7 +50,7 @@ void Player::writePan() {
 void Player::killNote(int ch) {
     Voice& v = v_[ch];
     v.on = false;
-    if (ch == 2) { apu_.write(0xFF1C, 0x00); return; }
+    if (ch == 2) { apu_.write(0xFF1A, 0x00); return; }   // the ROM switches the wave DAC off when a note is killed
     const uint16_t r = ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21;
     for (int i = v.vol; i > 0; --i) { apu_.write(r, 0x09); apu_.write(r, 0x11); apu_.write(r, 0x18); }   // same stepping the envelope uses
     v.vol = 0;
@@ -59,6 +59,7 @@ void Player::killNote(int ch) {
 void Player::noteOn(int ch, const StepEvent& e) {
     Voice& v = v_[ch];
     if (e.instr != 0xFF) v.instr = e.instr & 63;
+    v.noteTick = tickNo_;
     const uint8_t* in = instr(v.instr);
     int n = e.note;
     {   // transposes that would leave the note range are ignored below it and wrap above it (measured on LSDJ 9.4.2)
@@ -87,6 +88,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.hwEnv = false;
     v.envCount = 0;
     v.envSteps = 0;
+    v.envStage = 1;
     v.kill = -1;
     v.pan = in[7] & 3;
     writePan();
@@ -243,6 +245,7 @@ void Player::setVolume(int ch, int target) {
     const uint16_t r = ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21;
     target = std::clamp(target, 0, 15);
     v.baseVol = target;
+    { const uint8_t* in = instr(v.instr); v.envStage = target > (in[9] >> 4) ? 1 : target > (in[10] >> 4) ? 2 : 3; }
     while (v.vol < target) { apu_.write(r, 0x08); ++v.vol; }
     while (v.vol > target) { apu_.write(r, 0x09); apu_.write(r, 0x11); apu_.write(r, 0x18); --v.vol; }
 }
@@ -352,7 +355,8 @@ void Player::refreshPitch(int ch) {
     int total = (n - 1) * 256 + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
     uint16_t f;
     if (ch == 2) {                                   // wave instruments look the pitch up in the ROM's linear table (about 19.2 per index) at 00:09B9
-        total = waveIndex(n) + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
+        const int baseIdx = (v.bendRate && !v.bendAcc) ? (waveIndex(n) & ~255) : waveIndex(n);   // until its first step a bend works from the whole table index (measured on kicks)
+        total = baseIdx + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
         f = pitchToFreq(kLinFreq, total, v.bendAcc);
     } else f = pitchToFreq(kPulseFreq + 1, total, v.bendAcc);
     if (ch < 2) {                                   // fine tune detunes in proportion to the period: pulse 1 down, pulse 2 up (fitted to the ROM, within one step; F y = fine y * 8)
@@ -431,6 +435,7 @@ void Player::retrigVolume(int ch) {
     if (!v.retrigDv || ch == 2 || !v.on || muted_[ch]) return;
     v.baseVol = std::clamp(v.baseVol + v.retrigDv, 0, 15);
     v.vol = v.baseVol;
+    { const uint8_t* in = instr(v.instr); v.envStage = v.vol > (in[9] >> 4) ? 1 : v.vol > (in[10] >> 4) ? 2 : 3; }
     v.envCount = 0;
     apu_.write(ch == 0 ? 0xFF12 : ch == 1 ? 0xFF17 : 0xFF21, uint8_t(v.vol << 4 | 8));
 }
@@ -492,7 +497,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         case kCmdW: if (ch < 2) writeDuty(ch, val); break;
         case kCmdP: {
             if (ch == 3) { v.noiseS = val; v.shapeAcc = v.shapeOfs; v.noiseFresh = true; break; }   // noise P: the same tick's step is skipped
-            v.bendDelay = 0;
+            v.bendDelay = (fromTable && v.noteTick == tickNo_) ? 1 : 0;   // a table row that starts a bend on the note's own tick: the first step comes one sub-step later (measured on kicks)
             v.bendRate = bendRateOf(val); v.bendTgt = false;
             break;
         }
@@ -640,21 +645,30 @@ void Player::sub360() {
             continue;
         }
         const uint8_t* in = instr(v.instr);
-        // three-stage envelope (measured): byte 1 = start level and rate down to the level in byte 9's high nibble, byte 9's low nibble is the rate from there
-        // down to byte 10's high nibble, byte 10's low nibble the rate to silence; a rate of 0 holds. An E fade overrides all stages.
-        const uint8_t nib = v.fade >= 0 ? uint8_t(v.fade)
-            : v.vol > (in[9] >> 4) ? uint8_t(in[1] & 15)
-            : v.vol > (in[10] >> 4) ? uint8_t(in[9] & 15)
-            : uint8_t(in[10] & 15);
-        if (!nib || v.vol <= 0) continue;
+        // three-stage envelope (measured): byte 1 = start level and rate to the level in byte 9's high nibble, byte 9's low nibble is the rate from there
+        // to byte 10's high nibble, byte 10's low nibble the rate to silence; a rate of 0 holds. Each stage moves the volume towards its level, up or down.
+        // An E fade overrides all stages.
+        const int t1 = in[9] >> 4, t2 = in[10] >> 4;
+        if (v.envStage == 1 && v.vol == t1) v.envStage = 2;
+        if (v.envStage == 2 && v.vol == t2) v.envStage = 3;
+        bool up = false;
+        uint8_t nib;
+        if (v.fade >= 0) nib = uint8_t(v.fade);
+        else if (v.envStage == 1) { nib = uint8_t(in[1] & 15); up = v.vol < t1; }
+        else if (v.envStage == 2) { nib = uint8_t(in[9] & 15); up = v.vol < t2; }
+        else nib = uint8_t(in[10] & 15);
+        if (!nib || (up ? v.vol >= 15 : v.vol <= 0)) continue;
         if (++v.envCount >= kEnvPeriod[nib]) {
             v.envCount = 0;
             ++v.envSteps;
             const uint16_t r = c == 0 ? 0xFF12 : c == 1 ? 0xFF17 : 0xFF21;
-            apu_.write(r, 0x09);                    // volume down by one through the DMG "zombie" write sequence
-            apu_.write(r, 0x11);
-            apu_.write(r, 0x18);
-            --v.vol;
+            if (up) { apu_.write(r, 0x08); ++v.vol; }          // volume up by one: a running channel steps on an NRx2 write with a zero pace and the up bit
+            else {
+                apu_.write(r, 0x09);                    // volume down by one through the DMG "zombie" write sequence
+                apu_.write(r, 0x11);
+                apu_.write(r, 0x18);
+                --v.vol;
+            }
         }
     }
 }

@@ -19,8 +19,9 @@ int main(int argc, char** argv) {
         while (wi < w.size() && w[wi].cc <= t) { if (w[wi].cc > now) { apu.advance(uint32_t(w[wi].cc - now)); now = w[wi].cc; } apu.write(0xFF00 + w[wi].reg, uint8_t(w[wi].val)); ++wi; }
         if (t > now) { apu.advance(uint32_t(t - now)); now = t; }
     };
+    const bool sub = std::getenv("SUBSTEPS") != nullptr;   // sample once per 358 Hz sub-step (11704 cycles, 8000 cycles after its start) instead of once per tick
     for (int k = 0; k < ticks; ++k) {
-        runTo(t0 + (long long)((k + 0.9) * tk));
+        runTo(sub ? t0 + k * 11704LL + 8000 : t0 + (long long)((k + 0.9) * tk));
         for (int c = 0; c < 4; ++c) { auto s = apu.state(c); std::printf("%d %d %d %d %d %d %02x\n", k, c, s.enabled, s.vol, s.freq, s.duty, apu.pan()); }
     }
 }
