@@ -565,6 +565,14 @@ void Player::onStep(const StepEvent& e) {
         refreshPitch(e.channel);
         return;
     }
+    if (e.cmd == kCmdL && e.note && !v.on && v.base > 0 && delay == 0) {   // the ROM slides from the last note's pitch even after it was killed: the note starts there
+        const int from = v.base;
+        noteOn(e.channel, e);
+        v.bendAcc = int16_t(pitchIndex(e.channel, from) - pitchIndex(e.channel, v.base));
+        startSlide(e.channel, e.val);
+        refreshPitch(e.channel);
+        return;
+    }
     if (e.note) {
         if (delay > 0) { v.pending = delay; v.delayed = e; }
         else noteOn(e.channel, e);
