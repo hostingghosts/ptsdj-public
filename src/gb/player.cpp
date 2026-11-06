@@ -560,7 +560,8 @@ void Player::onStep(const StepEvent& e) {
             break;
         default: break;
     }
-    if (e.cmd == kCmdL && e.note && v.on) {
+    const bool sounding = v.on && (e.channel == 2 || v.vol > 0);   // a note whose envelope has run out counts as ended: L retriggers it (measured on NOLIGHT)
+    if (e.cmd == kCmdL && e.note && sounding) {
         int n = std::clamp(e.note + e.transpose + (e.channel != 3 ? int8_t(s_.at(off::kTranspose)) : 0), 1, 127);
         v.bendAcc = int16_t(v.bendAcc + pitchIndex(e.channel, v.base) - pitchIndex(e.channel, n));   // start from where the old note was, slide to the new one
         v.base = n;
@@ -568,7 +569,7 @@ void Player::onStep(const StepEvent& e) {
         refreshPitch(e.channel);
         return;
     }
-    if (e.cmd == kCmdL && e.note && !v.on && v.base > 0 && delay == 0) {   // the ROM slides from the last note's pitch even after it was killed: the note starts there
+    if (e.cmd == kCmdL && e.note && !sounding && v.base > 0 && delay == 0) {   // the ROM slides from the last note's pitch even after it was killed: the note starts there
         const int from = v.base;
         noteOn(e.channel, e);
         v.bendAcc = int16_t(pitchIndex(e.channel, from) - pitchIndex(e.channel, v.base));
