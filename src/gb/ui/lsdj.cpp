@@ -57,9 +57,17 @@ int Lsdj::instrRows() const { return 2 + fieldsFor(s_.instrument(instr)[0]).n; }
 // ---- input ----------------------------------------------------------------------------------------------------------
 
 void Lsdj::key(Key k, bool down) {
-    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
+    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Song) { p_.mute(songCh, !p_.muted(songCh)); edited_ = true; } else if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
     if (k == Key::B) {
-        if (down) bUsed_ = false;
+        if (down) {
+            bUsed_ = false;
+            if (sel_ && scr_ == Scr::Song) {                  // Shift + Delete: mute this whole console, or bring it all back
+                bool any = false;
+                for (int c = 0; c < 4; ++c) any = any || !p_.muted(c);
+                for (int c = 0; c < 4; ++c) p_.mute(c, any);
+                bUsed_ = true;
+            }
+        }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::File) scr_ = Scr::Project;
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Wave) {          // a lone B tap copies the wave
             for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
@@ -323,7 +331,7 @@ void Lsdj::drawSong(Lcd& l) const {
     l.text(0, 0, "SONG");
     l.text(5, 0, console_ ? "B 5-8" : "A 1-4");
     static const char* ch[4] = {"PU1", "PU2", "WAV", "NOI"};
-    for (int c = 0; c < 4; ++c) l.text(0, 1, "", false), [&] { for (int i = 0; i < 3; ++i) l.glyphAt(18 + c * 26 + i * 8 - 2, 8, ch[c][i], false, 2, 0); }();
+    for (int c = 0; c < 4; ++c) l.text(0, 1, "", false), [&] { for (int i = 0; i < 3; ++i) l.glyphAt(18 + c * 26 + i * 8 - 2, 8, ch[c][i], p_.muted(c), 2, 0); }();
     const int base = std::max(0, std::min(songRow - 8, 256 - 16));
     for (int r = 0; r < 16; ++r) {
         const int row = base + r;
@@ -539,22 +547,21 @@ void Lsdj::drawFile(Lcd& l) const {
 void Lsdj::drawProject(Lcd& l) const {
     l.text(0, 0, "PROJECT (NEW)");
     char b[24];
-    auto row = [&](int y, const char* name, const char* val, bool cur) { l.text(0, y, name); l.text(9, y, val, cur); };
+    auto row = [&](int y, const char* name, const char* val, bool cur) { l.text(0, y, name, cur && !val[0]); l.text(9, y, val, cur); };   // a row with no value is selected by its name
     std::snprintf(b, sizeof b, "%02X", s_.at(off::kTempo)); row(2, "TEMPO", b, projRow == 0);
     std::snprintf(b, sizeof b, "%02X", s_.at(off::kTranspose)); row(3, "TRANSPOSE", b, projRow == 1);
     row(4, "SYNC", "OFF", projRow == 2);
-    row(6, "CLONE", "DEEP", projRow == 3);
-    row(7, "LOOK", "92K/GRAY", projRow == 4);
-    row(8, "KEY DELAY/REPEAT", "", false);
-    row(9, "PRELISTEN", "ON", projRow == 5);
-    row(11, "HELP", "", projRow == 6);
-    row(12, "CLEAN SONG DATA", "", projRow == 7);
-    row(13, "CLEAN INSTR DATA", "", projRow == 8);
-    row(10, "EXPORT WAV A+B", "", projRow == 11);
-    row(11, console_ ? "LOAD SONG FILE B" : "LOAD SONG FILE A", "", projRow == 12);
-    { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(16, 10, s, projRow == 11); l.text(16, 14, s, projRow == 9); l.text(16, 15, s, projRow == 10); }
-    row(14, "SAVE SESSION A+B", "", projRow == 9);
-    row(15, "LOAD SESSION A+B", "", projRow == 10);
+    row(5, "CLONE", "DEEP", projRow == 3);
+    row(6, "LOOK", "92K/GRAY", projRow == 4);
+    row(7, "PRELISTEN", "ON", projRow == 5);
+    row(8, "HELP", "", projRow == 6);
+    row(9, "CLEAN SONG DATA", "", projRow == 7);
+    row(10, "CLEAN INSTR DATA", "", projRow == 8);
+    row(11, "SAVE SESSION", "", projRow == 9);
+    row(12, "LOAD SESSION", "", projRow == 10);
+    row(13, "EXPORT WAV", "", projRow == 11);
+    row(14, console_ ? "LOAD SONG FILE B" : "LOAD SONG FILE A", "", projRow == 12);
+    { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(13, 11, s, projRow == 9); l.text(13, 12, s, projRow == 10); l.text(13, 13, s, projRow == 11); }
     l.text(0, 17, status_);
     l.text(0, 16, audio_[0] ? audio_ : "WORK TIME: 0:00");
 }

@@ -17,8 +17,42 @@ void fillSilence(int16_t* out, uint32_t frames, void*) {
 }  // namespace
 
 void App::fill(int16_t* out, uint32_t frames) {
-    if (!exporting_ && dual.running()) dual.render(out, int(frames), int(p_.sampleRateMilliHz / 1000));
-    else fillSilence(out, frames, nullptr);
+    uint32_t tail = ringTail_.load(std::memory_order_relaxed);
+    const uint32_t head = ringHead_.load(std::memory_order_acquire);
+    if (flush_.exchange(false, std::memory_order_acq_rel)) tail = head;           // a new playback starts: drop the queued silence
+    uint32_t n = head - tail;
+    if (n > frames) n = frames;
+    for (uint32_t i = 0; i < n; ++i) {
+        const uint32_t k = ((tail + i) & (kRingFrames - 1)) * 2;
+        out[2 * i] = ring_[k];
+        out[2 * i + 1] = ring_[k + 1];
+    }
+    if (n < frames) {
+        std::memset(out + 2 * n, 0, size_t(frames - n) * 2 * sizeof(int16_t));
+        if (dual.running()) ringLate_.fetch_add(1, std::memory_order_relaxed);
+    }
+    ringTail_.store(tail + n, std::memory_order_release);
+}
+
+void App::pump() {
+    if (exporting_ || !p_.audio) return;
+    const uint32_t rate = p_.sampleRateMilliHz / 1000;
+    int16_t buf[kChunk * 2];
+    for (int pass = 0; pass < 16; ++pass) {
+        const bool run = dual.running();
+        const uint32_t level = ringHead_.load(std::memory_order_relaxed) - ringTail_.load(std::memory_order_acquire);
+        if (level + kChunk > (run ? kRunTarget : kIdleTarget)) break;
+        const uint32_t c0 = p_.cycleCounter ? p_.cycleCounter() : 0;
+        if (run) dual.render(buf, int(kChunk), int(rate)); else std::memset(buf, 0, sizeof buf);
+        if (p_.cycleCounter && run) { const uint32_t c = p_.cycleCounter() - c0; if (c > peakC_) peakC_ = c; }
+        const uint32_t head = ringHead_.load(std::memory_order_relaxed);
+        for (uint32_t i = 0; i < kChunk; ++i) {
+            const uint32_t k = ((head + i) & (kRingFrames - 1)) * 2;
+            ring_[k] = buf[2 * i];
+            ring_[k + 1] = buf[2 * i + 1];
+        }
+        ringHead_.store(head + kChunk, std::memory_order_release);
+    }
 }
 
 bool App::init(const Platform& p) {
@@ -120,6 +154,7 @@ void App::LinkedTransport::start(int console, int row) {
     const int rowA = console == 0 ? row : app->lsdj.startRow();
     const int rowB = console == 1 ? row : app->lsdjB.startRow();
     app->dual.start(rowA, rowB);
+    app->flushRing();
 }
 
 int App::LinkedTransport::listSongs() {
@@ -158,7 +193,7 @@ bool App::LinkedTransport::action(Action a, int slot) {
             if (app->platform().storage) app->platform().storage->mkdir(kExportDir);
             char path[64];
             std::snprintf(path, sizeof path, "%s/%s.wav", kExportDir, name);
-            return app->exportWav(path);
+            return app->exportWav(path, 44100, slot >= 90 ? 20 : 600);   // slots 90-99 make a 20 second test export
         }
     }
     return false;
@@ -188,6 +223,7 @@ bool App::exportWav(const char* path, int rate, int maxSeconds) {
     ok = ok && p_.storage->seek(h, 0) && p_.storage->write(h, hdr, 44) == 44;
     p_.storage->close(h);
     exporting_ = false;
+    flushRing();
     return ok;
 }
 
@@ -225,14 +261,14 @@ void App::quiesce() {
 void App::loop() {
     if (p_.service) p_.service();
     if (bootStep_ < 3 && p_.storage) bootTick();
-    if (p_.driverStats && p_.clock && p_.clock->millis() - statsAt_ >= 500) {      // audio load for the Project screen
+    pump();
+    if (p_.clock && p_.clock->millis() - statsAt_ >= 500) {      // render cost and late audio blocks for the Project screen
         statsAt_ = p_.clock->millis();
-        DriverStats st;
-        if (p_.driverStats(st)) {
-            std::snprintf(audioText_, sizeof audioText_, "A %uK/%uK L%u", unsigned(st.avgC / 1000), unsigned(st.maxC / 1000), unsigned(st.underruns));
-            lsdj.setAudioInfo(audioText_);
-            lsdjB.setAudioInfo(audioText_);
-        }
+        const uint32_t late = ringLate_.load(std::memory_order_relaxed);
+        if (!dual.running()) { peakC_ = 0; lateAtStart_ = late; }     // both are for the current playback
+        std::snprintf(audioText_, sizeof audioText_, "PK%uK L%u R%u", unsigned(peakC_ / 1000), unsigned(late - lateAtStart_), unsigned(romGot_ / 1024));
+        lsdj.setAudioInfo(audioText_);
+        lsdjB.setAudioInfo(audioText_);
     }
     ot::InputEvent ev;
     for (int i = 0; i < 32 && p_.input->poll(ev); ++i) ui.handle(ev);

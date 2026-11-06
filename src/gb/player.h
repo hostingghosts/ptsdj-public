@@ -32,7 +32,8 @@ public:
     int tempo() const { return tempo_; }
     // Audio: `n` stereo frames at `rate` Hz, 16-bit interleaved. Each output sample is the box-filtered mix.
     void render(int16_t* out, int n, int rate);
-    void mute(int ch, bool m) { muted_[ch] = m; }
+    void mute(int ch, bool m);                       // a muted channel is cut at once and starts no new notes
+    bool muted(int ch) const { return muted_[ch]; }
     void setKits(const KitSource* k) { kits_ = k; }
     void setWaveHook(void (*f)(int frame, int tick)) { waveHook_ = f; }
 

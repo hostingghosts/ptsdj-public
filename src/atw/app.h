@@ -3,6 +3,7 @@
 // Today it is an empty shell: a silent audio output and a blank screen. The Game Boy sequencer and sound engine come later.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 #include "atw/ui/ui.h"
@@ -59,7 +60,9 @@ public:
     gb::Lsdj lsdj{song, player}, lsdjB{songB, playerB};
     gb::Dual dual{player, playerB};
     ui::Ui ui;
-    void fill(int16_t* out, uint32_t frames);   // audio callback body
+    void fill(int16_t* out, uint32_t frames);   // audio callback body: only copies what pump() rendered ahead
+    void pump();                                // main loop: renders the players ahead into the ring (one pass)
+    void flushRing() { flush_.store(true, std::memory_order_release); }
     // Songs live on the card as .lsdsng files in GB/Songs (the format LSDJ's own tools use).
     bool loadSong(const char* path, int console = 0);
     bool saveSong(const char* path, const char* name, int console = 0);
@@ -85,7 +88,15 @@ private:
     bool romStep();                              // true when the ROM is fully read (or there is none)
     void bootTick();
     uint32_t statsAt_ = 0;
-    char audioText_[24] = {};
+    char audioText_[48] = {};
+    // Audio is rendered in the main loop into a ring that the audio interrupt only copies from, so a costly stretch (a kick's very high
+    // first pitches) delays the render instead of making a whole block late.
+    static constexpr uint32_t kRingFrames = 4096, kRunTarget = 3072, kIdleTarget = 512, kChunk = 128;
+    int16_t ring_[kRingFrames * 2] = {};
+    std::atomic<uint32_t> ringHead_{0}, ringTail_{0};       // frames written / read, only ever increasing
+    std::atomic<bool> flush_{false};
+    std::atomic<uint32_t> ringLate_{0};                     // audio blocks that found the ring short
+    uint32_t peakC_ = 0, lateAtStart_ = 0;                  // worst 128-frame render (CPU cycles) and late blocks since this playback started
     int bootStep_ = 3;                           // 3 = nothing to do (boot() starts it)
     ot::IStorage::Handle romH_ = -1;
     uint32_t romGot_ = 0;

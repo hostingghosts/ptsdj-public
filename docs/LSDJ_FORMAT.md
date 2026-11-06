@@ -142,3 +142,6 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   (moves and copies the value), B+Left/Right changes wave +-1, B+Up/Down +-16, a lone B copies the wave, Select+A pastes.
 - Instrument byte 5 bit 5 (0x20) on pulse, wave and noise instruments: the note is played untransposed (neither chain nor project transpose). Not for kits. F (pulse tune/fine) lasts only until the next note.
 - Old-song upgrade: pulse/noise b1 low nibble >= 12 becomes (n - 3) and byte 9 = F0 when it was empty; version 7 wave byte 2 low nibble is inverted (15 - n). Matches the ROM on all 15 old demos.
+
+## Table rows with a slide (measured on LIQUID's wave kick)
+A table row that has an L command and a transpose that moves the pitch starts the slide from the old pitch and the row's note becomes the new base (as an L on a phrase step does). Without it the bend accumulator went negative against the low note and wrapped by 108 to the top of the table: a 3 kHz beep instead of a sweep.

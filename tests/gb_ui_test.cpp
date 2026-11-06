@@ -242,6 +242,7 @@ TEST(two_consoles_start_together_and_mix) {
     r.app.dual.start(0, 0);
     CHECK(r.app.player.running() && r.app.playerB.running());
     int16_t out[2 * 2048];
+    r.app.pump();                     // the main loop renders ahead; the audio callback only copies
     r.app.fill(out, 2048);
     int peakL = 0, peakR = 0;
     for (int i = 0; i < 2048; ++i) { peakL = std::max(peakL, std::abs(int(out[2 * i]))); peakR = std::max(peakR, std::abs(int(out[2 * i + 1]))); }
@@ -426,4 +427,29 @@ TEST(file_screen_lists_songs_and_loads_one_into_the_console) {
     CHECK(l.screen() == gb::Scr::Project);
     CHECK_EQ(int(r.app.songB.songCell(0, 0)), 0);
     CHECK_EQ(int(r.app.songB.songCell(0, 2)), 0xFF);
+}
+
+TEST(shift_insert_mutes_a_channel_and_shift_delete_a_console) {
+    gb::Song s; gb::Player p(s); gb::Lsdj ui(s, p);
+    ui.key(gb::Key::Select, true); ui.key(gb::Key::A, true); ui.key(gb::Key::A, false); ui.key(gb::Key::Select, false);
+    CHECK(p.muted(0)); CHECK(!p.muted(1));
+    ui.key(gb::Key::Select, true); ui.key(gb::Key::B, true); ui.key(gb::Key::B, false); ui.key(gb::Key::Select, false);
+    CHECK(p.muted(0) && p.muted(1) && p.muted(2) && p.muted(3));
+    ui.key(gb::Key::Select, true); ui.key(gb::Key::B, true); ui.key(gb::Key::B, false); ui.key(gb::Key::Select, false);
+    CHECK(!p.muted(0) && !p.muted(3));
+}
+
+TEST(audio_is_rendered_ahead_and_a_late_block_counts_once) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 3);
+    r.app.dual.start(0, 0);
+    r.app.flushRing();
+    int16_t out[2 * 128];
+    r.app.fill(out, 128);              // nothing rendered yet: silence and one late block
+    for (int i = 0; i < 128; ++i) CHECK_EQ(int(out[2 * i]), 0);
+    r.app.pump();
+    r.app.fill(out, 128);
+    int peak = 0;
+    for (int i = 0; i < 128; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
+    CHECK(peak > 0);
 }

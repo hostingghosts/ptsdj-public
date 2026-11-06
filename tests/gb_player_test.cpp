@@ -201,3 +201,29 @@ TEST(bend_matches_measured_register_values) {
         CHECK(std::abs(p.apu().state(0).freq - want[t]) <= 1);
     }
 }
+
+// A table row that moves the pitch and slides (T 80 + L20 on a kick) keeps the sound continuous and glides down: no wrap to the top of the table.
+TEST(table_slide_row_glides_from_the_old_pitch_without_wrapping) {
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, 2) = 0;
+    s.note(0, 0) = 80;
+    s.phraseInstr(0, 0) = 0;
+    uint8_t* in = s.instrument(0);
+    in[0] = 1; in[1] = 0xF0; in[2] = 0x0F; in[5] = 0x60; in[6] = 0x20; in[7] = 3;    // wave instrument running table 0
+    s.at(off::kTblCmd1 + 0) = kCmdP; s.at(off::kTblVal1 + 0) = 0xB0;
+    s.at(off::kTblTrans + 1) = 0x80; s.at(off::kTblCmd1 + 1) = kCmdL; s.at(off::kTblVal1 + 1) = 0x20;
+    s.at(off::kTempo) = 96;
+    Player p(s);
+    p.start(0);
+    int prev = 4096, jumps = 0, minF = 4096;
+    for (int i = 0; i < 40 * 4; ++i) {
+        p.run(11704 / 4);
+        const int f = p.apu().state(2).freq;
+        if (f > prev + 8) ++jumps;
+        prev = f; minF = std::min(minF, f);
+    }
+    CHECK_EQ(jumps, 0);
+    CHECK(minF < 400);
+}

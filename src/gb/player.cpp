@@ -389,7 +389,13 @@ void Player::tableTick(int ch) {
     for (int guard = 0; guard < 40; ++guard) {
         const int o = t * 16 + row;
         const uint8_t tr = s_.at(uint16_t(off::kTblTrans + o));
+        const int before = std::clamp(v.base + v.tTrans + v.chordOfs, 1, 127);
         v.tTrans = int8_t(tr);
+        if (s_.at(uint16_t(off::kTblCmd1 + o)) == kCmdL || s_.at(uint16_t(off::kTblCmd2 + o)) == kCmdL) {   // a slide on a row that moves the pitch starts from the old pitch (measured on a kick)
+            const int after = std::clamp(v.base + v.tTrans + v.chordOfs, 1, 127);
+            v.bendAcc = int16_t(v.bendAcc + pitchIndex(ch, before) - pitchIndex(ch, after));
+            v.base = after; v.tTrans = 0;            // the slide's target becomes the note, like an L on a phrase step
+        }
         bool hopped = false;
         v.tWait = 1;
         for (int k = 0; k < 2 && !hopped; ++k) {
@@ -664,6 +670,15 @@ void Player::run(uint32_t cycles) {
             if (tickAcc_ >= 896) { tickAcc_ -= 896; tick(); }
         }
     }
+}
+
+void Player::mute(int ch, bool m) {
+    muted_[ch] = m;
+    if (!m) return;
+    static const uint16_t dac[4] = {0xFF12, 0xFF17, 0xFF1A, 0xFF21};
+    apu_.write(dac[ch], 0x00);                       // DAC off: the channel falls silent
+    v_[ch].on = false;
+    if (ch == 2) v_[2].kPlay = false;
 }
 
 void Player::render(int16_t* out, int n, int rate) {
