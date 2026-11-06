@@ -60,6 +60,7 @@ void Lsdj::key(Key k, bool down) {
     if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
     if (k == Key::B) {
         if (down) bUsed_ = false;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::File) scr_ = Scr::Project;
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Wave) {          // a lone B tap copies the wave
             for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
             hasClip_ = true;
@@ -107,6 +108,7 @@ void Lsdj::navigate(Key k) {
         case Scr::Project: row = 0; col = 0; break; case Scr::Synth: row = 0; col = 2; break; case Scr::Wave: row = 0; col = 3; break;
         case Scr::Song: col = 0; break; case Scr::Chain: col = 1; break; case Scr::Phrase: col = 2; break;
         case Scr::Instr: col = 3; break; case Scr::Table: col = 4; break; case Scr::Groove: row = 2; col = 2; break;
+        case Scr::File: scr_ = Scr::Project; return;                  // the song list is a sub-page of Project
     }
     static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
     if (row == 1) {
@@ -135,7 +137,8 @@ void Lsdj::move(Key k) {
         case Scr::Instr: instrRow = clampi(instrRow + dy, 0, instrRows() - 1); break;
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
-        case Scr::Project: projRow = clampi(projRow + dy, 0, 11); break;
+        case Scr::Project: projRow = clampi(projRow + dy, 0, 12); break;
+        case Scr::File: fileSel = clampi(fileSel + dy, 0, fileCount ? fileCount - 1 : 0); break;
         case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
         case Scr::Wave:
             waveCol = clampi(waveCol + dx, 0, 31);
@@ -158,10 +161,14 @@ void Lsdj::press(Key) {
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
         case Scr::Project:
+            if (tr_ && projRow == 12) { fileCount = tr_->listSongs(); fileSel = 0; scr_ = Scr::File; status_ = ""; break; }
             if (tr_ && projRow >= 9) {
                 const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : Transport::kExportWav, session);
                 status_ = ok ? "DONE" : "FAILED";
             }
+            break;
+        case Scr::File:
+            if (tr_ && fileCount) { status_ = tr_->loadSongFile(fileSel, console_) ? "LOADED" : "LOAD FAILED"; scr_ = Scr::Project; }
             break;
         default: break;
     }
@@ -304,10 +311,11 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Table: drawTable(l); break;
         case Scr::Groove: drawGroove(l); break;
         case Scr::Project: drawProject(l); break;
+        case Scr::File: drawFile(l); break;
         case Scr::Wave: drawWave(l); break;
         case Scr::Synth: drawSynth(l); break;
     }
-    drawPanel(l, scr_ != Scr::Wave);
+    if (scr_ != Scr::File) drawPanel(l, scr_ != Scr::Wave);
     if (banner_[0]) { l.rect(0, 136, 160, 8, 0); l.text(0, 17, banner_); }
 }
 
@@ -518,6 +526,16 @@ void Lsdj::drawWave(Lcd& l) const {
     }
 }
 
+void Lsdj::drawFile(Lcd& l) const {
+    l.text(0, 0, console_ ? "LOAD SONG B" : "LOAD SONG A");
+    if (!fileCount) { l.text(0, 2, "NO SONGS IN GB/SONGS"); return; }
+    const int top = std::max(0, std::min(fileSel - 8, fileCount - 16));
+    for (int r = 0; r < 16 && top + r < fileCount; ++r) {
+        char s[24]; std::snprintf(s, sizeof s, "%-19.19s", tr_ ? tr_->songName(top + r) : "");
+        l.text(0, 2 + r, s, top + r == fileSel);
+    }
+}
+
 void Lsdj::drawProject(Lcd& l) const {
     l.text(0, 0, "PROJECT (NEW)");
     char b[24];
@@ -533,6 +551,7 @@ void Lsdj::drawProject(Lcd& l) const {
     row(12, "CLEAN SONG DATA", "", projRow == 7);
     row(13, "CLEAN INSTR DATA", "", projRow == 8);
     row(10, "EXPORT WAV A+B", "", projRow == 11);
+    row(11, console_ ? "LOAD SONG FILE B" : "LOAD SONG FILE A", "", projRow == 12);
     { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(16, 10, s, projRow == 11); l.text(16, 14, s, projRow == 9); l.text(16, 15, s, projRow == 10); }
     row(14, "SAVE SESSION A+B", "", projRow == 9);
     row(15, "LOAD SESSION A+B", "", projRow == 10);

@@ -12,7 +12,7 @@
 namespace gb {
 
 enum class Key : uint8_t { Up, Down, Left, Right, A, B, Select, Start };
-enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove };
+enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove, File };
 
 // Starts and stops playback for the whole machine (one or two consoles); the UI of a console calls it instead of its own player.
 struct Transport {
@@ -21,7 +21,10 @@ struct Transport {
     virtual void stop() = 0;
     virtual bool running() const = 0;
     enum Action { kSavePair, kLoadPair, kExportWav };
-    virtual bool action(Action a, int slot) = 0;               // session actions from the Project screen; false = failed
+    virtual bool action(Action a, int slot) = 0;
+    virtual int listSongs() = 0;                      // reads GB/Songs: how many .lsdsng files
+    virtual const char* songName(int i) = 0;          // file name without the extension
+    virtual bool loadSongFile(int i, int console) = 0;               // session actions from the Project screen; false = failed
 };
 
 class Lsdj {
@@ -46,6 +49,7 @@ public:
     int table = 0, tableRow = 0, tableCol = 0;
     int groove = 0, grooveStep = 0;
     int projRow = 0;
+    int fileSel = 0, fileCount = 0;              // File screen: the song list for the console that opened it
     int session = 0;                             // session slot 0-99 (files S00_A / S00_B .lsdsng, S00.wav)
     int synth = 0, synthRow = 0, synthCol = 1;   // Synth screen: synth 0-F, row 0-9 (signal, filter, dist, phase, volume, cutoff, q, vshift, limit, phase), column
     int waveNo = 0, waveCol = 0;                 // Wave screen: wave 00-FF and the cursor column 0-31 (column c shows sample (c + 1) & 31)
@@ -65,6 +69,7 @@ private:
     void drawInstr(Lcd& l) const;
     void drawTable(Lcd& l) const;
     void drawGroove(Lcd& l) const;
+    void drawFile(Lcd& l) const;
     void drawWave(Lcd& l) const;
     void drawSynth(Lcd& l) const;
     void synthEdit(Key k);                   // A + direction on the Synth screen

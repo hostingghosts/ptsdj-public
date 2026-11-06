@@ -407,3 +407,23 @@ TEST(boot_loads_autoload_songs_in_steps_and_clears_the_banner) {
     CHECK_EQ(int(r.app.song.songCell(0, 0)), 0);
     CHECK_EQ(int(r.app.songB.songCell(0, 1)), 0);
 }
+
+TEST(file_screen_lists_songs_and_loads_one_into_the_console) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    CHECK(r.app.saveSong("GB/Songs/BETA.lsdsng", "BETA", 0));
+    oneNote(r.app.song, 2, 30, 3);
+    CHECK(r.app.saveSong("GB/Songs/ALPHA.lsdsng", "ALPHA", 0));
+    gb::Lsdj& l = r.app.lsdjB;                                // load into console B
+    l.show(gb::Scr::Project);
+    for (int i = 0; i < 12; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG FILE
+    tapKey(l, gb::Key::A);
+    CHECK(l.screen() == gb::Scr::File);
+    CHECK_EQ(l.fileCount, 2);
+    tapKey(l, gb::Key::Down);                                 // sorted: ALPHA, BETA -> BETA (note on channel 0)
+    tapKey(l, gb::Key::A);
+    CHECK(l.screen() == gb::Scr::Project);
+    CHECK_EQ(int(r.app.songB.songCell(0, 0)), 0);
+    CHECK_EQ(int(r.app.songB.songCell(0, 2)), 0xFF);
+}
