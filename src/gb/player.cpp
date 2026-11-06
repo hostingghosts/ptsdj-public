@@ -355,7 +355,12 @@ void Player::refreshPitch(int ch) {
         total = waveIndex(n) + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
         f = pitchToFreq(kLinFreq, total, v.bendAcc);
     } else f = pitchToFreq(kPulseFreq + 1, total, v.bendAcc);
-    if (ch < 2) { const int fine = v.fine >= 0 ? v.fine : in[11] * 30 / 255; f = uint16_t(std::clamp<int>(ch == 0 ? int(f) - fine : int(f) + fine, 0, 2047)); }
+    if (ch < 2) {                                   // fine tune detunes in proportion to the period: pulse 1 down, pulse 2 up (fitted to the ROM, within one step; F y = fine y * 8)
+        const uint32_t fine = v.fine >= 0 ? uint32_t(v.fine) * 8 : in[11];
+        const uint32_t period = 2048u - f;
+        const int delta = int((uint64_t(period) * fine * (ch == 0 ? 3869u : 3708u) + (1u << 23)) >> 24);
+        f = uint16_t(std::clamp<int>(ch == 0 ? int(f) - delta : int(f) + delta, 0, 2047));
+    }
     const uint16_t base = ch == 0 ? 0xFF13 : ch == 1 ? 0xFF18 : 0xFF1D;
     apu_.write(base, uint8_t(f & 0xFF));
     apu_.write(base + 1, uint8_t(lenEn | (f >> 8)));

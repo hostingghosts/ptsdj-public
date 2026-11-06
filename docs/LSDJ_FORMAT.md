@@ -145,3 +145,6 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 
 ## Table rows with a slide (measured on LIQUID's wave kick)
 A table row that has an L command and a transpose that moves the pitch starts the slide from the old pitch and the row's note becomes the new base (as an L on a phrase step does). Without it the bend accumulator went negative against the low note and wrapped by 108 to the top of the table: a 3 kHz beep instead of a sweep.
+
+## Pulse fine tune (instrument byte 11, F y = byte y*8)
+Proportional to the note's period, not a fixed amount: pulse 1 period x (1 + fine * 2.306e-4), pulse 2 period x (1 - fine * 2.21e-4), rounded; within one divider step of the ROM (fitted on 8 notes x 24 fine values). Old songs set byte 11 on upgrade, so this was most of the remaining pitch error on them.
