@@ -79,6 +79,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
     v.retrig = -1; v.retrigDv = 0;
     v.noiseS = 0; v.shapeOfs = 0; v.shapeAcc = 0;
     v.bendTgt = false;
+    v.fine = -1; v.tune2 = 0;                                // F lasts until the next note (measured)
     v.startedTick = tickNo_;
     v.on = true;
     v.hwEnv = false;
