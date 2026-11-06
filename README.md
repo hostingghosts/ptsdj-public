@@ -4,7 +4,8 @@ LSDJ-style Game Boy tracker for the original Polyend Tracker (MK66). Personal us
 
 State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (close to LSDJ 9.4.2, see `docs/LSDJ_FORMAT.md`), LSDJ-look
 screens (Song, Chain, Phrase, Instrument, Table, Groove, Project), 8 channels (two linked Game Boys, tracks 1-4 = song A, 5-8 = song B,
-summed stereo), WAV export. Not yet: synth/wave screens, file browser.
+summed stereo), WAV export. Synth and Wave screens (Select+Up from Phrase = Synth, then Right = Wave; the ROM's own generator rebuilds a synth's 16 frames after each edit,
+so they need `GB/LSDJ.GB` on the card, like the kits). Not yet: file browser, wave range select, the "hand-drawn waves?" prompt.
 Desktop simulator first; nothing tested on the Tracker.
 
 Controls (Game Boy key = Tracker key): D-pad = arrows, A = Insert, B = Delete, Select = Shift, Start = Play. Jog wheel =

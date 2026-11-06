@@ -40,4 +40,13 @@ press SHIFT
 tap UP
 tap UP
 release SHIFT
+screenshot ../build/sim/lsdj-synth.png
+press SHIFT
+tap RIGHT
+release SHIFT
+screenshot ../build/sim/lsdj-wave.png
+press SHIFT
+tap LEFT
+tap LEFT
+release SHIFT
 screenshot ../build/sim/lsdj-project.png

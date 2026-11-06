@@ -25,6 +25,8 @@ bool App::init(const Platform& p) {
     transport_.app = this;
     lsdj.setTransport(&transport_, 0);
     lsdjB.setTransport(&transport_, 1);
+    lsdj.setSynthGen(&synthGen);
+    lsdjB.setSynthGen(&synthGen);
     if (!p_.display || !p_.input || !p_.clock) return false;
     if (p_.audio) {
         p_.audio->setCallback(&fillThunk, this);
@@ -74,6 +76,7 @@ bool App::loadKits() {
     p_.storage->close(h);
     if (got < (1u << 19)) return false;
     kits.setRom(p_.bigMem, got);
+    synthGen.setRom(p_.bigMem, got);
     player.setKits(&kits);
     playerB.setKits(&kits);
     return true;

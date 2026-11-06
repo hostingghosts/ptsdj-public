@@ -129,3 +129,14 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
 - Noise: S is a plain signed byte added to the note index (SFF = -1); the index wraps modulo 120 on (n - 1); the per-tick P step (value / 4, fractional part kept) runs after
   the tick's table rows and is skipped on the tick a P command ran. Noise P, S and tables now match the ROM (kicks: 12 mismatches in 200 ticks).
 - The ROM powers the APU on ~92600 cycles before the first tick; the player advances its frame sequencer by that much at start (small effect on sweeps).
+
+## Synth and Wave screens (measured on the ROM)
+- Map: Synth (Y) is above Phrase, Wave (W) above Instrument. Synth params (16 bytes at 0x3EB2 + 16n): 0 signal (0 saw, 1 square, 2 triangle, 3 W.FX), 1 filter (0-5: LOWP HIGHP BANDP ALLP
+  NOTCH -----), 2 Q (start hi nibble, end lo), 3 dist (CLIP FOLD WRAP), 4 phase mode (PINCH WARP RESYNC RESYN2), 5/9 volume start/end, 6/10 cutoff, 7/11 phase (0-1F, A+Up = 8),
+  8/12 vshift, 13/14 limit (shown as byte + 0F, wraps). Rows top to bottom: signal, filter, dist, phase mode, volume, cutoff, q, vshift, limit, phase. A+Right/Left +-1, A+Up/Down +-16
+  (Q +-2). B+Left/Right changes synth. Frames 16n..16n+15 interpolate start to end.
+- The generator is bank 29 of the ROM: 0x68F9 sets up (WRAM C441 = synth), then the main loop calls 0x6035 once per frame (C9F0 = frame, C9F1 = job flag) until 16 are done. It
+  reads signal tables in banks 29/30 (additive harmonics 63/k, precomputed filtered waves per cutoff step). src/gb/synthgen.cpp runs it in an SM83 interpreter (src/gb/sm83.cpp)
+  from the owner's ROM on the card; 12 random parameter sets match the ROM bit for bit (tools/oracle/synthcheck.py). About 355k instructions per synth.
+- Wave screen: column c shows sample (c + 1) & 31, hex rows show 15 - sample, dots at y = 48 + 4 * value. Up/Down +-1 (Up raises the dot), A+Up/Down flips (15 - v), A+Left/Right draws
+  (moves and copies the value), B+Left/Right changes wave +-1, B+Up/Down +-16, a lone B copies the wave, Select+A pastes.

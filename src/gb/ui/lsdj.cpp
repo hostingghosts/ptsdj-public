@@ -57,8 +57,16 @@ int Lsdj::instrRows() const { return 2 + fieldsFor(s_.instrument(instr)[0]).n; }
 // ---- input ----------------------------------------------------------------------------------------------------------
 
 void Lsdj::key(Key k, bool down) {
-    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
-    if (k == Key::B) { b_ = down; return; }
+    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
+    if (k == Key::B) {
+        if (down) bUsed_ = false;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Wave) {          // a lone B tap copies the wave
+            for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
+            hasClip_ = true;
+        }
+        b_ = down;
+        return;
+    }
     if (k == Key::Select) { sel_ = down; return; }
     if (!down) return;
     if (k == Key::Start) {
@@ -68,7 +76,12 @@ void Lsdj::key(Key k, bool down) {
     }
     if (sel_) { navigate(k); return; }
     if (a_) { edited_ = true; editKey(k); return; }
-    if (b_) { changeId(k == Key::Left || k == Key::Up ? -1 : 1); if (k == Key::Up || k == Key::Down) changeId(0); return; }
+    if (b_) {
+        bUsed_ = true;
+        if (scr_ == Scr::Wave) { waveNo = clampi(waveNo + (k == Key::Left ? -1 : k == Key::Right ? 1 : k == Key::Up ? 16 : -16), 0, 255); return; }
+        if (scr_ == Scr::Synth) { synth = clampi(synth + (k == Key::Left || k == Key::Up ? -1 : 1), 0, kSynths - 1); return; }
+        changeId(k == Key::Left || k == Key::Up ? -1 : 1); if (k == Key::Up || k == Key::Down) changeId(0); return;
+    }
     move(k);
 }
 
@@ -91,7 +104,7 @@ void Lsdj::navigate(Key k) {
     // screen map: Project Wave Synth over Song Chain Phrase Instr Table over Groove
     int col = -1, row = 1;
     switch (scr_) {
-        case Scr::Project: row = 0; col = 0; break; case Scr::Wave: row = 0; col = 2; break; case Scr::Synth: row = 0; col = 3; break;
+        case Scr::Project: row = 0; col = 0; break; case Scr::Synth: row = 0; col = 2; break; case Scr::Wave: row = 0; col = 3; break;
         case Scr::Song: col = 0; break; case Scr::Chain: col = 1; break; case Scr::Phrase: col = 2; break;
         case Scr::Instr: col = 3; break; case Scr::Table: col = 4; break; case Scr::Groove: row = 2; col = 2; break;
     }
@@ -104,12 +117,12 @@ void Lsdj::navigate(Key k) {
             if (scr_ == Scr::Instr) { const uint8_t t = s_.instrument(instr)[6]; if (t & 0x20) table = t & 0x1F; }
             scr_ = main[col + 1];
         } else if (k == Key::Left && col > 0) scr_ = main[col - 1];
-        else if (k == Key::Up) scr_ = col <= 1 ? Scr::Project : col == 2 ? Scr::Wave : Scr::Synth;
+        else if (k == Key::Up) scr_ = col <= 1 ? Scr::Project : col == 2 ? Scr::Synth : Scr::Wave;
         else if (k == Key::Down) scr_ = Scr::Groove;
     } else if (row == 0) {
         if (k == Key::Down) scr_ = col == 0 ? Scr::Song : col == 2 ? Scr::Phrase : Scr::Instr;
-        else if (k == Key::Right) scr_ = col == 0 ? Scr::Wave : Scr::Synth;
-        else if (k == Key::Left && col > 0) scr_ = col == 3 ? Scr::Wave : Scr::Project;
+        else if (k == Key::Right) scr_ = col == 0 ? Scr::Synth : Scr::Wave;
+        else if (k == Key::Left && col > 0) scr_ = col == 3 ? Scr::Synth : Scr::Project;
     } else if (k == Key::Up) scr_ = Scr::Phrase;
 }
 
@@ -123,6 +136,11 @@ void Lsdj::move(Key k) {
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
         case Scr::Project: projRow = clampi(projRow + dy, 0, 11); break;
+        case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
+        case Scr::Wave:
+            waveCol = clampi(waveCol + dx, 0, 31);
+            if (dy) setWaveSample(waveCol + 1, clampi(waveSample(waveCol + 1) + dy, 0, 15));   // Up raises the dot: the screen runs 0 at the top
+            break;
         default: break;
     }
 }
@@ -150,6 +168,8 @@ void Lsdj::press(Key) {
 }
 
 void Lsdj::editKey(Key k) {
+    if (scr_ == Scr::Synth) { synthEdit(k); return; }
+    if (scr_ == Scr::Wave) { waveEdit(k); return; }
     const int big = (k == Key::Up || k == Key::Down), sgn = (k == Key::Right || k == Key::Up) ? 1 : -1;
     const int d = sgn * (big ? 16 : 1);
     switch (scr_) {
@@ -252,21 +272,23 @@ void Lsdj::changeId(int d) {
 
 // ---- drawing --------------------------------------------------------------------------------------------------------
 
-void Lsdj::drawPanel(Lcd& l) const {
-    l.rect(128, 0, 32, 112, 1);
+void Lsdj::drawPanel(Lcd& l, bool full) const {
+    if (full) l.rect(128, 0, 32, 112, 1);
     static const char* ch[4] = {"PU1", "PU2", "WAV", "NOI"};
     l.rect(128, 0, 32, 8, 3);
     l.text(16, 0, ch[scr_ == Scr::Song ? songCh : (scr_ == Scr::Project ? 0 : songCh)], true);
     char b[8];
-    l.glyphAt(128, 24, '\x01', false, 3, 1);
-    std::snprintf(b, sizeof b, "%d", s_.at(off::kTempo));
-    for (int i = 0; b[i]; ++i) l.glyphAt(136 + i * 8, 24, b[i], false, 3, 1);
+    if (full) {
+        l.glyphAt(128, 24, '\x01', false, 3, 1);
+        std::snprintf(b, sizeof b, "%d", s_.at(off::kTempo));
+        for (int i = 0; b[i]; ++i) l.glyphAt(136 + i * 8, 24, b[i], false, 3, 1);
+    }
     static const char lab[2][4] = {{'1', '2', '3', '4'}, {'5', '6', '7', '8'}};
-    for (int c = 0; c < 4; ++c) l.glyphAt(136, 40 + c * 8, lab[console_][c], p_.voiceOn(c), p_.voiceOn(c) ? 0 : 3, p_.voiceOn(c) ? 3 : 1);
+    for (int c = 0; full && c < 4; ++c) l.glyphAt(136, 40 + c * 8, lab[console_][c], p_.voiceOn(c), p_.voiceOn(c) ? 0 : 3, p_.voiceOn(c) ? 3 : 1);
     // screen map
     auto mark = [&](int col, int row, char c, Scr s) { l.glyph(col, row, c, scr_ == s); };
-    l.rect(120, 112, 40, 32, 0);
-    mark(15, 14, 'P', Scr::Project); mark(17, 14, 'W', Scr::Wave); mark(18, 14, 'S', Scr::Synth);
+    if (full) l.rect(120, 112, 40, 32, 0);
+    mark(15, 14, 'P', Scr::Project); mark(17, 14, 'Y', Scr::Synth); mark(18, 14, 'W', Scr::Wave);
     mark(15, 16, 'S', Scr::Song); mark(16, 16, 'C', Scr::Chain); mark(17, 16, 'P', Scr::Phrase); mark(18, 16, 'I', Scr::Instr); mark(19, 16, 'T', Scr::Table);
     mark(17, 17, 'G', Scr::Groove);
 }
@@ -281,10 +303,10 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Table: drawTable(l); break;
         case Scr::Groove: drawGroove(l); break;
         case Scr::Project: drawProject(l); break;
-        case Scr::Wave: l.text(0, 0, "WAVE"); l.text(2, 5, "NOT YET"); break;
-        case Scr::Synth: l.text(0, 0, "SYNTH 00-0F"); l.text(2, 5, "NOT YET"); break;
+        case Scr::Wave: drawWave(l); break;
+        case Scr::Synth: drawSynth(l); break;
     }
-    if (scr_ != Scr::Project) drawPanel(l); else { drawPanel(l); }
+    drawPanel(l, scr_ != Scr::Wave);
 }
 
 void Lsdj::drawSong(Lcd& l) const {
@@ -367,6 +389,129 @@ void Lsdj::drawGroove(Lcd& l) const {
     for (int r = 0; r < 16; ++r) {
         l.glyph(0, 2 + r, "0123456789ABCDEF"[r]);
         l.hex2(3, 2 + r, s_.groove(groove)[r], r == grooveStep);
+    }
+}
+
+
+// ---- Wave and Synth screens ---------------------------------------------------------------------------------------------
+
+int Lsdj::waveSample(int i) const { const uint8_t b = s_.wave(waveNo)[(i & 31) >> 1]; return (i & 1) ? (b & 15) : (b >> 4); }
+
+void Lsdj::setWaveSample(int i, int v) {
+    uint8_t& b = s_.wave(waveNo)[(i & 31) >> 1];
+    b = (i & 1) ? uint8_t((b & 0xF0) | v) : uint8_t((b & 0x0F) | (v << 4));
+}
+
+void Lsdj::waveEdit(Key k) {
+    const int sample = waveCol + 1;
+    if (k == Key::Up || k == Key::Down) { setWaveSample(sample, 15 - waveSample(sample)); return; }   // A + up/down flips the sample
+    // A + left/right draws: step sideways and copy the sample just left (right) behind
+    const int d = k == Key::Right ? 1 : -1, v = waveSample(sample);
+    waveCol = clampi(waveCol + d, 0, 31);
+    setWaveSample(waveCol + 1, v);
+}
+
+void Lsdj::regenSynth() { if (sg_) sg_->regenerate(s_, synth); }
+
+namespace {
+struct SynthField { const char* label; int y; int b0, b1; int kind; int step; };   // kind: 0 signal, 1 filter, 2 dist, 3 phase mode, 4 byte, 5 Q nibbles, 6 phase (0-1F), 7 limit (wraps)
+const SynthField kSynthFields[10] = {
+    {"SIGNAL", 2, 0, 0, 0, 1}, {"FILTER", 3, 1, 1, 1, 1}, {"DIST", 4, 3, 3, 2, 1}, {"PHASE", 5, 4, 4, 3, 1},
+    {"VOLUME", 9, 5, 9, 4, 16}, {"CUTOFF", 10, 6, 10, 4, 16}, {"Q", 11, 2, 2, 5, 2}, {"VSHIFT", 12, 8, 12, 4, 16},
+    {"LIMIT", 13, 13, 14, 7, 16}, {"PHASE", 14, 7, 11, 6, 8},
+};
+const char* const kFilterNames[6] = {" LOWP", "HIGHP", "BANDP", " ALLP", "NOTCH", "-----"};
+const char* const kDistNames[3] = {" CLIP", " FOLD", " WRAP"};
+const char* const kPhaseNames[4] = {"PINCH", " WARP", "RESYNC", "RESYN2"};
+}  // namespace
+
+void Lsdj::synthEdit(Key k) {
+    const SynthField& f = kSynthFields[synthRow];
+    uint8_t* p = s_.synth(synth);
+    const int d = (k == Key::Right || k == Key::Up) ? 1 : -1;
+    const bool big = k == Key::Up || k == Key::Down;
+    const int col = f.b0 == f.b1 ? 0 : synthCol;
+    uint8_t& b = p[col ? f.b1 : f.b0];
+    switch (f.kind) {
+        case 0: b = uint8_t(clampi(b + d, 0, 3)); break;
+        case 1: b = uint8_t(clampi(b + d, 0, 5)); break;
+        case 2: b = uint8_t(clampi(b + d, 0, 2)); break;
+        case 3: b = uint8_t(clampi(b + d, 0, 3)); break;
+        case 4: b = uint8_t(clampi(b + d * (big ? f.step : 1), 0, 255)); break;
+        case 5: {                                                   // Q: start in the high nibble, end in the low one
+            const int v = col ? (b & 15) : (b >> 4), n = clampi(v + d * (big ? f.step : 1), 0, 15);
+            b = col ? uint8_t((b & 0xF0) | n) : uint8_t((b & 0x0F) | (n << 4));
+            break;
+        }
+        case 6: b = uint8_t(clampi(b + d * (big ? f.step : 1), 0, 0x1F)); break;
+        default: b = uint8_t(b + d * (big ? f.step : 1)); break;   // limit wraps
+    }
+    regenSynth();
+}
+
+void Lsdj::drawSynth(Lcd& l) const {
+    char t[24]; std::snprintf(t, sizeof t, "SYNTH %X", synth); l.text(0, 0, t);
+    const uint8_t* p = s_.synth(synth);
+    const char hx[] = "0123456789ABCDEF";
+    auto cell = [&](int col, int row, const char* s, bool cur) {            // editable values sit on a grey cell, the cursor is inverted
+        const int n = int(std::strlen(s));
+        l.rect(col * 8, row * 8, n * 8, 8, 1);
+        l.text(col, row, s, cur);
+    };
+    for (int i = 0; i < 10; ++i) {
+        const SynthField& f = kSynthFields[i];
+        l.text(0, f.y, f.label);
+        const bool onRow = synthRow == i;
+        if (f.kind < 4) {
+            const uint8_t v = p[f.b0];
+            if (f.kind == 0) {                                                // the signal is drawn as a little wave icon
+                l.rect(72, f.y * 8, 32, 8, onRow ? 3 : 1);
+                const uint8_t fg = onRow ? 0 : 3;
+                for (int x = 0; x < 32; ++x) {
+                    int y;
+                    switch (v & 3) {
+                        case 0: y = 7 - (x % 8); break;                                       // saw
+                        case 1: y = (x % 16) < 8 ? 1 : 6; break;                              // square
+                        case 2: { const int ph = x % 16; y = ph < 8 ? 1 + ph * 6 / 7 : 6 - (ph - 8) * 5 / 7; break; }   // triangle
+                        default: y = 1 + ((x * 5) % 7); break;                                // W.FX input: a ragged line
+                    }
+                    l.px(72 + x, f.y * 8 + y, fg);
+                }
+            } else {
+                const char* name = f.kind == 1 ? kFilterNames[v > 5 ? 5 : v] : f.kind == 2 ? kDistNames[v > 2 ? 2 : v] : kPhaseNames[v & 3];
+                char s[8]; std::snprintf(s, sizeof s, "%6s", name);
+                cell(7, f.y, s + (6 - int(std::strlen(name))) , onRow);
+            }
+            continue;
+        }
+        for (int c = 0; c < 2; ++c) {
+            const uint8_t b = p[c ? f.b1 : f.b0];
+            char s[4];
+            switch (f.kind) {
+                case 5: s[0] = ' '; s[1] = hx[c ? (b & 15) : (b >> 4)]; break;
+                case 7: { const uint8_t v = uint8_t(b + 0x0F); s[0] = hx[v >> 4]; s[1] = hx[v & 15]; break; }   // limit shows its byte + 0F
+                default: s[0] = hx[b >> 4]; s[1] = hx[b & 15]; break;
+            }
+            s[2] = 0;
+            cell(c ? 11 : 8, f.y, s, onRow && synthCol == c);
+        }
+    }
+    l.text(0, 7, "WAVE");
+    char w[8]; std::snprintf(w, sizeof w, "%02X-%02X", synth * 16, synth * 16 + 15);
+    l.text(8, 7, w);
+    if (!sg_ || !sg_->available()) l.text(0, 16, "NO ROM: FRAMES NOT REBUILT");
+}
+
+void Lsdj::drawWave(Lcd& l) const {
+    char t[16]; std::snprintf(t, sizeof t, "WAVE %02X", waveNo); l.text(0, 0, t);
+    const char hx[] = "0123456789ABCDEF";
+    // 32 columns x 4 px, value 0 at the top; column c shows sample (c + 1) & 31, the two hex rows show 15 - sample
+    for (int c = 0; c < 32; ++c) {
+        const int v = waveSample(c + 1);
+        l.rect(16 + c * 4, 48 + v * 4, 4, 4, 3);
+        const bool cur = c == waveCol;
+        if (cur) for (int y = 48; y < 112; y += 2) l.px(16 + c * 4 + 1, y, 3);
+        l.glyph(2 + (c & 15), c < 16 ? 5 : 14, hx[15 - v], cur);
     }
 }
 

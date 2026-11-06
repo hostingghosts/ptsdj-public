@@ -1,6 +1,8 @@
 // GB app + UI host tests over fake HALs: boot, the blank first screen, the power-hold bar, the silent audio callback and the
 // FT81x display-list budget (2048 words per frame; a 100-word margin below the hardware limit is kept free).
+#include <cstdio>
 #include <cstring>
+#include <vector>
 #include <deque>
 
 #include "atw/app.h"
@@ -303,4 +305,86 @@ TEST(project_screen_saves_loads_and_exports_the_session) {
     tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT WAV
     CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
     CHECK(st.files["GB/Export/SESSION.wav"].size() > 44u);
+}
+
+namespace {
+void tapKey(gb::Lsdj& l, gb::Key k) { l.key(k, true); l.key(k, false); }
+void holdTap(gb::Lsdj& l, gb::Key mod, gb::Key k) { l.key(mod, true); l.key(k, true); l.key(k, false); l.key(mod, false); }
+int sampleOf(gb::Song& s, int wave, int i) { const uint8_t b = s.wave(wave)[(i & 31) >> 1]; return (i & 1) ? (b & 15) : (b >> 4); }
+}  // namespace
+
+TEST(wave_screen_edits_samples_like_lsdj) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    for (int i = 0; i < 16; ++i) r.app.song.wave(0)[i] = 0x55;
+    l.show(gb::Scr::Wave);
+    tapKey(l, gb::Key::Up);                                   // the cursor starts on sample 1; Up raises the dot (value - 1)
+    CHECK_EQ(sampleOf(r.app.song, 0, 1), 4);
+    tapKey(l, gb::Key::Right); tapKey(l, gb::Key::Down);      // sample 2, value + 1
+    CHECK_EQ(sampleOf(r.app.song, 0, 2), 6);
+    holdTap(l, gb::Key::A, gb::Key::Up);                      // A + up flips the sample: 15 - 6
+    CHECK_EQ(sampleOf(r.app.song, 0, 2), 9);
+    holdTap(l, gb::Key::A, gb::Key::Right);                   // A + right draws: the next sample takes this value
+    CHECK_EQ(l.waveCol, 2);
+    CHECK_EQ(sampleOf(r.app.song, 0, 3), 9);
+    holdTap(l, gb::Key::B, gb::Key::Right);                   // B + right changes the wave
+    CHECK_EQ(l.waveNo, 1);
+    holdTap(l, gb::Key::B, gb::Key::Up);                      // B + up: +16
+    CHECK_EQ(l.waveNo, 17);
+}
+
+TEST(wave_screen_copies_and_pastes_a_wave) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    for (int i = 0; i < 16; ++i) { r.app.song.wave(0)[i] = uint8_t(i * 17); r.app.song.wave(1)[i] = 0; }
+    l.show(gb::Scr::Wave);
+    tapKey(l, gb::Key::B);                                    // a lone B tap copies
+    holdTap(l, gb::Key::B, gb::Key::Right);                   // go to wave 1
+    holdTap(l, gb::Key::Select, gb::Key::A);                  // Select + A pastes
+    for (int i = 0; i < 16; ++i) CHECK_EQ(int(r.app.song.wave(1)[i]), i * 17);
+}
+
+TEST(synth_screen_edits_parameters_with_lsdj_ranges) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    l.show(gb::Scr::Synth);
+    uint8_t* p = r.app.song.synth(0);
+    for (int i = 0; i < 16; ++i) p[i] = 0;
+    p[5] = 0x10; p[6] = 0xFF; p[9] = 0x10; p[10] = 0xFF;
+    holdTap(l, gb::Key::A, gb::Key::Right);                   // SIGNAL + 1
+    CHECK_EQ(int(p[0]), 1);
+    tapKey(l, gb::Key::Down); holdTap(l, gb::Key::A, gb::Key::Right);   // FILTER + 1
+    CHECK_EQ(int(p[1]), 1);
+    tapKey(l, gb::Key::Down); holdTap(l, gb::Key::A, gb::Key::Right);   // DIST
+    CHECK_EQ(int(p[3]), 1);
+    tapKey(l, gb::Key::Down); holdTap(l, gb::Key::A, gb::Key::Right);   // PHASE mode
+    CHECK_EQ(int(p[4]), 1);
+    tapKey(l, gb::Key::Down); holdTap(l, gb::Key::A, gb::Key::Up);      // VOLUME, end column: +16
+    CHECK_EQ(int(p[9]), 0x20);
+    tapKey(l, gb::Key::Left); holdTap(l, gb::Key::A, gb::Key::Right);   // start column: +1
+    CHECK_EQ(int(p[5]), 0x11);
+    tapKey(l, gb::Key::Down); holdTap(l, gb::Key::A, gb::Key::Right);   // CUTOFF start already FF: stays
+    CHECK_EQ(int(p[6]), 0xFF);
+    tapKey(l, gb::Key::Down); holdTap(l, gb::Key::A, gb::Key::Up);      // Q start: +2 in the high nibble
+    CHECK_EQ(int(p[2]), 0x20);
+    for (int i = 0; i < 2; ++i) tapKey(l, gb::Key::Down);               // VSHIFT, LIMIT
+    holdTap(l, gb::Key::A, gb::Key::Left);                              // LIMIT wraps
+    CHECK_EQ(int(p[13]), 0xFF);
+    holdTap(l, gb::Key::B, gb::Key::Right);                             // next synth
+    CHECK_EQ(l.synth, 1);
+}
+
+TEST(synth_edit_regenerates_frames_when_the_rom_is_available) {
+    FILE* f = std::fopen("../reference/oracle/run/lsdj.gb", "rb");
+    if (!f) return;
+    static std::vector<uint8_t> rom(1u << 20);
+    rom.resize(std::fread(rom.data(), 1, rom.size(), f));
+    std::fclose(f);
+    Rig r;
+    r.app.synthGen.setRom(rom.data(), rom.size());
+    gb::Lsdj& l = r.app.lsdj;
+    l.show(gb::Scr::Synth);
+    holdTap(l, gb::Key::A, gb::Key::Right);                   // square
+    CHECK_EQ(int(r.app.song.wave(0)[0]), 0x74);
+    CHECK_EQ(int(r.app.song.wave(5)[1]), 0x54);
 }
