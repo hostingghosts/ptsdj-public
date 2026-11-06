@@ -157,3 +157,15 @@ Kill switches the wave DAC off (NR30 = 0), it does not just zero NR32. A bend st
 
 ## Pulse fine tune: see above. Tick phase
 The ROM's tick accumulator keeps a leftover from before Play, so tick edges sit at an arbitrary sub-step offset per run (no rule found from the tempo). tools/oracle: SUBSTEPS=1 compares per 358 Hz sub-step instead of per tick; TICKPHASE=r (playdump) sets the leftover to find the best alignment.
+
+## Kits (measured on 9.4.2, more)
+Byte 11 = n plays 2n-1 chunks (0 = the whole sample); only bit 5 of byte 5 loops; the last chunk of a sample is not played (a sample of 18 chunks plays 17). A kit number with no kit bank in the ROM (e.g. GUESSWHO's kit 22 on this ROM) plays whatever the bank holds; we play nothing.
+
+## L after a kill
+An L slide on a step whose note was killed still starts at the last note's pitch and glides to the new one (note retriggers at the old pitch).
+
+## Wave bend base
+Once a bend runs, the fitted note index is about 6/256 low; +6 makes INFORMAL's wave pitch exact. Probably the real note-to-index mapping has a per-note fraction we do not know.
+
+## Open (per-song, phase-aligned, ignoring pitch differences of 2 or less): see tools/oracle/README.md
+SETBARLO noise pan stepping with per-note tables; TRIAC/NICEVIBE/NOLIGHT pulse duty and volume at some events; i'mpuzzled duty/pitch events one to two sub-steps apart from the ROM; Friendbender noise pitch; revision (Z); kicks: hardware sweep phase.
