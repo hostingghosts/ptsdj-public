@@ -22,3 +22,5 @@ tempo and L/R panning. Project screen: SAVE/LOAD SESSION A+B (`GB/Songs/Snn_A/B.
 (`GB/Export/Snn.wav`, one pass until every channel loops; the screen waits while it renders).
 Songs: `GB/Songs/*.lsdsng` on the card (`GB/AUTOLOAD.LSDSNG` and `GB/AUTOLOAD_B.LSDSNG` open at start). `demos/` holds sample songs and kits.
 Docs: `LEARNINGS.md`, `docs/LSDJ_FORMAT.md`, `docs/HARDWARE_MAP.md`, `UPSTREAM.md`. `tools/oracle/` checks against an LSDJ ROM.
+
+Extra sample kits: put 16 KB LSDJ `.kit` files in `GB/Kits` on the card. The first two characters of the name (hex, 00-3F) are the kit slot the file replaces, e.g. `0A_808.kit` replaces kit 0A (the number a song's kit instrument shows); up to 16 files, read at boot. The Project readout ends with `K<n>`, the number of kit files loaded.

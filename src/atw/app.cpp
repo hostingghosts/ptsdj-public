@@ -128,8 +128,50 @@ bool App::romStep() {
     return true;
 }
 
+// .kit files: GB/Kits/<hex index>*.kit, 16 KB each, replace that kit slot. The listing is taken first, then one file is read per step.
+void App::scanKitFiles() {
+    kitFiles_ = 0;
+    if (!p_.storage) return;
+    p_.storage->listDir(kKitDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
+        App* a = static_cast<App*>(ctx);
+        const size_t n = std::strlen(e.name);
+        auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+        if (e.isDir || n < 6 || n >= sizeof a->kitNames_[0] || strcasecmp(e.name + n - 4, ".kit") != 0 || e.size != gb::kKitBankSize) return true;
+        const int hi = hex(e.name[0]), lo = hex(e.name[1]);
+        if (hi < 0 || lo < 0 || hi * 16 + lo > 63 || a->kitFiles_ >= kMaxKitFiles) return a->kitFiles_ < kMaxKitFiles;
+        std::snprintf(a->kitNames_[a->kitFiles_], sizeof a->kitNames_[0], "%s", e.name);
+        a->kitIdx_[a->kitFiles_++] = uint8_t(hi * 16 + lo);
+        return true;
+    }, this);
+}
+
+int App::kitFileStep(int i) {
+    uint8_t* base = p_.bigMem && p_.bigMemSize >= kKitOffset + kMaxKitFiles * gb::kKitBankSize ? p_.bigMem + kKitOffset : nullptr;
+    if (!base || i < 0 || i >= kitFiles_) return 0;
+    char path[64];
+    std::snprintf(path, sizeof path, "%s/%s", kKitDir, kitNames_[i]);
+    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kRead);
+    if (h < 0) return 0;
+    uint8_t* dst = base + size_t(i) * gb::kKitBankSize;
+    uint32_t got = 0;
+    while (got < gb::kKitBankSize) {
+        const int32_t n = p_.storage->read(h, dst + got, std::min<uint32_t>(4096, gb::kKitBankSize - got));
+        if (n <= 0) break;
+        got += uint32_t(n);
+    }
+    p_.storage->close(h);
+    if (got != gb::kKitBankSize || dst[0] != 0x60 || dst[1] != 0x40) return 0;   // not a kit bank (the offset table starts at 0x4060)
+    kits.setOverride(kitIdx_[i], dst);
+    player.setKits(&kits);
+    playerB.setKits(&kits);
+    ++kitsLoaded_;
+    return 1;
+}
+
 bool App::loadKits() {
     while (!romStep()) {}
+    scanKitFiles();
+    for (int i = 0; i < kitFiles_; ++i) kitFileStep(i);
     return synthGen.available();
 }
 
@@ -233,6 +275,7 @@ void App::boot() {
     if (!p_.storage) return;
     p_.storage->mkdir("GB");
     p_.storage->mkdir(kSongDir);
+    p_.storage->mkdir(kKitDir);
     p_.storage->mkdir(kExportDir);
     bootStep_ = 0;
     setBanner("LOADING SONG A");
@@ -247,7 +290,12 @@ void App::bootTick() {
         case 2: {
             const bool done = romStep();
             if (!done) { char b[24]; std::snprintf(b, sizeof b, "LOADING ROM %u%%", unsigned(romGot_ * 100 / kRomBytes)); setBanner(b); }
-            else { setBanner(""); bootStep_ = 3; }
+            else { scanKitFiles(); kitStep_ = 0; setBanner(kitFiles_ ? "LOADING KITS" : ""); bootStep_ = kitFiles_ ? 3 : 4; }
+            break;
+        }
+        case 3: {                                               // one .kit file per pass
+            kitFileStep(kitStep_);
+            if (++kitStep_ >= kitFiles_) { setBanner(""); bootStep_ = 4; }
             break;
         }
         default: break;
@@ -260,13 +308,13 @@ void App::quiesce() {
 
 void App::loop() {
     if (p_.service) p_.service();
-    if (bootStep_ < 3 && p_.storage) bootTick();
+    if (bootStep_ < 4 && p_.storage) bootTick();
     pump();
     if (p_.clock && p_.clock->millis() - statsAt_ >= 500) {      // render cost and late audio blocks for the Project screen
         statsAt_ = p_.clock->millis();
         const uint32_t late = ringLate_.load(std::memory_order_relaxed);
         if (!dual.running()) { peakC_ = 0; lateAtStart_ = late; }     // both are for the current playback
-        std::snprintf(audioText_, sizeof audioText_, "PK%uK L%u R%u", unsigned(peakC_ / 1000), unsigned(late - lateAtStart_), unsigned(romGot_ / 1024));
+        std::snprintf(audioText_, sizeof audioText_, "P%uK L%u R%uK%d", unsigned(peakC_ / 1000), unsigned(late - lateAtStart_), unsigned(romGot_ / 1024), kitsLoaded_);
         lsdj.setAudioInfo(audioText_);
         lsdjB.setAudioInfo(audioText_);
     }

@@ -453,3 +453,21 @@ TEST(audio_is_rendered_ahead_and_a_late_block_counts_once) {
     for (int i = 0; i < 128; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
     CHECK(peak > 0);
 }
+
+TEST(kit_files_replace_kit_slots_at_boot) {
+    MemStorage st;
+    std::vector<uint8_t> bank(gb::kKitBankSize, 0x11);
+    bank[0] = 0x60; bank[1] = 0x40; bank[2] = 0x80; bank[3] = 0x40; bank[4] = 0; bank[5] = 0;   // two samples' offsets, then the end
+    st.files["GB/Kits/0A_drums.kit"] = bank;
+    st.files["GB/Kits/ZZ_bad.kit"] = bank;                                    // not a slot number
+    st.files["GB/Kits/05_short.kit"] = std::vector<uint8_t>(100, 0);         // wrong size
+    std::vector<uint8_t> notKit(gb::kKitBankSize, 0);
+    st.files["GB/Kits/07_junk.kit"] = notKit;                                // right size, not a kit bank
+    Rig r(true, &st);
+    r.loop(40);
+    CHECK_EQ(r.app.kitFilesLoaded(), 1);
+    CHECK(r.app.kits.kit(0x0A).data != nullptr);
+    CHECK_EQ(r.app.kits.kit(0x0A).data[2], 0x80);
+    CHECK(r.app.kits.kit(0x07).data == nullptr);
+    CHECK(r.app.kits.kit(0x05).data == nullptr);
+}
