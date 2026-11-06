@@ -62,7 +62,7 @@ public:
     ui::Ui ui;
     void fill(int16_t* out, uint32_t frames);   // audio callback body: only copies what pump() rendered ahead
     void pump();                                // main loop: renders the players ahead into the ring (one pass)
-    void flushRing() { flush_.store(true, std::memory_order_release); }
+    void flushRing() { flushTo_.store(ringHead_.load(std::memory_order_relaxed), std::memory_order_relaxed); flush_.store(true, std::memory_order_release); }   // drops what is queued now, not what is rendered afterwards
     // Songs live on the card as .lsdsng files in GB/Songs (the format LSDJ's own tools use).
     bool loadSong(const char* path, int console = 0);
     bool saveSong(const char* path, const char* name, int console = 0);
@@ -71,6 +71,8 @@ public:
     bool saveLinked(const char* base);
     // Renders both songs once from their first rows until every channel has come round again (or `maxSeconds`); writes a 16-bit stereo WAV.
     bool exportWav(const char* path, int rate = 44100, int maxSeconds = 600);
+    bool exportFiles(const char* name);        // Snn_A / Snn_B as .lsdsng and .sav in GB/Export
+    bool saveSav(const char* path, int console);
     static constexpr const char* kSongDir = "GB/Songs";
     static constexpr const char* kExportDir = "GB/Export";   // WAV exports; the session is always called SESSION until a file browser exists
     static constexpr const char* kKitDir = "GB/Kits";       // .kit files: the first two characters (hex) say which kit slot a file replaces, e.g. 0A_808.kit
@@ -105,6 +107,8 @@ private:
     int16_t ring_[kRingFrames * 2] = {};
     std::atomic<uint32_t> ringHead_{0}, ringTail_{0};       // frames written / read, only ever increasing
     std::atomic<bool> flush_{false};
+    std::atomic<uint32_t> flushTo_{0};
+    bool liveWas_ = false;
     std::atomic<uint32_t> ringLate_{0};                     // audio blocks that found the ring short
     uint32_t peakC_ = 0, lateAtStart_ = 0;                  // worst 128-frame render (CPU cycles) and late blocks since this playback started
     int bootStep_ = 4;                           // 4 = nothing to do (boot() starts it)

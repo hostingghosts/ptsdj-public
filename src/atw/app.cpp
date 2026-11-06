@@ -19,7 +19,10 @@ void fillSilence(int16_t* out, uint32_t frames, void*) {
 void App::fill(int16_t* out, uint32_t frames) {
     uint32_t tail = ringTail_.load(std::memory_order_relaxed);
     const uint32_t head = ringHead_.load(std::memory_order_acquire);
-    if (flush_.exchange(false, std::memory_order_acq_rel)) tail = head;           // a new playback starts: drop the queued silence
+    if (flush_.exchange(false, std::memory_order_acq_rel)) {                        // a new playback or note starts: drop the silence queued before it
+        const uint32_t to = flushTo_.load(std::memory_order_relaxed);
+        if (int32_t(to - tail) > 0) tail = to;
+    }
     uint32_t n = head - tail;
     if (n > frames) n = frames;
     for (uint32_t i = 0; i < n; ++i) {
@@ -38,8 +41,10 @@ void App::pump() {
     if (exporting_ || !p_.audio) return;
     const uint32_t rate = p_.sampleRateMilliHz / 1000;
     int16_t buf[kChunk * 2];
+    if (dual.live() && !liveWas_) flushRing();           // a pad starts a note: drop the queued silence so it sounds at once
+    liveWas_ = dual.live();
     for (int pass = 0; pass < 16; ++pass) {
-        const bool run = dual.running();
+        const bool run = dual.running() || dual.live();
         const uint32_t level = ringHead_.load(std::memory_order_relaxed) - ringTail_.load(std::memory_order_acquire);
         if (level + kChunk > (run ? kRunTarget : kIdleTarget)) break;
         const uint32_t c0 = p_.cycleCounter ? p_.cycleCounter() : 0;
@@ -195,7 +200,10 @@ void App::LinkedTransport::start(int console, int row) {
     // The console whose Start was pressed starts at its cursor row; the other one at its own cursor row.
     const int rowA = console == 0 ? row : app->lsdj.startRow();
     const int rowB = console == 1 ? row : app->lsdjB.startRow();
-    app->dual.start(rowA, rowB);
+    // The virtual link cable: with SYNC = LSDJ in both projects the console that started is the master (the other follows its tempo and
+    // starts with it); otherwise it plays alone.
+    const bool linked = app->song.at(gb::off::kSync) == 1 && app->songB.at(gb::off::kSync) == 1;
+    if (linked) app->dual.startLinked(console, rowA, rowB); else app->dual.startOne(console, console ? rowB : rowA);
     app->flushRing();
 }
 
@@ -237,8 +245,45 @@ bool App::LinkedTransport::action(Action a, int slot) {
             std::snprintf(path, sizeof path, "%s/%s.wav", kExportDir, name);
             return app->exportWav(path, 44100, slot >= 90 ? 20 : 600);   // slots 90-99 make a 20 second test export
         }
+        case kExportFiles: return app->exportFiles(name);
     }
     return false;
+}
+
+// Both songs as LSDJ files for two real Game Boys: Snn_A / Snn_B as .lsdsng (for the file manager) and as .sav (the song as working memory).
+bool App::exportFiles(const char* name) {
+    if (!p_.storage || !fileBuf()) return false;
+    p_.storage->mkdir(kExportDir);
+    bool ok = true;
+    for (int c = 0; c < 2; ++c) {
+        char path[80], sn[16];
+        std::snprintf(path, sizeof path, "%s/%s_%c.lsdsng", kExportDir, name, 'A' + c);
+        std::snprintf(sn, sizeof sn, "%.7s%c", name, 'A' + c);
+        ok = saveSong(path, sn, c) && ok;
+        std::snprintf(path, sizeof path, "%s/%s_%c.sav", kExportDir, name, 'A' + c);
+        ok = saveSav(path, c) && ok;
+    }
+    return ok;
+}
+
+// A 128 KB .sav with the song as working memory and an empty file table, written in pieces (the scratch buffer is 64 KB).
+bool App::saveSav(const char* path, int console) {
+    if (!p_.storage || !fileBuf()) return false;
+    uint8_t* buf = fileBuf();
+    const gb::Song& sg = console ? songB : song;
+    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
+    if (h < 0) return false;
+    bool ok = true;
+    auto put = [&](const uint8_t* d, uint32_t n) { ok = ok && p_.storage->write(h, d, n) == int32_t(n); };
+    put(sg.mem(), gb::kMemSize);                                   // 0x0000-0x7FFF: the song
+    std::memset(buf, 0, 0x140);                                    // 0x8000: names and versions, then the markers
+    buf[0x13E] = 'j'; buf[0x13F] = 'k';
+    std::memset(buf + 0x140, 0xFF, 4096 - 0x140);
+    put(buf, 4096);
+    std::memset(buf, 0xFF, 4096);
+    for (uint32_t done = 4096; done < gb::kSavSize - gb::kMemSize; done += 4096) put(buf, 4096);
+    p_.storage->close(h);
+    return ok;
 }
 
 bool App::exportWav(const char* path, int rate, int maxSeconds) {

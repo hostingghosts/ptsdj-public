@@ -257,6 +257,8 @@ TEST(start_key_starts_both_consoles_and_song_key_switches_screen) {
     Rig r;
     oneNote(r.app.song, 0, 25, 3);
     oneNote(r.app.songB, 2, 30, 3);
+    r.app.song.at(gb::off::kSync) = 1;       // both projects on SYNC = LSDJ: the virtual link cable
+    r.app.songB.at(gb::off::kSync) = 1;
     r.app.lsdj.key(gb::Key::Start, true);
     r.app.lsdj.key(gb::Key::Start, false);
     CHECK(r.app.player.running());
@@ -418,7 +420,7 @@ TEST(file_screen_lists_songs_and_loads_one_into_the_console) {
     CHECK(r.app.saveSong("GB/Songs/ALPHA.lsdsng", "ALPHA", 0));
     gb::Lsdj& l = r.app.lsdjB;                                // load into console B
     l.show(gb::Scr::Project);
-    for (int i = 0; i < 12; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG FILE
+    for (int i = 0; i < 13; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG FILE
     tapKey(l, gb::Key::A);
     CHECK(l.screen() == gb::Scr::File);
     CHECK_EQ(l.fileCount, 2);
@@ -470,4 +472,134 @@ TEST(kit_files_replace_kit_slots_at_boot) {
     CHECK_EQ(r.app.kits.kit(0x0A).data[2], 0x80);
     CHECK(r.app.kits.kit(0x07).data == nullptr);
     CHECK(r.app.kits.kit(0x05).data == nullptr);
+}
+
+TEST(without_sync_play_starts_one_console_and_with_sync_the_slave_follows_the_master_tempo) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 3);
+    oneNote(r.app.songB, 1, 30, 3);
+    r.app.song.at(gb::off::kTempo) = 100;
+    r.app.songB.at(gb::off::kTempo) = 200;
+    r.app.lsdjB.key(gb::Key::Start, true);
+    r.app.lsdjB.key(gb::Key::Start, false);
+    CHECK(r.app.playerB.running());
+    CHECK(!r.app.player.running());               // SYNC off: Play on B plays B alone
+    r.app.lsdjB.key(gb::Key::Start, true);
+    r.app.lsdjB.key(gb::Key::Start, false);
+    r.app.song.at(gb::off::kSync) = 1;
+    r.app.songB.at(gb::off::kSync) = 1;
+    r.app.lsdj.key(gb::Key::Start, true);
+    r.app.lsdj.key(gb::Key::Start, false);
+    int16_t out[2 * 512];
+    r.app.dual.render(out, 512, 44100);
+    CHECK(r.app.player.running() && r.app.playerB.running());
+    CHECK_EQ(r.app.playerB.tempo(), 100);         // A started: B follows A's tempo
+}
+
+namespace {
+void keyTap(Rig& r, uint8_t id) { r.push(ot::InputEvent::kButtonDown, id); r.push(ot::InputEvent::kButtonUp, id); r.loop(3); }
+void padEvent(Rig& r, ot::InputEvent::Type t, int pad) {
+    ot::InputEvent e;
+    e.type = t;
+    e.id = uint8_t(pad);
+    e.velocity = 100;
+    r.input.q.push_back(e);
+    r.loop(3);
+}
+}  // namespace
+
+TEST(page_keys_jump_to_pages_and_shift_song_swaps_consoles) {
+    Rig r;
+    keyTap(r, ot::btn::Note);         CHECK(r.app.lsdj.screen() == gb::Scr::Phrase);
+    keyTap(r, ot::btn::Instr);        CHECK(r.app.lsdj.screen() == gb::Scr::Instr);
+    keyTap(r, ot::btn::InstrParams);  CHECK(r.app.lsdj.screen() == gb::Scr::Table);
+    keyTap(r, ot::btn::Pattern);      CHECK(r.app.lsdj.screen() == gb::Scr::Chain);
+    keyTap(r, ot::btn::Fx1);          CHECK(r.app.lsdj.screen() == gb::Scr::Synth);
+    keyTap(r, ot::btn::Fx2);          CHECK(r.app.lsdj.screen() == gb::Scr::Wave);
+    keyTap(r, ot::btn::Config);       CHECK(r.app.lsdj.screen() == gb::Scr::Project);
+    keyTap(r, ot::btn::Performance);  CHECK(r.app.lsdj.screen() == gb::Scr::Groove);
+    keyTap(r, ot::btn::Song);         CHECK(r.app.lsdj.screen() == gb::Scr::Song);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Song);                                  // Shift + Song: console B on screen
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    keyTap(r, ot::btn::Note);
+    CHECK(r.app.lsdjB.screen() == gb::Scr::Phrase);
+    CHECK(r.app.lsdj.screen() == gb::Scr::Song);
+}
+
+TEST(a_pad_plays_the_cursor_channel_without_a_song_and_releasing_it_cuts_the_note) {
+    Rig r;
+    uint8_t* in = r.app.song.instrument(0);
+    in[0] = 0; in[1] = 0xF0; in[4] = 0x7F; in[5] = 1; in[7] = 3;
+    r.app.lsdj.songCh = 1;                                      // cursor on PU2
+    padEvent(r, ot::InputEvent::kPadDown, 12);
+    CHECK(r.app.player.voiceOn(1));
+    CHECK(!r.app.player.voiceOn(0));
+    CHECK(r.app.dual.live());
+    r.loop(60);
+    int16_t out[2 * 256];
+    r.app.fill(out, 256);
+    int peak = 0;
+    for (int i = 0; i < 256; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
+    CHECK(peak > 0);
+    padEvent(r, ot::InputEvent::kPadUp, 12);
+    CHECK(!r.app.player.voiceOn(1));
+}
+
+TEST(rec_play_records_pad_notes_into_the_playing_phrase) {
+    Rig r;
+    for (int c = 0; c < 4; ++c) for (int row = 0; row < 256; ++row) r.app.song.songCell(row, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) r.app.song.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    r.app.song.songCell(0, 0) = 0;
+    for (int i = 0; i < 16; ++i) { r.app.song.note(0, i) = 0; r.app.song.phraseInstr(0, i) = 0xFF; }
+    uint8_t* in = r.app.song.instrument(0);
+    in[0] = 0; in[1] = 0xF0; in[4] = 0x7F; in[5] = 1; in[7] = 3;
+    r.app.song.at(gb::off::kTempo) = 255;
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Rec);
+    r.loop(2);
+    keyTap(r, ot::btn::Play);                                  // Rec held while Play: record armed
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Rec);
+    r.loop(40);
+    CHECK(r.app.lsdj.recording());
+    CHECK(r.app.player.running());
+    padEvent(r, ot::InputEvent::kPadDown, 12);
+    int notes = 0;
+    for (int i = 0; i < 16; ++i) if (r.app.song.note(0, i) == 25) ++notes;
+    CHECK_EQ(notes, 1);
+    keyTap(r, ot::btn::Play);                                  // Play again stops and disarms
+    CHECK(!r.app.lsdj.recording());
+}
+
+TEST(export_lsdj_writes_both_songs_as_lsdsng_and_128k_sav_with_the_sync_flag) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    oneNote(r.app.songB, 3, 49, 3);
+    r.app.song.at(gb::off::kSync) = 1;
+    r.app.songB.at(gb::off::kSync) = 1;
+    CHECK(r.app.exportFiles("S01"));
+    CHECK(st.files.count("GB/Export/S01_A.lsdsng") == 1);
+    CHECK(st.files.count("GB/Export/S01_B.lsdsng") == 1);
+    CHECK_EQ(int(st.files["GB/Export/S01_A.sav"].size()), 0x20000);
+    CHECK_EQ(int(st.files["GB/Export/S01_B.sav"].size()), 0x20000);
+    CHECK_EQ(int(st.files["GB/Export/S01_B.sav"][gb::off::kSync]), 1);          // the project's SYNC setting travels in the file
+    gb::Song back;
+    CHECK(back.readSav(st.files["GB/Export/S01_B.sav"].data(), st.files["GB/Export/S01_B.sav"].size()));
+    CHECK_EQ(int(back.songCell(0, 3)), 0);
+}
+
+TEST(wave_screen_pads_preview_the_wave_being_edited) {
+    Rig r;
+    keyTap(r, ot::btn::Fx2);                                  // Wave screen
+    r.app.lsdj.waveNo = 5;
+    for (int i = 0; i < 16; ++i) r.app.song.wave(5)[i] = uint8_t(i < 8 ? 0xFF : 0x00);
+    padEvent(r, ot::InputEvent::kPadDown, 20);
+    CHECK(r.app.player.voiceOn(2));
+    r.loop(60);
+    int16_t out[2 * 256];
+    r.app.fill(out, 256);
+    int peak = 0;
+    for (int i = 0; i < 256; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
+    CHECK(peak > 0);
 }

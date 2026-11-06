@@ -20,7 +20,7 @@ struct Transport {
     virtual void start(int console, int row) = 0;   // the console whose Start was pressed and its row
     virtual void stop() = 0;
     virtual bool running() const = 0;
-    enum Action { kSavePair, kLoadPair, kExportWav };
+    enum Action { kSavePair, kLoadPair, kExportWav, kExportFiles };
     virtual bool action(Action a, int slot) = 0;
     virtual int listSongs() = 0;                      // reads GB/Songs: how many .lsdsng files
     virtual const char* songName(int i) = 0;          // file name without the extension
@@ -29,10 +29,18 @@ struct Transport {
 
 class Lsdj {
 public:
-    Lsdj(Song& s, Player& p) : s_(s), p_(p) {}
+    Lsdj(Song& s, Player& p) : s_(s), p_(p) { for (int8_t& c : padCh_) c = -1; }
     void key(Key k, bool down);
     void encoder(int delta);                 // jog wheel: like A + right/left, with Select held A + up/down
-    void padNote(int pad);                   // a pad enters a note in the phrase screen
+    void padDown(int pad);                   // a pad plays the current instrument on the cursor channel (and enters/records the note)
+    void padUp(int pad);                     // releasing it cuts the note
+    void setPadOctave(int o) { padOct_ = o < -2 ? -2 : o > 3 ? 3 : o; }
+    int padOctave() const { return padOct_; }
+    void setRecord(bool on) { rec_ = on; }
+    bool recording() const { return rec_; }
+    bool playing() const;
+    void jump(Scr target);                   // a direct page key: carries the cursor along like Select + arrows does between the main screens
+    void openFiles();                        // the song list for this console
     void draw(Lcd& l) const;
     void setBanner(const char* s) { banner_ = s; }
     void setAudioInfo(const char* s) { audio_ = s; }   // shown on the Project screen: callback cost and late blocks
@@ -91,6 +99,12 @@ private:
     int console_ = 0;                         // 0 = tracks 1-4, 1 = tracks 5-8
     Scr scr_ = Scr::Song;
     bool a_ = false, b_ = false, sel_ = false;
+    bool rec_ = false;                       // Rec + Play: pads write into the playing phrase
+    int padOct_ = 0;
+    int8_t padCh_[48];                       // channel each held pad started a note on, -1 none
+    int curInstr() const;
+    int previewChannel() const;
+    void recordNote(int ch, int note);
     const char* status_ = "";
     bool edited_ = false;                    // A was used with a direction: releasing it does not insert
     uint8_t lastChain_ = 0, lastPhrase_ = 0, lastNote_ = 25, lastInstr_ = 0, lastCmd_ = 0, lastVal_ = 0;

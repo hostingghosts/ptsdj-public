@@ -143,9 +143,13 @@ void GbScreen::draw(ot::Gfx& g) {
     lcd_.draw(g.display());
 }
 
+// The Tracker's keys: arrows, Insert = A, Delete = B, Shift = Select, Play = Start; the module and editing keys jump straight to a page
+// (Song, Pattern = Chain, Note = Phrase, Instr, Instr params = Table, Fx1 = Synth, Fx2 = Wave, Config = Project, File = songs, Performance = Groove);
+// Shift + Song swaps the console on screen; Rec held while Play starts live recording, and Rec while playing arms or disarms it.
 bool GbScreen::button(uint8_t id, bool down) {
     if (!lsdj_) return false;
     using gb::Key;
+    using gb::Scr;
     switch (id) {
         case ot::btn::Up: lsdj_->key(Key::Up, down); break;
         case ot::btn::Down: lsdj_->key(Key::Down, down); break;
@@ -153,16 +157,37 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::Right: lsdj_->key(Key::Right, down); break;
         case ot::btn::Insert: lsdj_->key(Key::A, down); break;       // A
         case ot::btn::Delete: lsdj_->key(Key::B, down); break;       // B
-        case ot::btn::Shift: lsdj_->key(Key::Select, down); break;   // Select
-        case ot::btn::Play: lsdj_->key(Key::Start, down); break;     // Start
-        case ot::btn::Song: if (down && lsdjB_) lsdj_ = lsdj_ == lsdjA_ ? lsdjB_ : lsdjA_; break;   // switch between tracks 1-4 and 5-8
+        case ot::btn::Shift: shift_ = down; lsdj_->key(Key::Select, down); break;   // Select
+        case ot::btn::Play:
+            if (down && recHeld_ && !lsdj_->playing()) lsdj_->setRecord(true);
+            lsdj_->key(Key::Start, down);
+            break;
+        case ot::btn::Rec:
+            recHeld_ = down;
+            if (down && lsdj_->playing()) lsdj_->setRecord(!lsdj_->recording());
+            break;
+        case ot::btn::Song: if (down) { if (shift_) swapConsole(); else lsdj_->jump(Scr::Song); } break;
+        case ot::btn::Pattern: if (down) lsdj_->jump(Scr::Chain); break;
+        case ot::btn::Note: if (down) lsdj_->jump(Scr::Phrase); break;
+        case ot::btn::Instr: if (down) lsdj_->jump(Scr::Instr); break;
+        case ot::btn::InstrParams: if (down) lsdj_->jump(Scr::Table); break;
+        case ot::btn::Fx1: if (down) lsdj_->jump(Scr::Synth); break;
+        case ot::btn::Fx2: if (down) lsdj_->jump(Scr::Wave); break;
+        case ot::btn::Config: if (down) lsdj_->jump(Scr::Project); break;
+        case ot::btn::File: if (down) lsdj_->openFiles(); break;
+        case ot::btn::Performance: if (down) lsdj_->jump(Scr::Groove); break;
         default: return false;
     }
     return true;
 }
 
 void GbScreen::encoder(int delta) { if (lsdj_) lsdj_->encoder(delta); }
-bool GbScreen::pad(int p, bool down, uint8_t) { if (lsdj_ && down) lsdj_->padNote(p); return true; }
+bool GbScreen::pad(int p, bool down, uint8_t) {
+    if (!lsdj_) return true;
+    if (shift_) { if (down) lsdj_->setPadOctave(p / ot::kPadCols - 1); return true; }    // Shift + a pad row picks the octave: -1 .. +2
+    if (down) lsdj_->padDown(p); else lsdj_->padUp(p);
+    return true;
+}
 
 }  // namespace ui
 }  // namespace atw

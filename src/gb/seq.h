@@ -49,6 +49,7 @@ public:
     void setGroove(int c, uint8_t g) { ch_[c].groove = g & 31; ch_[c].gpos = 0; }
     bool playing() const { return ch_[0].active || ch_[1].active || ch_[2].active || ch_[3].active; }
     int row(int c) const { return ch_[c].row; }
+    int wait(int c) const { return ch_[c].wait; }          // ticks until the channel's next step starts
     bool active(int c) const { return ch_[c].active; }
     bool allLooped() const { for (const Ch& h : ch_) if (h.active && !h.looped) return false; return true; }
     int chainPos(int c) const { return ch_[c].cpos; }

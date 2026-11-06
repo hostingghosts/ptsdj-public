@@ -36,6 +36,13 @@ public:
     void mute(int ch, bool m);                       // a muted channel is cut at once and starts no new notes
     bool muted(int ch) const { return muted_[ch]; }
     void setKits(const KitSource* k) { kits_ = k; }
+    // Live play: a pad plays an instrument on a channel with or without a song running. kScratch plays the 16 bytes of scratchInstr()
+    // (the Synth and Wave screens preview a wave that way) instead of a song instrument.
+    static constexpr int kScratch = 64;
+    uint8_t* scratchInstr() { return scratch_; }
+    void previewOn(int ch, int note, int instrIdx);
+    void previewOff(int ch);
+    bool live() const { return live_; }              // the engine runs for previewed notes although no song plays
     void setWaveHook(void (*f)(int frame, int tick)) { waveHook_ = f; }
 
 private:
@@ -111,7 +118,10 @@ private:
     bool inA_ = false;                    // a table row is already being run on behalf of A (no recursion)
     int slot_ = 0;                        // which Z memory a command belongs to: 0 phrase, 1 table column 1, 2 table column 2
     void writePan();
-    uint8_t* instr(int i) { return s_.instrument(i & 63); }
+    uint8_t* instr(int i) { return i == kScratch ? scratch_ : s_.instrument(i & 63); }
+    uint8_t scratch_[16] = {};
+    bool live_ = false;
+    void powerLive();
 
     Song& s_;
     Seq seq_;

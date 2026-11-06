@@ -5,8 +5,21 @@
 namespace gb {
 
 void Dual::start(int rowA, int rowB) {
+    follow_ = -1;
     a_.start(rowA);
     b_.start(rowB);
+}
+
+void Dual::startOne(int console, int row) {
+    follow_ = -1;
+    (console ? b_ : a_).start(row);
+    (console ? a_ : b_).stop();
+}
+
+void Dual::startLinked(int master, int rowA, int rowB) {
+    start(rowA, rowB);
+    follow_ = master;
+    (master ? a_ : b_).setTempo(player(master).tempo());
 }
 
 void Dual::stop() {
@@ -17,6 +30,7 @@ void Dual::stop() {
 void Dual::render(int16_t* out, int n, int rate) {
     int16_t ta[2 * 512], tb[2 * 512];
     while (n > 0) {
+        if (follow_ >= 0) (follow_ ? a_ : b_).setTempo(player(follow_).tempo());
         const int k = std::min(n, 512);
         a_.render(ta, k, rate);
         b_.render(tb, k, rate);

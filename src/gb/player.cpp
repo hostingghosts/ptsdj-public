@@ -19,6 +19,7 @@ constexpr long long kKitChunk = 11712;   // cycles per 32-sample wave RAM chunk:
 }  // namespace
 
 void Player::start(int row) {
+    live_ = false;
     apu_.reset();
     apu_.write(0xFF26, 0x80);
     apu_.write(0xFF24, 0x77);
@@ -58,7 +59,7 @@ void Player::killNote(int ch) {
 
 void Player::noteOn(int ch, const StepEvent& e) {
     Voice& v = v_[ch];
-    if (e.instr != 0xFF) v.instr = e.instr & 63;
+    if (e.instr != 0xFF) v.instr = e.instr == kScratch ? kScratch : (e.instr & 63);
     v.noteTick = tickNo_;
     const uint8_t* in = instr(v.instr);
     int n = e.note;
@@ -627,6 +628,7 @@ void Player::tick() {
         }
     }
     if (!seq_.playing()) running_ = false;
+    if (live_ && !running_) { bool any = false; for (const Voice& v : v_) any = any || v.on; if (!any) live_ = false; }
 }
 
 void Player::sub360() {
@@ -697,12 +699,13 @@ void Player::sub360() {
 void Player::run(uint32_t cycles) {
     const long long end = now_ + cycles;
     while (now_ < end) {
-        long long nextEv = running_ ? next360_ : end;
+        const bool go = running_ || live_;
+        long long nextEv = go ? next360_ : end;
         if (v_[2].kPlay) nextEv = std::min(nextEv, nextKit_);
         long long t = std::min<long long>(end, std::max<long long>(now_, nextEv));
         if (t > now_) { apu_.advance(uint32_t(t - now_)); now_ = t; }
         if (v_[2].kPlay && now_ >= nextKit_) { kitChunk(); nextKit_ += kKitChunk; continue; }
-        if (!running_) continue;
+        if (!go) continue;
         if (now_ >= next360_) {
             sub360();                                                       // the ROM's 358 Hz interrupt: sub-step first, then the tempo accumulator decides on a tick
             next360_ += kSub;
@@ -719,6 +722,35 @@ void Player::mute(int ch, bool m) {
     apu_.write(dac[ch], 0x00);                       // DAC off: the channel falls silent
     v_[ch].on = false;
     if (ch == 2) v_[2].kPlay = false;
+}
+
+// The engine for previewed notes: the chip powered and the clocks running, no song.
+void Player::powerLive() {
+    apu_.reset();
+    apu_.write(0xFF26, 0x80);
+    apu_.write(0xFF24, 0x77);
+    apu_.write(0xFF25, 0xFF);
+    for (auto& v : v_) v = Voice();
+    tempo_ = std::max<int>(40, s_.at(off::kTempo));
+    nr50_ = 0x77;
+    rngState_ = 0x0052;
+    tickNo_ = -1;
+    hpInit_ = false;
+    now_ = 0;
+    next360_ = 0;
+    tickAcc_ = 896 - tempo_;
+    live_ = true;
+}
+
+void Player::previewOn(int ch, int note, int instrIdx) {
+    if (ch < 0 || ch > 3 || note < 1) return;
+    if (!running_ && !live_) powerLive();
+    StepEvent e{ch, 0, 0, uint8_t(std::min(note, 127)), uint8_t(instrIdx), 0, 0, 0};
+    noteOn(ch, e);
+}
+
+void Player::previewOff(int ch) {
+    if (ch >= 0 && ch < 4 && v_[ch].on) killNote(ch);
 }
 
 void Player::render(int16_t* out, int n, int rate) {

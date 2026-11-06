@@ -79,6 +79,7 @@ void Lsdj::key(Key k, bool down) {
     if (k == Key::Select) { sel_ = down; return; }
     if (!down) return;
     if (k == Key::Start) {
+        if (playing()) rec_ = false;
         if (tr_) { if (tr_->running()) tr_->stop(); else tr_->start(console_, startRow()); }
         else if (p_.running()) p_.stop(); else p_.start(startRow());
         return;
@@ -100,13 +101,90 @@ void Lsdj::encoder(int delta) {
     for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) editKey(k);
 }
 
-void Lsdj::padNote(int pad) {
-    if (scr_ != Scr::Phrase) return;
-    s_.note(phrase, step) = uint8_t(clampi(13 + pad, 1, 127));
-    lastNote_ = s_.note(phrase, step);
-    if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_;
-    s_.markPhrase(phrase); s_.markInstrument(s_.phraseInstr(phrase, step) & 63);
-    step = clampi(step + 1, 0, 15);
+bool Lsdj::playing() const { return tr_ ? tr_->running() : p_.running(); }
+
+int Lsdj::curInstr() const {
+    if (scr_ == Scr::Phrase) { const uint8_t i = s_.phraseInstr(phrase, step); return i != 0xFF ? (i & 63) : lastInstr_; }
+    return instr;
+}
+
+// Song, chain and phrase pads play the cursor channel; the instrument screens play the instrument's own channel type.
+int Lsdj::previewChannel() const {
+    if (scr_ == Scr::Wave || scr_ == Scr::Synth) return 2;
+    if (scr_ == Scr::Song || scr_ == Scr::Chain || scr_ == Scr::Phrase) return songCh;
+    switch (s_.instrument(curInstr())[0] & 3) {
+        case 0: return songCh < 2 ? songCh : 0;
+        case 1: case 2: return 2;
+        default: return 3;
+    }
+}
+
+// Records a played note into the phrase the channel is playing: the nearest step (the upcoming one in the last half of a step).
+void Lsdj::recordNote(int ch, int note) {
+    const Seq& sq = p_.seq();
+    if (!sq.active(ch)) return;
+    const int ph = sq.phrase(ch);
+    int st = sq.step(ch);
+    if (st > 0 && sq.wait(ch) > 3) --st;
+    if (ph == 0xFF) return;
+    s_.note(ph, st) = uint8_t(note);
+    s_.phraseInstr(ph, st) = uint8_t(curInstr());
+    s_.markPhrase(ph);
+    s_.markInstrument(curInstr());
+}
+
+void Lsdj::padDown(int pad) {
+    if (pad < 0 || pad >= 48) return;
+    const int ch = previewChannel();
+    int ins = curInstr();
+    int note;
+    const bool scratch = scr_ == Scr::Wave || scr_ == Scr::Synth;
+    if (scratch) {                                    // preview the wave being edited: a scratch wave instrument pointing at it
+        uint8_t* sc = p_.scratchInstr();
+        for (int i = 0; i < 16; ++i) sc[i] = 0;
+        sc[0] = 1; sc[1] = 0xA8; sc[2] = 0x0F; sc[7] = 0x03;
+        if (scr_ == Scr::Wave) sc[3] = uint8_t(waveNo); else { sc[3] = uint8_t(synth * 16); sc[9] = 2; }
+        ins = Player::kScratch;
+    }
+    const bool kit = !scratch && (s_.instrument(ins & 63)[0] & 3) == 2 && ch == 2;
+    note = kit ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, 127);
+    if (scr_ == Scr::Phrase && !rec_) {                // the phrase cursor takes the note, as before
+        s_.note(phrase, step) = uint8_t(note);
+        lastNote_ = uint8_t(note);
+        if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = uint8_t(lastInstr_);
+        s_.markPhrase(phrase); s_.markInstrument(s_.phraseInstr(phrase, step) & 63);
+        step = clampi(step + 1, 0, 15);
+    }
+    if (rec_ && p_.running()) recordNote(ch, note);
+    padCh_[pad] = int8_t(ch);
+    p_.previewOn(ch, note, ins);
+}
+
+void Lsdj::padUp(int pad) {
+    if (pad < 0 || pad >= 48 || padCh_[pad] < 0) return;
+    p_.previewOff(padCh_[pad]);
+    padCh_[pad] = -1;
+}
+
+// Direct page keys: between the main screens the cursor is carried as Select + arrow does.
+void Lsdj::jump(Scr target) {
+    static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
+    auto idx = [&](Scr x) { for (int i = 0; i < 5; ++i) if (main[i] == x) return i; return -1; };
+    int a = idx(scr_), b = idx(target);
+    if (a >= 0 && b >= 0) {
+        while (a < b) { navigate(Key::Right); ++a; }
+        while (a > b) { navigate(Key::Left); --a; }
+        return;
+    }
+    scr_ = target;
+}
+
+void Lsdj::openFiles() {
+    if (!tr_) return;
+    fileCount = tr_->listSongs();
+    fileSel = 0;
+    status_ = "";
+    scr_ = Scr::File;
 }
 
 void Lsdj::navigate(Key k) {
@@ -145,7 +223,7 @@ void Lsdj::move(Key k) {
         case Scr::Instr: instrRow = clampi(instrRow + dy, 0, instrRows() - 1); break;
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
-        case Scr::Project: projRow = clampi(projRow + dy, 0, 12); break;
+        case Scr::Project: projRow = clampi(projRow + dy, 0, 13); break;
         case Scr::File: fileSel = clampi(fileSel + dy, 0, fileCount ? fileCount - 1 : 0); break;
         case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
         case Scr::Wave:
@@ -169,9 +247,9 @@ void Lsdj::press(Key) {
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
         case Scr::Project:
-            if (tr_ && projRow == 12) { fileCount = tr_->listSongs(); fileSel = 0; scr_ = Scr::File; status_ = ""; break; }
+            if (tr_ && projRow == 13) { openFiles(); break; }
             if (tr_ && projRow >= 9) {
-                const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : Transport::kExportWav, session);
+                const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : projRow == 11 ? Transport::kExportWav : Transport::kExportFiles, session);
                 status_ = ok ? "DONE" : "FAILED";
             }
             break;
@@ -249,7 +327,8 @@ void Lsdj::editKey(Key k) {
         }
         case Scr::Groove: { uint8_t& v = s_.groove(groove)[grooveStep]; v = uint8_t(clampi(v + d, 0, 255)); break; }
         case Scr::Project:
-            if (projRow >= 9) session = clampi(session + d, 0, 99);
+            if (projRow >= 9 && projRow <= 12) session = clampi(session + d, 0, 99);
+            else if (projRow == 2) s_.at(off::kSync) = uint8_t(s_.at(off::kSync) ? 0 : 1);     // OFF / LSDJ link cable
             else if (projRow == 0) { uint8_t& t = s_.at(off::kTempo); t = uint8_t(clampi(t + d, 40, 255)); p_.setTempo(t); }
             else if (projRow == 1) s_.at(off::kTranspose) = uint8_t(int8_t(s_.at(off::kTranspose)) + d);
             break;
@@ -324,6 +403,8 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Synth: drawSynth(l); break;
     }
     if (scr_ != Scr::File) drawPanel(l, scr_ != Scr::Wave);
+    if (rec_) l.text(16, 10, "REC", true);
+    if (padOct_ != 0 && scr_ != Scr::File) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); l.text(16, 11, o); }
     if (banner_[0]) { l.rect(0, 136, 160, 8, 0); l.text(0, 17, banner_); }
 }
 
@@ -550,7 +631,7 @@ void Lsdj::drawProject(Lcd& l) const {
     auto row = [&](int y, const char* name, const char* val, bool cur) { l.text(0, y, name, cur && !val[0]); l.text(9, y, val, cur); };   // a row with no value is selected by its name
     std::snprintf(b, sizeof b, "%02X", s_.at(off::kTempo)); row(2, "TEMPO", b, projRow == 0);
     std::snprintf(b, sizeof b, "%02X", s_.at(off::kTranspose)); row(3, "TRANSPOSE", b, projRow == 1);
-    row(4, "SYNC", "OFF", projRow == 2);
+    row(4, "SYNC", s_.at(off::kSync) == 1 ? "LSDJ" : s_.at(off::kSync) ? "OTHER" : "OFF", projRow == 2);
     row(5, "CLONE", "DEEP", projRow == 3);
     row(6, "LOOK", "92K/GRAY", projRow == 4);
     row(7, "PRELISTEN", "ON", projRow == 5);
@@ -560,8 +641,9 @@ void Lsdj::drawProject(Lcd& l) const {
     row(11, "SAVE SESSION", "", projRow == 9);
     row(12, "LOAD SESSION", "", projRow == 10);
     row(13, "EXPORT WAV", "", projRow == 11);
-    row(14, console_ ? "LOAD SONG FILE B" : "LOAD SONG FILE A", "", projRow == 12);
-    { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(13, 11, s, projRow == 9); l.text(13, 12, s, projRow == 10); l.text(13, 13, s, projRow == 11); }
+    row(14, "EXPORT LSDJ", "", projRow == 12);
+    row(15, console_ ? "LOAD SONG FILE B" : "LOAD SONG FILE A", "", projRow == 13);
+    { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(13, 11, s, projRow == 9); l.text(13, 12, s, projRow == 10); l.text(13, 13, s, projRow == 11); l.text(13, 14, s, projRow == 12); }
     l.text(0, 17, status_);
     l.text(0, 16, audio_[0] ? audio_ : "WORK TIME: 0:00");
 }
