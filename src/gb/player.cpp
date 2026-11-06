@@ -137,7 +137,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
 
 // Kit instrument: note n = 16 * b + a plays sample a-1 of kit 1 (byte 9) and sample b-1 of kit 2 (byte 2); both together are mixed
 // nibble by nibble as clip(x + y - 8). Byte 8 shifts the wave frequency (signed), byte 11 limits the length in chunks (0 = whole
-// sample), byte 13 is the start offset in chunks, bits 5-6 of byte 5 loop the sample (all measured on LSDJ 9.4.2).
+// sample), byte 13 is the start offset in chunks, bit 5 of byte 5 loops the sample, and the last chunk of a sample is not played (all measured on LSDJ 9.4.2).
 void Player::startKit(const StepEvent& e) {
     Voice& v = v_[2];
     const uint8_t* in = instr(v.instr);
@@ -152,8 +152,8 @@ void Player::startKit(const StepEvent& e) {
     if (!v.kHas[0] && !v.kHas[1]) return;
     v.kPos = in[13] * 16;
     v.kChunks = 0;
-    v.kLimit = in[11];
-    v.kLoop = (in[5] & 0x60) != 0;
+    v.kLimit = in[11] ? in[11] * 2 - 1 : 0;           // byte 11 = n lets 2n - 1 chunks play (measured on 9.4.2)
+    v.kLoop = (in[5] & 0x20) != 0;                  // only bit 5 loops the sample (measured)
     v.kFreq = std::clamp(0x749 + int8_t(in[8]), 0, 0x7FF);
     v.kPlay = true;
     apu_.write(0xFF1C, in[1]);
@@ -167,7 +167,7 @@ void Player::kitChunk() {
     if (!v.kPlay || muted_[2]) return;
     int len[2] = {0, 0}, longest = 0;
     for (int k = 0; k < 2; ++k) if (v.kHas[k]) { len[k] = v.kEnd[k] - v.kBeg[k]; longest = std::max(longest, len[k]); }
-    if (v.kPos + 16 > longest || (v.kLimit && v.kChunks >= v.kLimit)) {
+    if (v.kPos + 32 > longest || (v.kLimit && v.kChunks >= v.kLimit)) {
         if (v.kLoop && (!v.kLimit || v.kChunks < v.kLimit)) { v.kPos = 0; }
         else { v.kPlay = false; apu_.write(0xFF1A, 0x00); return; }
     }
