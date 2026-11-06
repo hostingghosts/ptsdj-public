@@ -3,12 +3,12 @@
 #include <algorithm>
 #include "gb/upgrade.h"
 #include <cstdio>
+#include <new>
 #include <cstring>
 
 namespace atw {
 
 namespace {
-uint8_t* fileBuf() { static uint8_t b[9 + 64 * 512 + 512]; return b; }   // one buffer for song loads and saves (they never overlap)
 void fillThunk(int16_t* out, uint32_t frames, void* ctx) { static_cast<App*>(ctx)->fill(out, frames); }
 void fillSilence(int16_t* out, uint32_t frames, void*) {
     std::memset(out, 0, size_t(frames) * ot::IAudioOut::kChannels * sizeof(int16_t));
@@ -37,16 +37,20 @@ bool App::init(const Platform& p) {
     return true;
 }
 
+// Scratch for song files and decoding lives in SDRAM after the 1 MB ROM image: 64 KB of file, then one song. (A song on the stack is 32 KB
+// of the ~59 KB the device has free, which is not safe.)
+uint8_t* App::fileBuf() const { return p_.bigMem && p_.bigMemSize >= kScratchOffset + kScratchBytes ? p_.bigMem + kScratchOffset : nullptr; }
+
 bool App::loadSong(const char* path, int console) {
-    if (!p_.storage) return false;
+    if (!p_.storage || !fileBuf()) return false;
     const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kRead);
     if (h < 0) return false;
     uint8_t* buf = fileBuf();
-    const int32_t n = p_.storage->read(h, buf, 9 + 64 * 512 + 512);
+    const int32_t n = p_.storage->read(h, buf, kFileBytes);
     p_.storage->close(h);
     if (n <= 0) return false;
     dual.stop();
-    gb::Song fresh;
+    gb::Song& fresh = *new (buf + kFileBytes) gb::Song;
     if (!gb::loadLsdsng(fresh, buf, size_t(n))) return false;
     if (!gb::upgradeSong(fresh)) return false;       // songs saved by older LSDJ versions
     std::memcpy((console ? songB : song).mem(), fresh.mem(), gb::kMemSize);
@@ -54,7 +58,7 @@ bool App::loadSong(const char* path, int console) {
 }
 
 bool App::saveSong(const char* path, const char* name, int console) {
-    if (!p_.storage) return false;
+    if (!p_.storage || !fileBuf()) return false;
     uint8_t* buf = fileBuf();
     const size_t n = gb::saveLsdsng(console ? songB : song, name, 1, buf);
     const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
@@ -64,23 +68,34 @@ bool App::saveSong(const char* path, const char* name, int console) {
     return ok;
 }
 
-bool App::loadKits() {
-    if (!p_.storage || !p_.bigMem || p_.bigMemSize < (1u << 20)) return false;
-    const ot::IStorage::Handle h = p_.storage->open(kRomPath, ot::IStorage::kRead);
-    if (h < 0) return false;
-    uint32_t got = 0;
-    while (got < (1u << 20)) {
-        const int32_t n = p_.storage->read(h, p_.bigMem + got, std::min<uint32_t>(32768, (1u << 20) - got));
-        if (n <= 0) break;
-        got += uint32_t(n);
+// The ROM image is read from the card in 64 KB steps (boot runs them one per main-loop pass so the screen shows progress).
+bool App::romStep() {
+    if (!p_.storage || !p_.bigMem || p_.bigMemSize < kScratchOffset) return true;
+    if (romH_ < 0) {
+        romH_ = p_.storage->open(kRomPath, ot::IStorage::kRead);
+        if (romH_ < 0) return true;
+        romGot_ = 0;
     }
-    p_.storage->close(h);
-    if (got < (1u << 19)) return false;
-    kits.setRom(p_.bigMem, got);
-    synthGen.setRom(p_.bigMem, got);
-    player.setKits(&kits);
-    playerB.setKits(&kits);
+    while (romGot_ < kRomBytes) {
+        const int32_t n = p_.storage->read(romH_, p_.bigMem + romGot_, std::min<uint32_t>(32768, kRomBytes - romGot_));
+        if (n <= 0) break;
+        romGot_ += uint32_t(n);
+        if (romGot_ % (64 * 1024) == 0 && romGot_ < kRomBytes) return false;   // more to do next pass
+    }
+    p_.storage->close(romH_);
+    romH_ = -1;
+    if (romGot_ >= (1u << 19)) {
+        kits.setRom(p_.bigMem, romGot_);
+        synthGen.setRom(p_.bigMem, romGot_);
+        player.setKits(&kits);
+        playerB.setKits(&kits);
+    }
     return true;
+}
+
+bool App::loadKits() {
+    while (!romStep()) {}
+    return synthGen.available();
 }
 
 bool App::loadLinked(const char* base) {
@@ -149,14 +164,31 @@ bool App::exportWav(const char* path, int rate, int maxSeconds) {
     return ok;
 }
 
+void App::setBanner(const char* s) { lsdj.setBanner(s); lsdjB.setBanner(s); }
+
 void App::boot() {
     if (!p_.storage) return;
     p_.storage->mkdir("GB");
     p_.storage->mkdir(kSongDir);
     p_.storage->mkdir(kExportDir);
-    loadKits();
-    loadSong("GB/AUTOLOAD.LSDSNG");
-    loadSong("GB/AUTOLOAD_B.LSDSNG", 1);   // likewise for the second console   // development convenience: opens this song at start when it exists
+    bootStep_ = 0;
+    setBanner("LOADING SONG A");
+}
+
+// Everything that reads the card at start runs here, one step per main-loop pass, announced on screen before it starts: if the
+// unit ever stops, the last banner says where.
+void App::bootTick() {
+    switch (bootStep_) {
+        case 0: loadSong("GB/AUTOLOAD.LSDSNG"); setBanner("LOADING SONG B"); ++bootStep_; break;
+        case 1: loadSong("GB/AUTOLOAD_B.LSDSNG", 1); setBanner("LOADING ROM"); ++bootStep_; break;
+        case 2: {
+            const bool done = romStep();
+            if (!done) { char b[24]; std::snprintf(b, sizeof b, "LOADING ROM %u%%", unsigned(romGot_ * 100 / kRomBytes)); setBanner(b); }
+            else { setBanner(""); bootStep_ = 3; }
+            break;
+        }
+        default: break;
+    }
 }
 
 void App::quiesce() {
@@ -165,6 +197,7 @@ void App::quiesce() {
 
 void App::loop() {
     if (p_.service) p_.service();
+    if (bootStep_ < 3 && p_.storage) bootTick();
     ot::InputEvent ev;
     for (int i = 0; i < 32 && p_.input->poll(ev); ++i) ui.handle(ev);
     ui.update(p_.clock->millis());

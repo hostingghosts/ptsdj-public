@@ -308,6 +308,7 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Synth: drawSynth(l); break;
     }
     drawPanel(l, scr_ != Scr::Wave);
+    if (banner_[0]) { l.rect(0, 136, 160, 8, 0); l.text(0, 17, banner_); }
 }
 
 void Lsdj::drawSong(Lcd& l) const {

@@ -31,6 +31,7 @@ public:
     void encoder(int delta);                 // jog wheel: like A + right/left, with Select held A + up/down
     void padNote(int pad);                   // a pad enters a note in the phrase screen
     void draw(Lcd& l) const;
+    void setBanner(const char* s) { banner_ = s; }
     void setSynthGen(SynthGen* g) { sg_ = g; }       // regenerates a synth's frames after an edit (needs the owner's ROM)
     void setTransport(Transport* t, int console) { tr_ = t; console_ = console; }
     int startRow() const { return scr_ == Scr::Song ? songRow : 0; }
@@ -76,6 +77,7 @@ private:
     Song& s_;
     Player& p_;
     SynthGen* sg_ = nullptr;
+    const char* banner_ = "";
     uint8_t waveClip_[16] = {};
     bool hasClip_ = false, bUsed_ = false;
     Transport* tr_ = nullptr;

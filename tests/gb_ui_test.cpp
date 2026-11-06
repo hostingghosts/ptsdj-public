@@ -86,8 +86,11 @@ struct Rig {
     FakeAudio audio;
     App app;
     explicit Rig(bool withAudio = true, ot::IStorage* st = nullptr) {
+        static std::vector<uint8_t> big(3u << 20);
         Platform p;
         p.storage = st;
+        p.bigMem = big.data();
+        p.bigMemSize = uint32_t(big.size());
         p.display = &display;
         p.input = &input;
         p.clock = &clock;
@@ -387,4 +390,20 @@ TEST(synth_edit_regenerates_frames_when_the_rom_is_available) {
     holdTap(l, gb::Key::A, gb::Key::Right);                   // square
     CHECK_EQ(int(r.app.song.wave(0)[0]), 0x74);
     CHECK_EQ(int(r.app.song.wave(5)[1]), 0x54);
+}
+
+TEST(boot_loads_autoload_songs_in_steps_and_clears_the_banner) {
+    MemStorage st;
+    {
+        Rig a(true, &st);
+        oneNote(a.app.song, 0, 25, 3);
+        oneNote(a.app.songB, 1, 30, 3);
+        CHECK(a.app.saveSong("GB/AUTOLOAD.LSDSNG", "A", 0));
+        CHECK(a.app.saveSong("GB/AUTOLOAD_B.LSDSNG", "B", 1));
+    }
+    Rig r(true, &st);                                     // boot() only announces; nothing is loaded yet
+    CHECK_EQ(int(r.app.songB.songCell(0, 1)), 0xFF);
+    r.loop(10);                                           // a few main-loop passes do the steps (no ROM on this card: it ends at once)
+    CHECK_EQ(int(r.app.song.songCell(0, 0)), 0);
+    CHECK_EQ(int(r.app.songB.songCell(0, 1)), 0);
 }
