@@ -356,7 +356,7 @@ void Player::refreshPitch(int ch) {
     uint16_t f;
     if (ch == 2) {                                   // wave instruments look the pitch up in the ROM's linear table (about 19.2 per index) at 00:09B9
         const int baseIdx = (v.bendRate && !v.bendAcc) ? (waveIndex(n) & ~255) : waveIndex(n);   // until its first step a bend works from the whole table index (measured on kicks)
-        total = baseIdx + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
+        total = baseIdx + v.bendAcc + int(std::lround(v.vibSemis * 256.0)) + ((v.bendRate || v.bendAcc) ? 6 : 0);   // +6/256 index: the fitted base is that much low once a bend is running (empirical; INFORMAL wave pitch matches exactly)
         f = pitchToFreq(kLinFreq, total, v.bendAcc);
     } else f = pitchToFreq(kPulseFreq + 1, total, v.bendAcc);
     if (ch < 2) {                                   // fine tune detunes in proportion to the period: pulse 1 down, pulse 2 up (fitted to the ROM, within one step; F y = fine y * 8)
