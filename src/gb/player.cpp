@@ -63,12 +63,12 @@ void Player::noteOn(int ch, const StepEvent& e) {
     const uint8_t* in = instr(v.instr);
     int n = e.note;
     {   // transposes that would leave the note range are ignored below it and wrap above it (measured on LSDJ 9.4.2)
-        const int base0 = n;
+        // each transpose is range-checked on its own, chain first, then the project's (measured on PIGGIES)
+        auto fit = [](int from, int to) { if (to < 1) return from; if (to > 135) to -= 136; return std::clamp(to, 1, 127); };
         if (!((in[0] & 3) != 2 && (in[5] & 0x20))) {      // pulse, wave and noise instruments with byte 5 bit 5 set play untransposed (measured)
-            n += e.transpose;
-            if (ch != 3) n += int8_t(s_.at(off::kTranspose));
+            n = fit(n, n + e.transpose);
+            if (ch != 3) n = fit(n, n + int8_t(s_.at(off::kTranspose)));
         }
-        if (n < 1) n = base0; else if (n > 135) n -= 136;
         n = std::clamp(n, 1, 127);
     }
     v.note = n;
