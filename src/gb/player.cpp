@@ -342,7 +342,7 @@ void Player::refreshPitch(int ch) {
     Voice& v = v_[ch];
     if (!v.on || muted_[ch]) return;
     const uint8_t* in = instr(v.instr);
-    int n = v.base + v.tTrans + v.chordOfs + (ch == 3 ? v.shapeOfs : 0) + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
+    int n = v.base + v.tTrans + v.chordOfs + (ch == 3 ? v.shapeOfs + int(std::lround(v.vibSemis * 8.0)) : 0) + (ch == 1 ? (v.fine >= 0 ? v.tune2 : int8_t(in[2])) : 0);
     if (ch == 3) {                                    // noise: the note index wraps modulo 120 (S and table transposes just add to it)
         n = (((n - 1) % 120) + 120) % 120 + 1;               // ROM index n - 1 wraps modulo 120
         v.note = n;
@@ -534,7 +534,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
         case kCmdM: masterVol(val); break;
         case kCmdF: if (ch < 2) { v.fine = val & 15; v.tune2 = int(val >> 4); refreshPitch(ch); } break;
         case kCmdV:   // the first step after the command is still 0
-            if (!again && !v.vibDepth) v.vibPhase = -((val >> 4) + 1) / 64.0;   // running V again (or changing it) keeps the phase, like C
+            if (!again && !v.vibDepth) v.vibPhase = ch == 3 ? (-((val >> 4) + 1) / 48.0) : -((val >> 4) + 1) / 64.0;   // running V again (or changing it) keeps the phase, like C
             v.vibSpeed = val >> 4; v.vibDepth = val & 15;
             if (!v.vibDepth) { v.vibSemis = 0; refreshPitch(ch); }
             break;
@@ -615,6 +615,15 @@ void Player::tick() {
         if (v.on && v.noiseS) {
             if (v.noiseFresh) v.noiseFresh = false;
             else { v.shapeAcc += int8_t(v.noiseS) / 4.0; v.shapeOfs = int(v.shapeAcc); refreshPitch(3); }
+        }
+    }
+    {   // noise vibrato: once per tick, as a shift of the noise index (about 8 index steps per semitone of depth; measured on Friendbender)
+        Voice& v = v_[3];
+        if (v.on && v.vibDepth) {
+            const uint8_t b5 = instr(v.instr)[5];
+            v.vibPhase += (v.vibSpeed + 1) / 48.0;
+            v.vibSemis = kVibDepth[v.vibDepth] * vibShape((b5 >> 1) & 3, v.vibPhase + ((b5 & 1) ? 0.0 : 0.5));
+            refreshPitch(3);
         }
     }
     if (!seq_.playing()) running_ = false;

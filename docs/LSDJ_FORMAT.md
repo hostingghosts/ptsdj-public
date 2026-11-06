@@ -172,3 +172,8 @@ SETBARLO noise pan stepping with per-note tables; TRIAC/NICEVIBE/NOLIGHT pulse d
 
 ## Per-note tables (byte 5 bit 3), measured on SETBARLO's noise channel
 Each table remembers the row it stopped at; an instrument that comes back after another instrument's note resumes there. A hop (H) in the second column is ignored in this mode; a hop in the first column jumps and runs the destination row in the same step. Z in a table column only remembers commands of the table it was started in (the memory is cleared when a table starts).
+
+## More measurements (accuracy pass 2)
+- Transposes are range-checked one after the other: chain first, then the project's. A chain transpose that would leave the range is dropped, the project transpose still applies.
+- L on a note whose envelope has run out (volume 0) retriggers it, starting from the last note's pitch, like L after a kill.
+- Noise vibrato (V) runs once per tick, phase += (speed + 1) / 48, starting at -(speed + 1) / 48, and shifts the noise index by round(8 x semitones of depth). The ROM also rewrites NR44 (trigger) at every shift; we only write NR43.
