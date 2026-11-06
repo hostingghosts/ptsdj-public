@@ -128,7 +128,7 @@ void Player::noteOn(int ch, const StepEvent& e) {
     if (in[6] & 0x20) {
         const int tb = in[6] & 0x1F;
         if (in[5] & 8) {                                  // byte 5 bit 3 (measured): one table row per note; the position carries over between notes
-            if (v.stepTbl != tb) { startTable(ch, tb); v.stepTbl = tb; }
+            if (v.stepTbl != tb) { startTable(ch, tb); v.tRow = v.stepRow[tb]; v.stepTbl = tb; }
             else { v.tbl = tb; v.eRow = 0; v.eWait = 0; }
             v.tStep = v.tStepNow = true;
         } else { startTable(ch, tb); v.stepTbl = -1; }
@@ -377,6 +377,7 @@ void Player::startTable(int ch, int t) {
     v.tStep = v.tStepNow = false;                         // a table started by A runs per tick (measured)
     v.tRow = 0; v.tWait = 0; v.eRow = 0; v.eWait = 0; v.tGroove = 0xFF; v.tGroovePos = 0;
     std::memset(v.hop, 0, sizeof v.hop);
+    v.lastCmd[1] = v.lastCmd[2] = 0;                      // Z in a table column only remembers commands of the table it runs in (measured on SETBARLO)
 }
 
 void Player::tableTick(int ch) {
@@ -409,6 +410,7 @@ void Player::tableTick(int ch) {
         v.tWait = 1;
         for (int k = 0; k < 2 && !hopped; ++k) {
             const uint8_t c = s_.at(uint16_t((k ? off::kTblCmd2 : off::kTblCmd1) + o)), val = s_.at(uint16_t((k ? off::kTblVal2 : off::kTblVal1) + o));
+            if (c == kCmdH && k == 1 && v.tStep) continue;     // a table that steps one row per note ignores a hop in its second column (measured)
             if (c == kCmdH) {
                 const int n = val >> 4, dest = val & 15;
                 if (n == 0 || v.hop[row] < n) { if (n) ++v.hop[row]; row = dest; hopped = true; }
@@ -427,6 +429,7 @@ void Player::tableTick(int ch) {
         break;
     }
     v.tRow = row;
+    if (v.tStep) v.stepRow[t] = uint8_t(row & 15);
     refreshPitch(ch);
 }
 

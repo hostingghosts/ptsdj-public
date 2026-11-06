@@ -169,3 +169,6 @@ Once a bend runs, the fitted note index is about 6/256 low; +6 makes INFORMAL's 
 
 ## Open (per-song, phase-aligned, ignoring pitch differences of 2 or less): see tools/oracle/README.md
 SETBARLO noise pan stepping with per-note tables; TRIAC/NICEVIBE/NOLIGHT pulse duty and volume at some events; i'mpuzzled duty/pitch events one to two sub-steps apart from the ROM; Friendbender noise pitch; revision (Z); kicks: hardware sweep phase.
+
+## Per-note tables (byte 5 bit 3), measured on SETBARLO's noise channel
+Each table remembers the row it stopped at; an instrument that comes back after another instrument's note resumes there. A hop (H) in the second column is ignored in this mode; a hop in the first column jumps and runs the destination row in the same step. Z in a table column only remembers commands of the table it was started in (the memory is cleared when a table starts).

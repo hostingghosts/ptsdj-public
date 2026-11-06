@@ -56,6 +56,7 @@ private:
         int retrigDv = 0;       // R: volume change per retrigger (signed first digit)
         int tbl = -1;           // running table or -1
         int tGen = 0;           // counts table starts, so a table row that runs A does not overwrite the new table's position
+        uint8_t stepRow[32] = {};   // row each per-note table stops at: the ROM resumes it there when its instrument comes back after another one
         int stepTbl = -1;       // table kept between notes while the instrument runs it per note (byte 5 bit 3)
         bool tStep = false, tStepNow = false;   // step mode: a row runs only on the tick a note starts
         int tRow = 0, tWait = 0, eRow = 0, eWait = 0;
