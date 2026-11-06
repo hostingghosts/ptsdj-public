@@ -198,6 +198,15 @@ void App::quiesce() {
 void App::loop() {
     if (p_.service) p_.service();
     if (bootStep_ < 3 && p_.storage) bootTick();
+    if (p_.driverStats && p_.clock && p_.clock->millis() - statsAt_ >= 500) {      // audio load for the Project screen
+        statsAt_ = p_.clock->millis();
+        DriverStats st;
+        if (p_.driverStats(st)) {
+            std::snprintf(audioText_, sizeof audioText_, "A %uK/%uK L%u", unsigned(st.avgC / 1000), unsigned(st.maxC / 1000), unsigned(st.underruns));
+            lsdj.setAudioInfo(audioText_);
+            lsdjB.setAudioInfo(audioText_);
+        }
+    }
     ot::InputEvent ev;
     for (int i = 0; i < 32 && p_.input->poll(ev); ++i) ui.handle(ev);
     ui.update(p_.clock->millis());

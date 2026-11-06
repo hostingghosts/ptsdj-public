@@ -537,7 +537,7 @@ void Lsdj::drawProject(Lcd& l) const {
     row(14, "SAVE SESSION A+B", "", projRow == 9);
     row(15, "LOAD SESSION A+B", "", projRow == 10);
     l.text(0, 17, status_);
-    l.text(0, 16, "WORK TIME: 0:00");
+    l.text(0, 16, audio_[0] ? audio_ : "WORK TIME: 0:00");
 }
 
 void Lsdj::drawInstr(Lcd& l) const {

@@ -32,6 +32,7 @@ public:
     void padNote(int pad);                   // a pad enters a note in the phrase screen
     void draw(Lcd& l) const;
     void setBanner(const char* s) { banner_ = s; }
+    void setAudioInfo(const char* s) { audio_ = s; }   // shown on the Project screen: callback cost and late blocks
     void setSynthGen(SynthGen* g) { sg_ = g; }       // regenerates a synth's frames after an edit (needs the owner's ROM)
     void setTransport(Transport* t, int console) { tr_ = t; console_ = console; }
     int startRow() const { return scr_ == Scr::Song ? songRow : 0; }
@@ -78,6 +79,7 @@ private:
     Player& p_;
     SynthGen* sg_ = nullptr;
     const char* banner_ = "";
+    const char* audio_ = "";
     uint8_t waveClip_[16] = {};
     bool hasClip_ = false, bUsed_ = false;
     Transport* tr_ = nullptr;

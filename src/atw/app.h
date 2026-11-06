@@ -81,6 +81,8 @@ private:
     uint8_t* fileBuf() const;
     bool romStep();                              // true when the ROM is fully read (or there is none)
     void bootTick();
+    uint32_t statsAt_ = 0;
+    char audioText_[24] = {};
     int bootStep_ = 3;                           // 3 = nothing to do (boot() starts it)
     ot::IStorage::Handle romH_ = -1;
     uint32_t romGot_ = 0;

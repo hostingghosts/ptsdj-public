@@ -14,8 +14,8 @@ constexpr uint32_t kApuHead = 92628;
 constexpr int kSlideDelay = 0;
 constexpr bool kAStartsNow = false;
 constexpr double kTick = 10485760.0;      // cycles per tick = kTick / tempo
-constexpr double kSub = 70224.0 / 6.0;   // six steps per video frame (358.4 Hz), measured from vibrato beat periods
-constexpr double kKitChunk = 11712.0;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
+constexpr long long kSub = 70224 / 6;   // six steps per video frame (358.4 Hz), measured from vibrato beat periods
+constexpr long long kKitChunk = 11712;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
 }  // namespace
 
 void Player::start(int row) {
@@ -152,9 +152,9 @@ void Player::startKit(const StepEvent& e) {
     v.kFreq = std::clamp(0x749 + int8_t(in[8]), 0, 0x7FF);
     v.kPlay = true;
     apu_.write(0xFF1C, in[1]);
-    nextKit_ = double(now_);
+    nextKit_ = now_;
     kitChunk();
-    nextKit_ = double(now_) + kKitChunk;
+    nextKit_ = now_ + kKitChunk;
 }
 
 void Player::kitChunk() {
@@ -648,13 +648,13 @@ void Player::sub360() {
 void Player::run(uint32_t cycles) {
     const long long end = now_ + cycles;
     while (now_ < end) {
-        double nextEv = running_ ? next360_ : double(end);
+        long long nextEv = running_ ? next360_ : end;
         if (v_[2].kPlay) nextEv = std::min(nextEv, nextKit_);
-        long long t = std::min<long long>(end, std::max<long long>(now_, (long long)std::ceil(nextEv)));
+        long long t = std::min<long long>(end, std::max<long long>(now_, nextEv));
         if (t > now_) { apu_.advance(uint32_t(t - now_)); now_ = t; }
-        if (v_[2].kPlay && now_ >= (long long)std::ceil(nextKit_)) { kitChunk(); nextKit_ += kKitChunk; continue; }
+        if (v_[2].kPlay && now_ >= nextKit_) { kitChunk(); nextKit_ += kKitChunk; continue; }
         if (!running_) continue;
-        if (now_ >= (long long)std::ceil(next360_)) {
+        if (now_ >= next360_) {
             sub360();                                                       // the ROM's 358 Hz interrupt: sub-step first, then the tempo accumulator decides on a tick
             next360_ += kSub;
             tickAcc_ += tempo_;
@@ -664,11 +664,11 @@ void Player::run(uint32_t cycles) {
 }
 
 void Player::render(int16_t* out, int n, int rate) {
-    const double per = 4194304.0 / rate;
+    const uint32_t perFx = uint32_t((uint64_t(4194304) << 16) / uint32_t(rate));   // cycles per output sample, 16.16
     for (int i = 0; i < n; ++i) {
-        carry_ += per;
-        const uint32_t c = uint32_t(carry_);
-        carry_ -= c;
+        carryFx_ += perFx;
+        const uint32_t c = carryFx_ >> 16;
+        carryFx_ &= 0xFFFF;
         run(c);
         float l, r;
         apu_.takeAverage(c ? c : 1, l, r);

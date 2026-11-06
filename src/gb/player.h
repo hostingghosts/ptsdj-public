@@ -114,17 +114,17 @@ private:
     Voice v_[4];
     bool muted_[4] = {false, false, false, false};
     const KitSource* kits_ = nullptr;
-    double nextKit_ = 0;
+    long long nextKit_ = 0;
     uint8_t nr50_ = 0x77;
     void (*waveHook_)(int, int) = nullptr;
     int tickNo_ = 0;
     bool running_ = false;
     int tempo_ = 128;
-    double next360_ = 0;                  // next sub-step (every 11704 cycles); ticks come from it: tickAcc_ += tempo, a tick at 896
+    long long next360_ = 0;                  // next sub-step (every 11704 cycles); ticks come from it: tickAcc_ += tempo, a tick at 896
     int tickAcc_ = 0;
     long long now_ = 0;
     // render state
-    double carry_ = 0;
+    uint32_t carryFx_ = 0;                // render: fractional cycles carried, 16.16 fixed point (no doubles: the Tracker's FPU is single precision)
     float hpL_ = 0, hpR_ = 0, prevL_ = 0, prevR_ = 0;
     bool hpInit_ = false;
 };

@@ -304,8 +304,8 @@ void Apu::advance(uint32_t cycles) {
 }
 
 void Apu::takeAverage(uint32_t cycles, float& l, float& r) {
-    l = float(double(accL_) / cycles);
-    r = float(double(accR_) / cycles);
+    l = float(int32_t(accL_)) / float(cycles);   // single precision: the Tracker's FPU has no doubles
+    r = float(int32_t(accR_)) / float(cycles);
     accL_ = accR_ = 0;
 }
 
