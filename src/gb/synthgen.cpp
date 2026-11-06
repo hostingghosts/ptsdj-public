@@ -52,6 +52,7 @@ struct Bus final : Sm83::Bus {
 
 bool SynthGen::regenerate(Song& song, int s) {
     if (!available()) return false;
+    const uint32_t t0 = counter_ ? counter_() : 0;
     static Bus bus;                      // ~8 KB of WRAM image: kept off the stack
     bus.rom = rom_;
     bus.romSize = size_;
@@ -80,6 +81,7 @@ bool SynthGen::regenerate(Song& song, int s) {
         if (++bus.wram[kFrameIndex - 0xC000] == 16) bus.wram[kJobFlag - 0xC000] = 0;
     }
     lastCount_ = cpu.executed();
+    lastCycles_ = counter_ ? counter_() - t0 : 0;
     return ok && !bus.wram[kJobFlag - 0xC000];
 }
 

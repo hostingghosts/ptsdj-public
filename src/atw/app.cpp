@@ -25,6 +25,7 @@ bool App::init(const Platform& p) {
     transport_.app = this;
     lsdj.setTransport(&transport_, 0);
     lsdjB.setTransport(&transport_, 1);
+    synthGen.setCounter(p_.cycleCounter);
     lsdj.setSynthGen(&synthGen);
     lsdjB.setSynthGen(&synthGen);
     if (!p_.display || !p_.input || !p_.clock) return false;
@@ -105,14 +106,16 @@ void App::LinkedTransport::start(int console, int row) {
     app->dual.start(rowA, rowB);
 }
 
-bool App::LinkedTransport::action(Action a) {
+bool App::LinkedTransport::action(Action a, int slot) {
+    char name[8];
+    std::snprintf(name, sizeof name, "S%02d", slot);
     switch (a) {
-        case kSavePair: return app->saveLinked("SESSION");
-        case kLoadPair: return app->loadLinked("SESSION");
+        case kSavePair: return app->saveLinked(name);
+        case kLoadPair: return app->loadLinked(name);
         case kExportWav: {
             if (app->platform().storage) app->platform().storage->mkdir(kExportDir);
             char path[64];
-            std::snprintf(path, sizeof path, "%s/SESSION.wav", kExportDir);
+            std::snprintf(path, sizeof path, "%s/%s.wav", kExportDir, name);
             return app->exportWav(path);
         }
     }

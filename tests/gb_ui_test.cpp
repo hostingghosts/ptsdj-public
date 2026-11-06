@@ -299,12 +299,12 @@ TEST(project_screen_saves_loads_and_exports_the_session) {
     for (int i = 0; i < 9; ++i) tap(gb::Key::Down);
     tap(gb::Key::A);
     CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
-    CHECK(st.files.count("GB/Songs/SESSION_A.lsdsng") == 1 && st.files.count("GB/Songs/SESSION_B.lsdsng") == 1);
+    CHECK(st.files.count("GB/Songs/S00_A.lsdsng") == 1 && st.files.count("GB/Songs/S00_B.lsdsng") == 1);
     tap(gb::Key::Down); tap(gb::Key::A);                       // LOAD SESSION
     CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
     tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT WAV
     CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
-    CHECK(st.files["GB/Export/SESSION.wav"].size() > 44u);
+    CHECK(st.files["GB/Export/S00.wav"].size() > 44u);
 }
 
 namespace {

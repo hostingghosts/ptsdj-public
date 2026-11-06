@@ -82,7 +82,7 @@ private:
         void start(int console, int row) override;
         void stop() override { app->dual.stop(); }
         bool running() const override { return app->dual.running(); }
-        bool action(Action a) override;
+        bool action(Action a, int slot) override;
     } transport_;
     Platform p_;
 };

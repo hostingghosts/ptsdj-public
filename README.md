@@ -18,7 +18,7 @@ make -C sim check                 # screen tour (4 DMG shades only) + demo song 
 make CROSS=<path>/arm-none-eabi-  # build/PolyendTracGBTrkv010.ptf (24 chars, checked)
 ```
 Two consoles: the Song key switches the screen between tracks 1-4 (A) and 5-8 (B); Play starts and stops both together, each keeping its own
-tempo and L/R panning. Project screen: SAVE/LOAD SESSION A+B (`GB/Songs/SESSION_A/B.lsdsng`, each opens on a real LSDJ) and EXPORT WAV A+B
-(`GB/Export/SESSION.wav`, one pass until every channel loops; the screen waits while it renders).
+tempo and L/R panning. Project screen: SAVE/LOAD SESSION A+B (`GB/Songs/Snn_A/B.lsdsng` (slot nn 00-99, A+Left/Right on the row), each opens on a real LSDJ) and EXPORT WAV A+B
+(`GB/Export/Snn.wav`, one pass until every channel loops; the screen waits while it renders).
 Songs: `GB/Songs/*.lsdsng` on the card (`GB/AUTOLOAD.LSDSNG` and `GB/AUTOLOAD_B.LSDSNG` open at start). `demos/` holds sample songs and kits.
 Docs: `LEARNINGS.md`, `docs/LSDJ_FORMAT.md`, `docs/HARDWARE_MAP.md`, `UPSTREAM.md`. `tools/oracle/` checks against an LSDJ ROM.

@@ -159,7 +159,7 @@ void Lsdj::press(Key) {
             break;
         case Scr::Project:
             if (tr_ && projRow >= 9) {
-                const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : Transport::kExportWav);
+                const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : Transport::kExportWav, session);
                 status_ = ok ? "DONE" : "FAILED";
             }
             break;
@@ -234,7 +234,8 @@ void Lsdj::editKey(Key k) {
         }
         case Scr::Groove: { uint8_t& v = s_.groove(groove)[grooveStep]; v = uint8_t(clampi(v + d, 0, 255)); break; }
         case Scr::Project:
-            if (projRow == 0) { uint8_t& t = s_.at(off::kTempo); t = uint8_t(clampi(t + d, 40, 255)); p_.setTempo(t); }
+            if (projRow >= 9) session = clampi(session + d, 0, 99);
+            else if (projRow == 0) { uint8_t& t = s_.at(off::kTempo); t = uint8_t(clampi(t + d, 40, 255)); p_.setTempo(t); }
             else if (projRow == 1) s_.at(off::kTranspose) = uint8_t(int8_t(s_.at(off::kTranspose)) + d);
             break;
         default: break;
@@ -500,6 +501,7 @@ void Lsdj::drawSynth(Lcd& l) const {
     char w[8]; std::snprintf(w, sizeof w, "%02X-%02X", synth * 16, synth * 16 + 15);
     l.text(8, 7, w);
     if (!sg_ || !sg_->available()) l.text(0, 16, "NO ROM: FRAMES NOT REBUILT");
+    else if (sg_->lastCycles()) { char m[24]; std::snprintf(m, sizeof m, "REBUILD %uK CYC", unsigned(sg_->lastCycles() / 1000)); l.text(0, 16, m); }
 }
 
 void Lsdj::drawWave(Lcd& l) const {
@@ -530,6 +532,7 @@ void Lsdj::drawProject(Lcd& l) const {
     row(12, "CLEAN SONG DATA", "", projRow == 7);
     row(13, "CLEAN INSTR DATA", "", projRow == 8);
     row(10, "EXPORT WAV A+B", "", projRow == 11);
+    { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(16, 10, s, projRow == 11); l.text(16, 14, s, projRow == 9); l.text(16, 15, s, projRow == 10); }
     row(14, "SAVE SESSION A+B", "", projRow == 9);
     row(15, "LOAD SESSION A+B", "", projRow == 10);
     l.text(0, 17, status_);

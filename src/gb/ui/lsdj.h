@@ -21,7 +21,7 @@ struct Transport {
     virtual void stop() = 0;
     virtual bool running() const = 0;
     enum Action { kSavePair, kLoadPair, kExportWav };
-    virtual bool action(Action a) = 0;               // session actions from the Project screen; false = failed
+    virtual bool action(Action a, int slot) = 0;               // session actions from the Project screen; false = failed
 };
 
 class Lsdj {
@@ -44,6 +44,7 @@ public:
     int table = 0, tableRow = 0, tableCol = 0;
     int groove = 0, grooveStep = 0;
     int projRow = 0;
+    int session = 0;                             // session slot 0-99 (files S00_A / S00_B .lsdsng, S00.wav)
     int synth = 0, synthRow = 0, synthCol = 1;   // Synth screen: synth 0-F, row 0-9 (signal, filter, dist, phase, volume, cutoff, q, vshift, limit, phase), column
     int waveNo = 0, waveCol = 0;                 // Wave screen: wave 00-FF and the cursor column 0-31 (column c shows sample (c + 1) & 31)
     const char* status() const { return status_; }   // result of the last Project action, shown on the Project screen
