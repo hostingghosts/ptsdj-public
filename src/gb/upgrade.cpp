@@ -65,14 +65,16 @@ bool upgradeSong(Song& s) {
             continue;
         }
         if (type == 0 || type == 3) {
-            in[1] = uint8_t((in[1] & 0xF0) | releaseNibble(in[1] & 15));
-            in[9] = uint8_t((in[9] & 0xF0) | releaseNibble(in[9] & 15));     // the second release digits (bytes 9 and 10) convert alike
+            if ((in[1] & 15) >= 12) { in[1] = uint8_t((in[1] & 0xF0) | ((in[1] & 15) - 3)); if (in[9] == 0) in[9] = 0xF0; }   // the slowest old rates: rate - 3 and the second stage held (measured, byte 9 = F0)
+            else in[1] = uint8_t((in[1] & 0xF0) | releaseNibble(in[1] & 15));
+            if (in[9] != 0xF0) in[9] = uint8_t((in[9] & 0xF0) | releaseNibble(in[9] & 15));     // the second release digits (bytes 9 and 10) convert alike
             in[10] = uint8_t((in[10] & 0xF0) | releaseNibble(in[10] & 15));
         }
         if (type == 0) in[11] = uint8_t((in[7] & 0x3C) << 1);               // fine tune used to hide in the pan/duty byte
         if (type == 1) {                                   // wave: first frame = synth x 16, play modes renumbered
-            if (ver < 9) { const uint8_t lo = in[2] & 15; in[2] = uint8_t((in[2] & 0xF0) | (lo == 0 ? 15 : lo + 1)); }
-            in[3] = uint8_t(m[off::kInstr + j * 16 + 2] & 0xF0);
+            const uint8_t oldB2 = in[2];
+            if (ver < 9) { const uint8_t lo = in[2] & 15; in[2] = uint8_t((in[2] & 0xF0) | (15 - lo)); }   // version 7: the low nibble is inverted (0<->F, 1<->E ... measured on 4 values)
+            in[3] = uint8_t(oldB2 & 0xF0);
             if (ver < 0xA) in[9] = uint8_t((in[9] + 1) & 3);
         }
     }
