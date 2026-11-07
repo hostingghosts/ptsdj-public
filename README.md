@@ -23,7 +23,7 @@ the name keyboard (Insert types, the < key erases, Play = OK, Delete = NO); the 
 Help: the Help key opens the pages (Left/Right turn them, Delete leaves). Hold F8 (outside the side by side view, a ? shows above it) for a pop-up that explains the
 page you are on; Left/Right turn its pages. Hold Shift + Note for the Phrase page's command cheat sheet, Shift + Instr params for the Table page's; they go away on release.
 Project: NAME, TEMPO, TRANSPOSE, SYNC (OFF / MASTER / SLAVE), CLONE, LOOK (display colours), PRELISTEN, HELP, CLEAN SONG DATA / CLEAN INSTR DATA (Insert twice),
-SAVE SONG, LOAD SONG, EXPORT WAV, EXPORT LSDJ (A, B or A + B, as .lsdsng and .sav; pick with Insert + Left/Right). Saving and exporting show a progress bar.
+SAVE SONG, LOAD SONG, EXPORT WAV, EXPORT LSDJ (A, B or A + B, as .lsdsng and .sav; pick with the jog wheel). Saving and exporting show a progress bar.
 SYNC: with both projects on, Play on either console starts both; the slave follows the master's tempo (the master's tempo edit also goes into the slave's project).
 Master key (while linked) shows both consoles side by side. An A sits above F1 and a B above F8; hold either to raise a dock that names every F key. F1 / F8 pick
 the console the keys control, F2 / F7 held + jog = level A / B, F3-F6 mute (Shift: solo) the four tracks of the active console.

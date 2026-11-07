@@ -1038,9 +1038,10 @@ TEST(export_lsdj_can_write_song_a_song_b_or_both) {
     keyTap(r, ot::btn::Config);
     l.projRow = 13;
     CHECK_EQ(l.exportSel, 2);                                   // A + B by default
-    tapKey(l, gb::Key::Left);                                   // plain Left only moves; Insert + Left picks
-    l.key(gb::Key::A, true); tapKey(l, gb::Key::Left); l.key(gb::Key::A, false);
+        l.encoder(-1);                                              // the jog wheel picks it, like every other value
     CHECK_EQ(l.exportSel, 1);
+    l.encoder(1);
+    CHECK_EQ(l.exportSel, 2);
 }
 
 namespace {
