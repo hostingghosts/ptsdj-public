@@ -42,6 +42,7 @@ public:
     bool recMode() const { return recMode_; }
     void toggleRecMode() { if (scr_ == Scr::Phrase) { recMode_ = !recMode_; if (!recMode_ && !playing()) rec_ = false; } }
     bool recording() const { return rec_; }
+    bool promptOpen() const { return prompt_; }
     bool playing() const;
     void jump(Scr target);                   // a direct page key: carries the cursor along like Select + arrows does between the main screens
     void openFiles();                        // the song list for this console
@@ -105,6 +106,9 @@ private:
     bool a_ = false, b_ = false, sel_ = false;
     bool rec_ = false;                       // recording is running: pads write into the looping phrase
     bool recMode_ = false;
+    bool prompt_ = false, promptYes_ = false;   // "OVERWRITE HAND-DRAWN WAVES?" on the Synth page (measured: NO is preselected)
+    bool handDrawn(int syn) const;
+    void markHandDrawn(int wave);
     bool auditionHeld_ = false;              // Play on the Synth / Wave page holds a preview note
     int padOct_ = 0;
     int8_t padCh_[48];                       // channel each held pad started a note on, -1 none

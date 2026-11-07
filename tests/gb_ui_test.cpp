@@ -641,3 +641,30 @@ TEST(wave_screen_pads_preview_the_wave_being_edited) {
     for (int i = 0; i < 256; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
     CHECK(peak > 0);
 }
+
+TEST(hand_drawn_wave_asks_before_a_synth_edit_overwrites_it) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    l.show(gb::Scr::Wave);
+    l.waveNo = 0x23;                                          // a wave of synth 2
+    holdTap(l, gb::Key::A, gb::Key::Up);                      // drawing marks synth 2 as hand-drawn
+    CHECK_EQ(int(r.app.song.at(gb::off::kHandDrawn + 1)), 1 << 2);
+    l.synth = 2;
+    l.show(gb::Scr::Synth);
+    l.synthRow = 0;
+    const uint8_t before = r.app.song.synth(2)[0];
+    holdTap(l, gb::Key::A, gb::Key::Right);
+    CHECK(l.promptOpen());
+    CHECK_EQ(int(r.app.song.synth(2)[0]), int(before));       // nothing applied yet
+    tapKey(l, gb::Key::A);                                    // NO is preselected: the question closes, the flag stays
+    CHECK(!l.promptOpen());
+    CHECK_EQ(int(r.app.song.at(gb::off::kHandDrawn + 1)), 1 << 2);
+    holdTap(l, gb::Key::A, gb::Key::Right);
+    tapKey(l, gb::Key::Left);                                 // YES
+    tapKey(l, gb::Key::A);
+    CHECK(!l.promptOpen());
+    CHECK_EQ(int(r.app.song.at(gb::off::kHandDrawn + 1)), 0); // the flag is cleared; the edit itself still has to be made again
+    CHECK_EQ(int(r.app.song.synth(2)[0]), int(before));
+    holdTap(l, gb::Key::A, gb::Key::Right);
+    CHECK(int(r.app.song.synth(2)[0]) != int(before));
+}

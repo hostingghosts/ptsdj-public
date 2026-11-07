@@ -28,6 +28,7 @@ constexpr uint16_t kChainAlloc = 0x3EA2;   // 128 bits
 constexpr uint16_t kSynth = 0x3EB2;        // 16 x 16 synth parameters
 constexpr uint16_t kTempo = 0x3FB4;        // project: tempo (default 0x80)
 constexpr uint16_t kTranspose = 0x3FB5;    // project: transpose
+constexpr uint16_t kHandDrawn = 0x3FC4;    // project: bit per synth (0x3FC5 holds synths 0-7, 0x3FC4 synths 8-F) set when one of its waves was drawn by hand
 constexpr uint16_t kSync = 0x3FBD;         // project: SYNC (0 off, 1 LSDJ link cable; the ROM's other modes use higher values)
 constexpr uint16_t kPhraseCmd = 0x4000;    // 255 x 16
 constexpr uint16_t kPhraseVal = 0x4FF0;    // 255 x 16

@@ -56,8 +56,23 @@ int Lsdj::instrRows() const { return 2 + fieldsFor(s_.instrument(instr)[0]).n; }
 
 // ---- input ----------------------------------------------------------------------------------------------------------
 
+bool Lsdj::handDrawn(int syn) const { return (s_.at(syn < 8 ? off::kHandDrawn + 1 : off::kHandDrawn) >> (syn & 7)) & 1; }
+void Lsdj::markHandDrawn(int wave) {
+    const int syn = (wave >> 4) & 15;
+    s_.at(syn < 8 ? off::kHandDrawn + 1 : off::kHandDrawn) |= uint8_t(1 << (syn & 7));
+}
+
 void Lsdj::key(Key k, bool down) {
-    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Song) { p_.mute(songCh, !p_.muted(songCh)); edited_ = true; } else if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
+    if (prompt_ && down) {                              // the overwrite question takes the keys
+        if (k == Key::Left) promptYes_ = true;
+        else if (k == Key::Right) promptYes_ = false;
+        else if (k == Key::A || k == Key::Start) {
+            if (promptYes_) s_.at(synth < 8 ? off::kHandDrawn + 1 : off::kHandDrawn) &= uint8_t(~(1 << (synth & 7)));   // YES: the next edit regenerates
+            prompt_ = false;
+        } else if (k == Key::B) prompt_ = false;
+        return;
+    }
+    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Song) { p_.mute(songCh, !p_.muted(songCh)); edited_ = true; } else if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; markHandDrawn(waveNo); } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
     if (k == Key::B) {
         if (down) {
             bUsed_ = false;
@@ -422,6 +437,12 @@ void Lsdj::draw(Lcd& l) const {
     if (recMode_ && scr_ == Scr::Phrase) { l.text(16, 10, "REC", rec_); char ii[8]; std::snprintf(ii, sizeof ii, "I%02X", instr); l.text(16, 11, ii); }
     if (padOct_ != 0 && scr_ != Scr::File) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); l.text(16, 12, o); }
     if (banner_[0]) { l.rect(0, 136, 160, 8, 0); l.text(0, 17, banner_); }
+    if (prompt_) {
+        l.rect(24, 32, 96, 56, 3);
+        l.rect(26, 34, 92, 52, 0);
+        l.text(4, 5, "OVERWRITE"); l.text(4, 6, "HAND-DRAWN"); l.text(4, 7, "WAVES?");
+        l.text(4, 9, "YES", promptYes_); l.text(11, 9, "NO", !promptYes_);
+    }
 }
 
 void Lsdj::drawSong(Lcd& l) const {
@@ -518,6 +539,7 @@ void Lsdj::setWaveSample(int i, int v) {
 }
 
 void Lsdj::waveEdit(Key k) {
+    markHandDrawn(waveNo);
     const int sample = waveCol + 1;
     if (k == Key::Up || k == Key::Down) { setWaveSample(sample, 15 - waveSample(sample)); return; }   // A + up/down flips the sample
     // A + left/right draws: step sideways and copy the sample just left (right) behind
@@ -541,6 +563,7 @@ const char* const kPhaseNames[4] = {"PINCH", " WARP", "RESYNC", "RESYN2"};
 }  // namespace
 
 void Lsdj::synthEdit(Key k) {
+    if (handDrawn(synth)) { prompt_ = true; promptYes_ = false; return; }     // a hand-drawn wave of this synth would be overwritten: ask first, apply nothing
     const SynthField& f = kSynthFields[synthRow];
     uint8_t* p = s_.synth(synth);
     const int d = (k == Key::Right || k == Key::Up) ? 1 : -1;
