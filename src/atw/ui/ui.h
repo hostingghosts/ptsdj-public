@@ -20,7 +20,8 @@ enum class ScreenId : uint8_t { kBlank, kCount };
 // With both projects linked (SYNC) the Master key puts the two consoles side by side; the F keys are then a small mixer.
 class GbScreen final : public Screen {
 public:
-    void bind(App* app, gb::Lsdj* a, gb::Lsdj* b) { app_ = app; lsdjA_ = a; lsdjB_ = b; lsdj_ = a; lcdB_.setRam(384000 + gb::Lcd::kW * gb::Lcd::kH); }
+    void bind(App* app, gb::Lsdj* a, gb::Lsdj* b) { app_ = app; lsdjA_ = a; lsdjB_ = b; lsdj_ = a; }
+    gb::Lcd& lcd() { return lcd_; }
     const char* title() const override { return ""; }
     void prepare(ot::IDisplay& d) override;
     void draw(ot::Gfx& g) override;
@@ -37,7 +38,7 @@ private:
     gb::Lsdj* lsdj_ = nullptr;                      // the console on screen (in the split view: the one the keys control)
     gb::Lsdj* lsdjA_ = nullptr;
     gb::Lsdj* lsdjB_ = nullptr;
-    gb::Lcd lcd_, lcdB_;
+    gb::Lcd lcd_;                                   // one buffer: the split view renders and uploads A, then B
     bool shift_ = false;
     bool split_ = false;
     int volHeld_ = -1;                              // F2 / F7 held: the jog wheel sets that console's level
@@ -70,7 +71,6 @@ private:
     uint32_t now_ = 0, lastFrame_ = 0, frames_ = 0;
     uint32_t splashMs_ = 0, splashUntil_ = 0, splashStart_ = 0;
     int chime_ = 0;                          // splash sound: 0 waiting, 1 low note played, 2 high note played, 3 silenced
-    gb::Lcd splashLcd_;
     bool splashSet_ = false;
     bool powerHeld_ = false, hwMuted_ = false;
     uint32_t powerAt_ = 0;

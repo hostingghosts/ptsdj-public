@@ -82,7 +82,7 @@ static constexpr uint32_t kSplashLand = 1500;
 void Ui::drawSplash(ot::Gfx& g, uint32_t el) {
     GbScreen::drawLens(g, false);
     g.color(0xFFFFFF);
-    splashLcd_.draw(g.display(), 100, 24, 3);
+    blank_.lcd().draw(g.display(), 100, 24, 3);
     (void)el;
 }
 
@@ -101,18 +101,18 @@ void Ui::update(uint32_t nowMs) {
         if (chime_ == 2 && el >= kSplashLand + 1700) { app_->bootChime(2); chime_ = 3; }
         if (nowMs - lastFrame_ >= 33 || frames_ == 0) {
             lastFrame_ = nowMs;
-            splashLcd_.setLook(app_->look());
-            splashLcd_.clear(0);
+            blank_.lcd().setLook(app_->look());
+            blank_.lcd().clear(0);
             const int n = 5, scale = 3, adv = 8 * scale + 2;
             const int x0 = (gb::Lcd::kW - n * adv + 2) / 2;
             const int y = el >= kSplashLand ? 56 : -24 + int(80u * el / kSplashLand);
             static const char word[] = "PTSDJ";
-            for (int i = 0; i < n; ++i) splashLcd_.bigGlyph(x0 + i * adv, y, word[i], scale, 3);
-            if (el >= kSplashLand) splashLcd_.text(9, 11, "TRACKER");
+            for (int i = 0; i < n; ++i) blank_.lcd().bigGlyph(x0 + i * adv, y, word[i], scale, 3);
+            if (el >= kSplashLand) blank_.lcd().text(9, 11, "TRACKER");
 #ifdef GB_VERSION
-            { char line[32]; std::snprintf(line, sizeof line, "v%s", GB_VERSION); splashLcd_.text(1, 17, line); }
+            { char line[32]; std::snprintf(line, sizeof line, "v%s", GB_VERSION); blank_.lcd().text(1, 17, line); }
 #endif
-            splashLcd_.prepare(*app_->platform().display);
+            blank_.lcd().prepare(*app_->platform().display);
             ot::Gfx g(*app_->platform().display);
             g.beginFrame(col::kBg);
             drawSplash(g, el);
@@ -155,10 +155,9 @@ bool GbScreen::splitOn() const { return split_ && lsdjA_ && lsdjA_->syncLinked()
 void GbScreen::prepare(ot::IDisplay& d) {
     if (!lsdj_) return;
     lcd_.setLook(app_->look());
-    lcdB_.setLook(app_->look());
     if (splitOn()) {
-        lsdjA_->draw(lcd_); lcd_.prepare(d);
-        lsdjB_->draw(lcdB_); lcdB_.prepare(d);
+        lsdjA_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamA);
+        lsdjB_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamB);
     } else {
         lsdj_->draw(lcd_);
         lcd_.prepare(d);
@@ -197,7 +196,7 @@ void GbScreen::draw(ot::Gfx& g) {
     g.color(aActive ? 0xFFFFFF : 0x8C8C8C);                 // the console that is not controlled is dimmed
     lcd_.draw(g.display(), 0, 40, 2);
     g.color(aActive ? 0x8C8C8C : 0xFFFFFF);
-    lcdB_.draw(g.display(), 400, 40, 2);
+    lcd_.draw(g.display(), 400, 40, 2, gb::Lcd::kRamB);
     g.frame(aActive ? 0 : 400, 38, 400, 292, 0xFFD84A, 3);
     drawStrip(g);
 }

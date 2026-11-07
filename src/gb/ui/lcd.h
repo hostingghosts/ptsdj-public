@@ -30,9 +30,10 @@ public:
     void glyphAt(int x, int y, char c, bool inv = false, uint8_t fg = 3, uint8_t bg = 0);   // pixel position, any shades
     void hex2(int col, int row, unsigned v, bool inv = false);
     // Upload and draw (call prepare() before the display list starts, draw() inside it).
-    void prepare(ot::IDisplay& d);
-    void draw(ot::IDisplay& d, int x = 100, int y = 24, int scale = 3);
-    void setRam(uint32_t addr) { ram_ = addr; }   // RAM_G slot of this display (two displays side by side need two)
+    // The frame buffer slot is a parameter: two displays side by side upload one after the other from this one object (RAM is tight).
+    static constexpr uint32_t kRamA = 384000, kRamB = 384000 + kW * kH;
+    void prepare(ot::IDisplay& d, uint32_t ram = kRamA);
+    void draw(ot::IDisplay& d, int x = 100, int y = 24, int scale = 3, uint32_t ram = kRamA);
     // A glyph scaled up (the splash's block letters).
     void bigGlyph(int x, int y, char c, int scale, uint8_t shade);
 
@@ -41,7 +42,6 @@ private:
     uint8_t rgb332_[kW * kH];
     bool uploaded_ = false;
     int look_ = 0;
-    uint32_t ram_ = 384000;   // the frame buffer slot the game screens of the stock firmware use
 };
 
 }  // namespace gb

@@ -53,16 +53,16 @@ void Lcd::hex2(int col, int row, unsigned v, bool inv) {
     text(col, row, b, inv);
 }
 
-void Lcd::prepare(ot::IDisplay& d) {
+void Lcd::prepare(ot::IDisplay& d, uint32_t ram) {
     uint8_t lut[4];
     for (int i = 0; i < 4; ++i) lut[i] = rgb332(kPalettes[look_][i]);
     for (int y = 0; y < kH; ++y)
         for (int x = 0; x < kW; ++x) rgb332_[y * kW + x] = lut[p_[y][x] & 3];
-    uploaded_ = d.writeRamG(ram_, rgb332_, sizeof rgb332_);
+    uploaded_ = d.writeRamG(ram, rgb332_, sizeof rgb332_);
 }
 
-void Lcd::draw(ot::IDisplay& d, int x, int y, int scale) {
-    if (uploaded_) d.drawRgb332(int16_t(x), int16_t(y), ram_, kW, kH, uint8_t(scale));
+void Lcd::draw(ot::IDisplay& d, int x, int y, int scale, uint32_t ram) {
+    if (uploaded_) d.drawRgb332(int16_t(x), int16_t(y), ram, kW, kH, uint8_t(scale));
 }
 
 void Lcd::bigGlyph(int x, int y, char c, int scale, uint8_t shade) {
