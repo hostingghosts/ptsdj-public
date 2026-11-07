@@ -1,6 +1,7 @@
 #include "gb/ui/lsdj.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -75,11 +76,11 @@ void Lsdj::key(Key k, bool down) {
         return;
     }
     if (nameOpen_) { if (down) nameKey(k); return; }    // the name keyboard takes every key until it is closed
-    if (scr_ == Scr::Help) {                             // help pages: left / right turn the page, anything else leaves
+    if (scr_ == Scr::Help) {                             // help pages: left / right turn the page, Delete leaves
         if (down) {
             if (k == Key::Left) helpPage = clampi(helpPage - 1, 0, kHelpPages - 1);
             else if (k == Key::Right) helpPage = clampi(helpPage + 1, 0, kHelpPages - 1);
-            else if (k == Key::A || k == Key::B || k == Key::Start) scr_ = helpFrom_;
+            else if (k == Key::B) scr_ = helpFrom_;
         }
         return;
     }
@@ -117,6 +118,7 @@ void Lsdj::key(Key k, bool down) {
             for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
             hasClip_ = true;
         }
+        else if (b_ && !bUsed_ && !sel_ && !a_ && selectable()) clearCells();   // a lone Delete tap empties the cell (or every selected cell)
         b_ = down;
         return;
     }
@@ -145,7 +147,7 @@ void Lsdj::key(Key k, bool down) {
     }
     if (sel_ && a_ && selectable()) { selUsed_ = true; selMove(k); return; }   // Shift + Insert + arrows selects cells
     if (sel_) { navigate(k); return; }
-    if (a_) { edited_ = true; clearSel(); editKey(k); return; }
+    if (a_) { edited_ = true; if (selOn_ && selectable()) adjustCells(k); else editKey(k); return; }
     if (b_) {
         bUsed_ = true;
         if (scr_ == Scr::Wave) { waveNo = clampi(waveNo + (k == Key::Left ? -1 : k == Key::Right ? 1 : k == Key::Up ? 16 : -16), 0, 255); return; }
@@ -160,9 +162,10 @@ void Lsdj::encoder(int delta) {
     if (!delta) return;
     if (nameOpen_) { for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) nameKey(delta > 0 ? Key::Right : Key::Left); return; }
     if (scr_ == Scr::Help) { helpPage = clampi(helpPage + (delta > 0 ? 1 : -1), 0, kHelpPages - 1); return; }
+    if (popup_) { popupTurn(delta > 0 ? 1 : -1); return; }
     if (recMode_ && scr_ == Scr::Phrase) { instr = clampi(instr + (delta > 0 ? 1 : -1), 0, 63); return; }   // Rec mode: the jog wheel picks the pad instrument
     const Key k = sel_ ? (delta > 0 ? Key::Up : Key::Down) : (delta > 0 ? Key::Right : Key::Left);
-    for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) editKey(k);
+    for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) { if (selOn_ && selectable()) adjustCells(k); else editKey(k); }
 }
 
 bool Lsdj::playing() const { return tr_ ? tr_->running() : p_.running(); }
@@ -182,14 +185,18 @@ int Lsdj::previewChannel(int ins) const {
     }
 }
 
-// Records a played note into the phrase the cursor channel is looping or playing: the nearest step (the upcoming one in the last half of a step).
+// Records a played note into the phrase the cursor channel is looping or playing: the step nearest to what the player is hearing. The
+// sequencer runs ahead of the speakers (the audio is rendered into a queue first), so that lead is taken off the position before rounding.
 void Lsdj::recordNote(int ch, int note) {
     const Seq& sq = p_.seq();
     if (!sq.active(ch)) return;
     const int ph = sq.phrase(ch);
-    int st = sq.step(ch);
-    if (st > 0 && sq.wait(ch) > 3) --st;
     if (ph == 0xFF) return;
+    const int len = std::max(1, sq.waitLen(ch));
+    const float leadTicks = (tr_ ? tr_->audioLeadMs() : 0) * 0.4f * float(p_.tempo()) / 1000.f;
+    const float x = float(len - sq.wait(ch)) - leadTicks;        // ticks since the previous step began, as heard
+    int st = (sq.step(ch) - 1 + int(std::floor(x / float(len) + 0.5f))) % 16;
+    if (st < 0) st += 16;
     s_.note(ph, st) = uint8_t(note);
     s_.phraseInstr(ph, st) = uint8_t(curInstr());
     s_.markPhrase(ph);
@@ -304,7 +311,10 @@ void Lsdj::move(Key k) {
         case Scr::Song: songCh = clampi(songCh + dx, 0, 3); songRow = clampi(songRow + dy, 0, 255); break;
         case Scr::Chain: chainCol = clampi(chainCol + dx, 0, 1); chainPos = clampi(chainPos + dy, 0, 15); break;
         case Scr::Phrase: phraseCol = clampi(phraseCol + dx, 0, 3); step = clampi(step + dy, 0, 15); break;
-        case Scr::Instr: instrRow = clampi(instrRow + dy, 0, instrRows() - 1); break;
+        case Scr::Instr:
+            instrRow = clampi(instrRow + dy, -1, instrRows() - 1);
+            if (instrRow < 0 && dx) { instr = clampi(instr + dx, 0, kInstruments - 1); instrRow = -1; }   // the number at the top: Left / Right scroll through the instruments
+            break;
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
         case Scr::Project: projRow = clampi(projRow + dy, 0, 13); break;
@@ -382,6 +392,7 @@ void Lsdj::editKey(Key k) {
             break;
         }
         case Scr::Instr: {
+            if (instrRow < 0) { instr = clampi(instr + d, 0, kInstruments - 1); instrRow = -1; break; }   // the number at the top
             uint8_t* in = s_.instrument(instr);
             if (instrRow == 0) break;
             if (instrRow == 1) { in[0] = uint8_t((in[0] + sgn) & 3); s_.markInstrument(instr); break; }
@@ -428,29 +439,64 @@ void Lsdj::editKey(Key k) {
             else if (projRow == 4) cloneDeep_ = !cloneDeep_;
             else if (projRow == 5 && tr_) tr_->setLook((tr_->look() + (sgn > 0 ? 1 : 3)) & 3);
             else if (projRow == 6) prelisten_ = !prelisten_;
+            else if (projRow == 13) exportSel = (exportSel + (sgn > 0 ? 1 : 2)) % 3;
             break;
         }
         default: break;
     }
 }
 
-void Lsdj::cut() {
-    clearSel();
+void Lsdj::cut() { clearCells(); }
+
+bool Lsdj::hasData(int row, int col) const {
+    const uint8_t v = *cellPtr(row, col);
     switch (scr_) {
-        case Scr::Song: { uint8_t& c = s_.songCell(songRow, songCh); if (c != 0xFF) lastChain_ = c; c = 0xFF; break; }
-        case Scr::Chain: s_.chainPhrase(chain, chainPos) = 0xFF; s_.chainTrans(chain, chainPos) = 0; break;
-        case Scr::Phrase:
-            if (phraseCol == 0) s_.note(phrase, step) = 0;
-            else if (phraseCol == 1) s_.phraseInstr(phrase, step) = 0xFF;
-            else { s_.phraseCmd(phrase, step) = 0; s_.phraseVal(phrase, step) = 0; }
-            break;
-        case Scr::Table: {
-            const int off16[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
-            s_.at(uint16_t(off16[tableCol] + table * 16 + tableRow)) = 0;
-            break;
-        }
-        default: break;
+        case Scr::Song: return v != 0xFF;
+        case Scr::Chain: return col == 1 || v != 0xFF;
+        case Scr::Phrase: return col == 0 ? v != 0 : col == 1 ? v != 0xFF : col == 2 ? v != 0 : true;
+        case Scr::Table: return (col == 2 || col == 4) ? v != 0 : true;
+        default: return false;
     }
+}
+
+// Delete: empties the selected cells, or the one under the cursor (a command cell takes its value with it).
+void Lsdj::clearCells() {
+    int r0 = curRow(), r1 = r0, c0 = curCol(), c1 = c0;
+    if (selOn_) { r0 = std::min(selRow_, r1); r1 = std::max(selRow_, curRow()); c0 = std::min(selCol_, c1); c1 = std::max(selCol_, curCol()); }
+    const bool single = r0 == r1 && c0 == c1;
+    clearSel();
+    for (int r = r0; r <= r1; ++r)
+        for (int c = c0; c <= c1; ++c) {
+            uint8_t* p = cellPtr(r, c);
+            switch (scr_) {
+                case Scr::Song: if (single && *p != 0xFF) lastChain_ = *p; *p = 0xFF; break;
+                case Scr::Chain: *p = c == 0 ? 0xFF : 0; break;
+                case Scr::Phrase:
+                    if (c == 1) *p = 0xFF; else *p = 0;
+                    if (c == 2) *cellPtr(r, 3) = 0;
+                    break;
+                case Scr::Table:
+                    *p = 0;
+                    if (c == 2 || c == 4) *cellPtr(r, c + 1) = 0;
+                    break;
+                default: break;
+            }
+        }
+    if (scr_ == Scr::Phrase) s_.markPhrase(phrase);
+    msg_ = single ? "CLR" : "CLRS";
+}
+
+// The jog wheel (or Insert + arrows) with a selection changes every cell that holds something, not only the one under the cursor.
+void Lsdj::adjustCells(Key k) {
+    const int r0 = std::min(selRow_, curRow()), r1 = std::max(selRow_, curRow()), c0 = std::min(selCol_, curCol()), c1 = std::max(selCol_, curCol());
+    const int cr = curRow(), cc = curCol();
+    for (int r = r0; r <= r1; ++r)
+        for (int c = c0; c <= c1; ++c) {
+            if (!hasData(r, c)) continue;
+            setCursor(r, c);
+            editKey(k);
+        }
+    setCursor(cr, cc);
 }
 
 void Lsdj::changeId(int d) {
@@ -482,7 +528,7 @@ void Lsdj::projectAct() {
         case 10: act(Transport::kSaveSong, console_, "SAVED", "SAVE FAILED"); break;
         case 11: if (tr_) openFiles(); break;
         case 12: act(Transport::kExportWav, 0, "WAV DONE", "WAV FAILED"); break;
-        case 13: act(Transport::kExportFiles, 0, "EXPORT DONE", "EXPORT FAILED"); break;
+        case 13: act(Transport::kExportFiles, exportSel, "EXPORT DONE", "EXPORT FAILED"); break;
         default: break;
     }
 }
@@ -595,9 +641,9 @@ void Lsdj::nameKey(Key k) {
             else if (nameCx_ == 7) back();
             else nameCommit();
             break;
-        case Key::B: back(); break;
+        case Key::B: nameOpen_ = false; break;                // Delete = NO: close without saving
         case Key::Start: nameCommit(); break;
-        case Key::Select: nameOpen_ = false; break;
+        case Key::Select: break;
     }
 }
 
@@ -875,6 +921,7 @@ void Lsdj::draw(Lcd& l) const {
         l.text(5, 5, "OVERWRITE"); l.text(5, 6, "HAND-DRAWN"); l.text(5, 7, "WAVES?");
         l.text(5, 9, "YES", promptYes_); l.text(12, 9, "NO", !promptYes_);
     }
+    if (popup_) drawPopup(l);
     if (nameOpen_) drawNameEntry(l);
     if (progLabel_[0]) drawProgress(l);
 }
@@ -960,23 +1007,22 @@ void Lsdj::drawGroove(Lcd& l) const {
     }
 }
 
-// The name keyboard, in the layout of the ROM's own: digits, letters, then space, backspace and OK.
+// The name keyboard, in the layout of the ROM's own: digits, letters, then space, backspace and OK. Everything sits inside the border.
 void Lsdj::drawNameEntry(Lcd& l) const {
-    l.rect(16, 24, 168, 96, 3);
-    l.rect(18, 26, 164, 92, 0);
-    l.text(3, 4, "NAME:");
-    for (int i = 0; i < nameMax_; ++i) {
-        const int n = int(std::strlen(nameBuf_));
-        l.glyphAt(72 + i * 8, 32, i < n ? nameBuf_[i] : ' ', i == n, 3, i == n ? 3 : 1);
-    }
+    l.rect(8, 16, 184, 108, 3);
+    l.rect(10, 18, 180, 104, 0);
+    l.text(2, 3, "NAME");
+    const int n = int(std::strlen(nameBuf_));
+    for (int i = 0; i < nameMax_; ++i) l.glyphAt(64 + i * 8, 24, i < n ? nameBuf_[i] : ' ', i == n, 3, i == n ? 3 : 1);
+    const int kx = 42;
     for (int r = 0; r < 4; ++r)
-        for (int c = 0; kKeyRows[r][c]; ++c) l.glyphAt(48 + c * 8 + c * 4, 56 + r * 12, kKeyRows[r][c], nameCy_ == r && nameCx_ == c, 3, 0);
-    l.glyphAt(48 + 6 * 12, 56 + 3 * 12, '_', nameCy_ == 4 && nameCx_ == 6, 3, 0);
-    l.glyphAt(48 + 7 * 12, 56 + 3 * 12, '<', nameCy_ == 4 && nameCx_ == 7, 3, 0);
-    l.glyphAt(48 + 8 * 12, 56 + 3 * 12, 'O', nameCy_ == 4 && nameCx_ == 8, 3, 0);
-    l.glyphAt(48 + 8 * 12 + 8, 56 + 3 * 12, 'K', nameCy_ == 4 && nameCx_ == 8, 3, 0);
-    l.text(3, 13, "INS=TYPE DEL=BACK");
-    l.text(3, 14, "PLAY=OK SHIFT=NO");
+        for (int c = 0; kKeyRows[r][c]; ++c) l.glyphAt(kx + c * 12, 44 + r * 12, kKeyRows[r][c], nameCy_ == r && nameCx_ == c, 3, 0);
+    l.glyphAt(kx + 6 * 12, 44 + 3 * 12, '_', nameCy_ == 4 && nameCx_ == 6, 3, 0);
+    l.glyphAt(kx + 7 * 12, 44 + 3 * 12, '<', nameCy_ == 4 && nameCx_ == 7, 3, 0);
+    l.glyphAt(kx + 8 * 12, 44 + 3 * 12, 'O', nameCy_ == 4 && nameCx_ == 8, 3, 0);
+    l.glyphAt(kx + 8 * 12 + 8, 44 + 3 * 12, 'K', nameCy_ == 4 && nameCx_ == 8, 3, 0);
+    l.text(2, 12, "INSERT TYPE  PLAY OK");
+    l.text(2, 13, "BKSP NO      < ERASE");
 }
 
 void Lsdj::drawProgress(Lcd& l) const {
@@ -989,23 +1035,127 @@ void Lsdj::drawProgress(Lcd& l) const {
 }
 
 namespace {
-struct HelpPage { const char* title; const char* line[15]; };
-const HelpPage kHelp[Lsdj::kHelpPages] = {
-    {"BASICS", {"INSERT       ENTER / EDIT", "INSERT+ARROWS", " LEFT RIGHT   +-1", " UP DOWN      +-16 / OCT", "JOG WHEEL    INSERT+L/R", "DELETE+INSERT CUT", "DELETE+ARROWS NEXT CHAIN,", " PHRASE, INSTR, TABLE", "SHIFT+ARROWS  CHANGE PAGE", "PLAY         START / STOP", "", "SCREENS: PROJECT SYNTH", " WAVE / SONG CHAIN PHRASE", " INSTR TABLE / GROOVE", ""}},
-    {"PAGE KEYS", {"SONG         SONG PAGE", "PATTERN      CHAIN", "NOTE         PHRASE", "INSTR        INSTRUMENT", "INSTR PARAMS TABLE", "FX1          SYNTH", "FX2          WAVE", "CONFIG       PROJECT", "FILE         LOAD SONG", "PERFORMANCE  GROOVE", "HELP         THIS HELP", "MASTER       SIDE BY SIDE", "SHIFT+SONG   SWAP A / B", "", ""}},
-    {"PADS AND REC", {"PADS PLAY THE SOUND, NOT", " THE SONG. SHIFT+PAD ROW", " SETS THE OCTAVE", "PHRASE, REC OFF (STEP):", " PADS ENTER NOTES AT", " THE CURSOR", "REC ARMS: JOG PICKS THE", " INSTRUMENT, PADS SOUND", "REC+PLAY: THE PHRASE", " LOOPS, THE SONG PLAYS", " BEHIND IT, PADS RECORD", " INTO IT. PLAY STOPS.", "PRELISTEN OFF MUTES PADS", "", ""}},
-    {"COPY AND NAMES", {"SHIFT+INSERT+UP/DOWN", " SELECTS CELLS", "COPY        COPY THEM", "SHIFT+COPY  PASTE HERE", " (SAME PAGE ONLY)", "CLONE DEEP: PASTING A", " CHAIN OR PHRASE MAKES", " A NEW COPY. SLIM KEEPS", " THE SAME NUMBER.", "INSTR PAGE, NAME ROW:", " INSERT OPENS THE", " KEYBOARD. PLAY=OK", " DELETE=BACKSPACE", "PROJECT NAME: SAME", ""}},
-    {"SYNC AND EXPORT", {"PROJECT > SYNC (BOTH):", " MASTER SETS THE TEMPO,", " SLAVE FOLLOWS. PLAY", " STARTS BOTH.", "MASTER KEY: SIDE BY SIDE", " F1/F8  SONG A / B", " F2/F7  HOLD+JOG=VOLUME", " F3-F6  MUTE TRACK", " SHIFT+F3-F6  SOLO", "SAVE SONG   GB/SONGS", "EXPORT WAV  GB/EXPORT", "EXPORT LSDJ  TWO SONGS", " AND .SAV FILES FOR TWO", " GAME BOYS", ""}},
+// Help text: pages of up to 13 lines of 22 characters, written to be easy to read. The same pages feed the Help screen, the F8 pop-up and the cheat sheets.
+struct Doc { const char* title; const char* line[13]; };
+
+const Doc kHelpDocs[Lsdj::kHelpPages] = {
+    {"WELCOME", {"PTSDJ MAKES MUSIC LIKE", "A GAME BOY. YOU WRITE", "SMALL PIECES AND LINK", "THEM TOGETHER.", "", "PHRASE  16 STEPS WITH", "        NOTES IN THEM", "CHAIN   A LIST OF", "        PHRASES", "SONG    CHAINS FOR ALL", "        4 TRACKS", "", "PRESS > FOR MORE"}},
+    {"MOVING AROUND", {"ARROWS MOVE THE CURSOR", "", "SONG KEY    SONG PAGE", "PATTERN KEY CHAIN PAGE", "NOTE KEY    PHRASE PAGE", "INSTR KEY   INSTRUMENT", "INSTR PARAMS TABLE", "FX1 SYNTH   FX2 WAVE", "CONFIG      PROJECT", "PERFORMANCE GROOVE", "FILE        SONG FILES", "SHIFT+ARROWS MOVE", "BETWEEN THE PAGES"}},
+    {"EDITING", {"INSERT  PUT IN A VALUE", "INSERT+LEFT/RIGHT", "  CHANGE BY 1", "INSERT+UP/DOWN", "  CHANGE BY 16", "JOG WHEEL  SAME AS", "  INSERT+LEFT/RIGHT", "BKSP  CLEARS THE CELL", "SHIFT+INSERT+ARROWS", "  PICK MANY CELLS", "COPY  COPIES THEM", "SHIFT+COPY  PASTES", "  (SAME PAGE ONLY)"}},
+    {"PLAYING", {"PLAY  START / STOP", "", "PADS PLAY SOUNDS. THEY", "NEVER START THE SONG.", "SHIFT+PAD ROW SETS", "  THE OCTAVE", "", "ON THE PHRASE PAGE:", "REC OFF  PADS TYPE", "  NOTES AT THE CURSOR", "REC ON   PADS ONLY MAKE", "  SOUND. JOG PICKS IT", "REC+PLAY  PADS RECORD"}},
+    {"NAMES, LIBRARY", {"TO NAME A SOUND, GO TO", "THE INSTR PAGE, MOVE TO", "NAME AND PRESS INSERT.", "", "INSERT   TYPE A LETTER", "<        ERASE A LETTER", "PLAY     OK", "BKSP     NO", "", "SAMPLE LOADER KEY:", "SAVE A SOUND TO THE", "CARD OR LOAD ONE.", ""}},
+    {"TWO SONGS", {"PROJECT PAGE, SYNC:", "MASTER  SETS THE TEMPO", "SLAVE   FOLLOWS IT", "PLAY STARTS BOTH.", "", "MASTER KEY SHOWS BOTH", "SONGS SIDE BY SIDE.", "HOLD A OR B (F1 / F8)", "TO SEE THE F KEYS.", "F2 / F7 + JOG = VOLUME", "F3-F6 MUTE A TRACK", "SHIFT+F3-F6  SOLO", ""}},
+    {"SAVING", {"PROJECT PAGE:", "", "SAVE SONG  KEEPS IT", "LOAD SONG  PICKS ONE", "EXPORT WAV  AUDIO FILE", "EXPORT LSDJ  FOR A REAL", "  GAME BOY. PICK A, B", "  OR A+B WITH < >", "  THEN PRESS INSERT.", "", "FILES ARE ON THE SD", "CARD IN THE GB FOLDER.", ""}},
 };
+
+const Doc kSongDocs[] = {
+    {"SONG PAGE", {"THE SONG PAGE IS THE", "BIG PLAN. EACH ROW HAS", "4 BOXES, ONE PER TRACK:", "PU1 PU2 WAV NOI", "", "A BOX HOLDS A CHAIN", "NUMBER. -- MEANS NONE.", "THE TRACKS PLAY DOWN", "THE ROWS TOGETHER.", "", "TO MAKE MUSIC:", "1 PRESS INSERT IN A BOX", "2 PRESS > TO OPEN IT"}},
+    {"SONG PAGE", {"PLAY STARTS AT THE ROW", "YOU ARE ON.", "", "SHIFT+INSERT  MUTES", "  THE TRACK", "SHIFT+BKSP  MUTES ALL", "SHIFT+SONG  SWAP", "  SONG A AND SONG B", "BKSP  CLEARS A BOX", "SHIFT+INSERT+ARROWS", "  PICK MANY BOXES", "COPY, SHIFT+COPY", "  COPY AND PASTE"}},
+};
+const Doc kChainDocs[] = {
+    {"CHAIN PAGE", {"A CHAIN IS A LIST OF", "UP TO 16 PHRASES THAT", "PLAY ONE AFTER ANOTHER.", "", "LEFT COLUMN  PHRASE", "RIGHT COLUMN  TRANSPOSE", "  HIGHER OR LOWER NOTES", "  0C IS ONE OCTAVE", "", "INSERT FILLS A BOX.", "> OPENS THE PHRASE.", "< GOES BACK TO SONG.", ""}},
+    {"CHAIN PAGE", {"BKSP+LEFT/RIGHT", "  SWITCH CHAINS", "BKSP  CLEARS A BOX", "SHIFT+INSERT+ARROWS", "  PICK MANY BOXES", "COPY, SHIFT+COPY", "  COPY AND PASTE", "", "PROJECT > CLONE:", "DEEP  PASTE MAKES NEW", "  COPIES OF PHRASES", "SLIM  PASTE KEEPS THE", "  SAME PHRASES"}},
+};
+const Doc kPhraseDocs[] = {
+    {"PHRASE PAGE", {"A PHRASE HAS 16 STEPS.", "THE NOTES LIVE HERE.", "", "NOTE   THE PITCH", "INSTR  WHICH SOUND", "CMD    A SPECIAL TRICK", "       HOLD SHIFT+NOTE", "       TO SEE THEM ALL", "", "INSERT PUTS IN A NOTE.", "L / R MOVES IT 1 NOTE.", "UP / DOWN MOVES IT", "  AN OCTAVE."}},
+    {"MAKING NOTES", {"WITH THE PADS:", "REC OFF  PRESS A PAD TO", "  TYPE THE NOTE AT THE", "  CURSOR.", "REC ON  PADS MAKE SOUND", "  BUT WRITE NOTHING.", "  THE JOG WHEEL PICKS", "  THE SOUND.", "REC+PLAY  THE PHRASE", "  LOOPS WHILE THE SONG", "  PLAYS. PADS WRITE THE", "  NOTES. PLAY STOPS.", ""}},
+    {"PHRASE PAGE", {"BKSP  CLEARS A STEP", "BKSP+UP/DOWN  GO TO", "  ANOTHER PHRASE", "SHIFT+INSERT+ARROWS", "  PICK MANY STEPS. THE", "  JOG WHEEL CHANGES", "  THEM ALL.", "COPY, SHIFT+COPY", "  COPY AND PASTE", "", "SHIFT+NOTE (HOLD)", "  SHOWS ALL COMMANDS", ""}},
+};
+const Doc kInstrDocs[] = {
+    {"INSTRUMENT PAGE", {"AN INSTRUMENT IS A", "SOUND YOU CAN PLAY.", "", "MOVE UP TO THE NUMBER", "AT THE TOP. THEN USE", "< > OR THE JOG WHEEL TO", "PICK ONE. THE PADS PLAY", "IT AS YOU GO.", "", "TYPE: PULSE, WAVE, KIT", "OR NOISE. THE ROWS", "BELOW CHANGE WITH THE", "TYPE."}},
+    {"INSTRUMENT PAGE", {"NAME  PRESS INSERT TO", "  TYPE A NAME", "ENVELOPE  HOW THE", "  VOLUME GOES UP/DOWN", "TABLE  A LIST OF EXTRA", "  STEPS FOR THIS SOUND", "OUTPUT  LEFT, RIGHT OR", "  BOTH SPEAKERS", "LENGTH  HOW LONG A NOTE", "  LASTS", "", "SAMPLE LOADER KEY SAVES", "AND LOADS SOUNDS."}},
+};
+const Doc kTableDocs[] = {
+    {"TABLE PAGE", {"A TABLE IS A TINY", "PATTERN THAT PLAYS BY", "ITSELF WITH A SOUND.", "", "VOL  LOUDNESS", "TSP  PITCH CHANGE", "CMD  A SPECIAL TRICK", "     (TWO PER ROW)", "", "TO USE IT, SET TABLE", "ON THE INSTR PAGE.", "HOLD SHIFT+INSTR PARAMS", "TO SEE ALL COMMANDS."}},
+    {"TABLE PAGE", {"BKSP+LEFT/RIGHT", "  PICK ANOTHER TABLE", "BKSP  CLEARS A CELL", "SHIFT+INSERT+ARROWS", "  PICK MANY CELLS. THE", "  JOG WHEEL CHANGES", "  THEM ALL.", "COPY, SHIFT+COPY", "  COPY AND PASTE", "", "", "", ""}},
+};
+const Doc kGrooveDocs[] = {
+    {"GROOVE PAGE", {"A GROOVE SETS HOW LONG", "EACH STEP LASTS. THE", "NUMBERS ARE TICKS.", "", "6 AND 6  EVEN BEAT", "7 AND 5  SWING", "", "THE LIST REPEATS.", "USE COMMAND G IN A", "PHRASE TO PICK A", "GROOVE NUMBER.", "BKSP+LEFT/RIGHT PICKS", "ANOTHER GROOVE."}},
+};
+const Doc kProjectDocs[] = {
+    {"PROJECT PAGE", {"SETTINGS FOR THE SONG.", "", "NAME  INSERT TO TYPE", "TEMPO  BIGGER = FASTER", "TRANSPOSE  ALL NOTES UP", "  OR DOWN", "SYNC  OFF, MASTER OR", "  SLAVE (TWO SONGS)", "CLONE  DEEP OR SLIM", "LOOK  SCREEN COLORS", "PRELISTEN  PADS MAKE", "  SOUND WHEN ON", ""}},
+    {"PROJECT PAGE", {"CLEAN SONG DATA FREES", "CHAINS AND PHRASES YOU", "DO NOT USE. PRESS", "INSERT TWICE.", "CLEAN INSTR DATA DOES", "THE SAME FOR SOUNDS.", "", "SAVE / LOAD SONG USE", "FILES ON THE SD CARD.", "EXPORT WAV  AUDIO FILE", "EXPORT LSDJ  PICK A, B", "  OR A+B WITH < >, THEN", "  PRESS INSERT"}},
+};
+const Doc kSynthDocs[] = {
+    {"SYNTH PAGE", {"SYNTHS MAKE THE SHAPES", "THE WAV TRACK PLAYS.", "", "EACH ROW SHAPES THE", "SOUND: FILTER, DISTORT,", "PHASE AND VOLUME.", "", "L / R PICKS A DIGIT.", "INSERT+ARROWS CHANGES", "A VALUE.", "PLAY HEARS THE SYNTH.", "BKSP+L/R PICKS ANOTHER", "NEEDS GB/LSDJ.GB."}},
+};
+const Doc kWaveDocs[] = {
+    {"WAVE PAGE", {"A WAVE IS 32 DOTS THAT", "MAKE THE SHAPE OF A", "SOUND.", "", "< > MOVES ALONG.", "UP / DOWN MOVES A DOT.", "PLAY HEARS THE WAVE.", "BKSP+L/R PICKS ANOTHER", "  WAVE", "BKSP (TAP) COPIES IT.", "SHIFT+INSERT PASTES IT.", "", ""}},
+};
+const Doc kFileDocs[] = {
+    {"SONG FILES", {"THESE ARE THE SONGS ON", "THE SD CARD.", "", "UP / DOWN  CHOOSE", "INSERT  LOAD INTO THE", "  SONG ON SCREEN", "BKSP  GO BACK", "", "", "", "", "", ""}},
+};
+const Doc kLibraryDocs[] = {
+    {"LIBRARY", {"THE LIBRARY KEEPS YOUR", "SOUNDS ON THE CARD.", "", "TOP ROW  SAVES THE", "  SOUND ON SCREEN.", "  PRESS INSERT, TYPE A", "  NAME, THEN PRESS PLAY", "OTHER ROWS  LOAD A", "  FILE INTO THE SOUND", "  ON SCREEN", "BKSP  GO BACK", "", ""}},
+};
+
+// Cheat sheets: what the CMD column does. The first page is about the columns of the page; the command pages are shared.
+const Doc kCmdDocs[3] = {
+    {"COMMANDS", {"A xx  START TABLE xx", "      A20 STOPS IT", "B xy  MAYBE PLAY THE", "      NOTE. BIG = OFTEN", "C xy  CHORD: THE NOTE", "      +x AND +y STEPS", "D xx  DELAY THE NOTE", "      BY xx TICKS", "E xy  VOLUME x, THEN", "      FADE SPEED y", "F xy  FINE TUNE (PU)", "", ""}},
+    {"COMMANDS", {"G xx  GROOVE NUMBER", "H xx  HOP TO STEP x OF", "      NEXT PHRASE", "      HFF STOPS ALL", "K xx  STOP THE NOTE", "      AFTER xx TICKS", "L xx  SLIDE TO THE NEW", "      NOTE IN xx TICKS", "M xy  MASTER VOLUME", "O xx  OUTPUT (0 = OFF)", "      1 L  2 R  3 BOTH", "", ""}},
+    {"COMMANDS", {"P xx  PITCH BEND", "      FF BENDS DOWN", "R xy  REPEAT THE NOTE", "      EVERY y TICKS", "S xy  SWEEP (PU1) OR", "      SHAPE (NOISE)", "T xx  TEMPO", "V xy  VIBRATO: x SPEED", "      y DEPTH", "W xx  PULSE WIDTH", "Z xy  RANDOMIZE THE", "      LAST COMMAND", ""}},
+};
+const Doc kPhraseSheetDocs[4] = {
+    {"PHRASE COLUMNS", {"NOTE   THE PITCH", "INSTR  WHICH SOUND", "CMD    A SPECIAL TRICK", "       A LETTER AND A", "       2-DIGIT NUMBER", "", "x AND y ARE EACH ONE", "DIGIT, 0 TO F.", "xx IS BOTH DIGITS AS", "ONE NUMBER, 00 TO FF.", "", "TURN THE PAGE WITH", "< > FOR EVERY COMMAND"}},
+    kCmdDocs[0], kCmdDocs[1], kCmdDocs[2]};
+const Doc kTableSheetDocs[4] = {
+    {"TABLE COLUMNS", {"VOL  LOUDNESS", "TSP  PITCH CHANGE", "CMD  A SPECIAL TRICK,", "     A LETTER AND A", "     2-DIGIT NUMBER", "     (TWO PER ROW)", "", "x AND y ARE EACH ONE", "DIGIT, 0 TO F.", "xx IS BOTH DIGITS AS", "ONE NUMBER, 00 TO FF.", "", "TURN < > FOR COMMANDS"}},
+    kCmdDocs[0], kCmdDocs[1], kCmdDocs[2]};
+
+const Doc* docsFor(Lsdj::Popup p, Scr s, int& n) {
+    n = 0;
+    auto set = [&](const Doc* d, size_t c) { n = int(c); return d; };
+    if (p == Lsdj::kPhraseSheet) return set(kPhraseSheetDocs, 4);
+    if (p == Lsdj::kTableSheet) return set(kTableSheetDocs, 4);
+    switch (s) {
+        case Scr::Song: return set(kSongDocs, 2);
+        case Scr::Chain: return set(kChainDocs, 2);
+        case Scr::Phrase: return set(kPhraseDocs, 3);
+        case Scr::Instr: return set(kInstrDocs, 2);
+        case Scr::Table: return set(kTableDocs, 2);
+        case Scr::Groove: return set(kGrooveDocs, 1);
+        case Scr::Project: return set(kProjectDocs, 2);
+        case Scr::Synth: return set(kSynthDocs, 1);
+        case Scr::Wave: return set(kWaveDocs, 1);
+        case Scr::File: return set(kFileDocs, 1);
+        case Scr::Library: return set(kLibraryDocs, 1);
+        default: return set(kHelpDocs, Lsdj::kHelpPages);
+    }
+}
+
+// A page of text: a title bar, up to 13 lines starting one column in from the edge, and the page counter at the bottom.
+void drawDoc(Lcd& l, const Doc& d, int page, int pages, int x0, int w, const char* foot) {
+    l.rect(x0, 8, w, 8, 3);
+    l.text(1, 1, d.title, true);
+    for (int i = 0; i < 13; ++i) if (d.line[i] && d.line[i][0]) l.text(1, 2 + i, d.line[i]);
+    char t[24];
+    std::snprintf(t, sizeof t, "%d/%d", page + 1, pages);
+    l.text(1, 15, foot);
+    l.text(23 - int(std::strlen(t)), 15, t);
+}
 }  // namespace
 
+bool Lsdj::docsFit() {
+    auto fits = [](const Doc* d, int n) { for (int i = 0; i < n; ++i) for (const char* ln : d[i].line) if (ln && std::strlen(ln) > 23) return false; return true; };
+    return fits(kHelpDocs, kHelpPages) && fits(kSongDocs, 2) && fits(kChainDocs, 2) && fits(kPhraseDocs, 3) && fits(kInstrDocs, 2) && fits(kTableDocs, 2) && fits(kGrooveDocs, 1) &&
+           fits(kProjectDocs, 2) && fits(kSynthDocs, 1) && fits(kWaveDocs, 1) && fits(kFileDocs, 1) && fits(kLibraryDocs, 1) && fits(kPhraseSheetDocs, 4) && fits(kTableSheetDocs, 4);
+}
+
+int Lsdj::popupPages() const { int n; docsFor(popup_, scr_, n); return n; }
+void Lsdj::popupTurn(int d) { popupPage_ = clampi(popupPage_ + d, 0, std::max(0, popupPages() - 1)); }
+
+void Lsdj::drawPopup(Lcd& l) const {
+    int n;
+    const Doc* d = docsFor(popup_, scr_, n);
+    const int page = clampi(popupPage_, 0, n - 1);
+    l.rect(0, 0, 200, 144, 3);                       // covers the page and the side panel; a border of the dark shade
+    l.rect(2, 2, 196, 140, 0);
+    drawDoc(l, d[page], page, n, 2, 196, n > 1 ? "< > PAGE" : "");
+}
+
 void Lsdj::drawHelp(Lcd& l) const {
-    const HelpPage& h = kHelp[clampi(helpPage, 0, kHelpPages - 1)];
-    char t[28]; std::snprintf(t, sizeof t, "HELP %d/%d %s", helpPage + 1, kHelpPages, h.title);
-    l.rect(0, 0, 200, 8, 3);
-    l.text(0, 0, t, true);
-    for (int i = 0; i < 15; ++i) l.text(0, 2 + i, h.line[i]);
-    l.text(0, 17, "< > PAGE        B EXIT");
+    const int p = clampi(helpPage, 0, kHelpPages - 1);
+    drawDoc(l, kHelpDocs[p], p, kHelpPages, 0, 200, "<> PAGE  BKSP EXIT");
 }
 
 // ---- Wave and Synth screens ---------------------------------------------------------------------------------------------
@@ -1162,13 +1312,14 @@ void Lsdj::drawProject(Lcd& l) const {
     row(12, console_ ? "SAVE SONG B" : "SAVE SONG A", "", projRow == 10);
     row(13, console_ ? "LOAD SONG B" : "LOAD SONG A", "", projRow == 11);
     row(14, "EXPORT WAV", "", projRow == 12);
-    row(15, "EXPORT LSDJ (A+B)", "", projRow == 13);
+    row(15, "EXPORT LSDJ", exportSel == 0 ? "A" : exportSel == 1 ? "B" : "A+B", projRow == 13);
     l.text(0, 17, status_);
     l.text(0, 16, audio_[0] ? audio_ : "WORK TIME: 0:00");
 }
 
 void Lsdj::drawInstr(Lcd& l) const {
-    char t[24]; std::snprintf(t, sizeof t, "INSTRUMENT %02X", instr); l.text(0, 0, t);
+    l.text(0, 0, "INSTRUMENT");
+    { char t[4]; std::snprintf(t, sizeof t, "%02X", instr); l.text(11, 0, t, instrRow < 0); }
     const uint8_t* in = s_.instrument(instr);
     char nm[6]; instrName(instr, nm);
     l.text(0, 2, "NAME"); l.rect(72, 16, 40, 8, 1); l.text(9, 2, nm, instrRow == 0);

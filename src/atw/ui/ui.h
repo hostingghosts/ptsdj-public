@@ -29,11 +29,12 @@ public:
     void encoder(int delta) override;
     bool pad(int p, bool down, uint8_t vel) override;
     bool animated() const override { return true; }
-    static void drawLens(ot::Gfx& g, bool playing);       // the grey Game Boy bezel around the display
+    static void drawLens(ot::Gfx& g, bool playing, int look);   // the grey Game Boy bezel around the display, with a margin of screen colour so no letter touches the frame
+    static constexpr int kLcdX = 100, kLcdY = 28;           // where the single display sits
 
 private:
     bool splitOn() const;
-    void drawStrip(ot::Gfx& g);
+    void drawStrip(ot::Gfx& g, int top);
     App* app_ = nullptr;
     gb::Lsdj* lsdj_ = nullptr;                      // the console on screen (in the split view: the one the keys control)
     gb::Lsdj* lsdjA_ = nullptr;
@@ -41,6 +42,10 @@ private:
     gb::Lcd lcd_;                                   // one buffer: the split view renders and uploads A, then B
     bool shift_ = false;
     bool split_ = false;
+    bool aHeld_ = false, bHeld_ = false;            // F1 / F8 held in the split view: the F key dock is up
+    uint8_t popupKey_ = 0xFF;                       // the key holding a pop-up open (F8, or Note / Instr params with Shift)
+    float dock_ = 0;                                // 0 lowered .. 1 raised
+    void closePopup() { if (lsdj_) lsdj_->hidePopup(); popupKey_ = 0xFF; }
     int volHeld_ = -1;                              // F2 / F7 held: the jog wheel sets that console's level
     void swapConsole() { if (lsdjB_) lsdj_ = lsdj_ == lsdjA_ ? lsdjB_ : lsdjA_; }
 };

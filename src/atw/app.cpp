@@ -280,7 +280,7 @@ bool App::LinkedTransport::action(Action a, int slot) {
             std::snprintf(path, sizeof path, "%s/%s.wav", kExportDir, base);
             return app->exportWav(path, 44100, 600);
         }
-        case kExportFiles: return app->exportFiles();
+        case kExportFiles: return app->exportFiles(nullptr, slot);
     }
     return false;
 }
@@ -369,23 +369,25 @@ void App::bootChime(int stage) {
 }
 
 // Both songs as LSDJ files for two real Game Boys: Snn_A / Snn_B as .lsdsng (for the file manager) and as .sav (the song as working memory).
-bool App::exportFiles(const char* name) {
+bool App::exportFiles(const char* name, int which) {
     if (!p_.storage || !fileBuf()) return false;
     p_.storage->mkdir(kExportDir);
     char base[2][16];
     projectFileName(0, base[0], sizeof base[0], "SONGA");
     projectFileName(1, base[1], sizeof base[1], "SONGB");
     if (name) { std::snprintf(base[0], sizeof base[0], "%s_A", name); std::snprintf(base[1], sizeof base[1], "%s_B", name); }
-    else if (std::strcmp(base[0], base[1]) == 0) { std::strncat(base[0], "_A", 3); std::strncat(base[1], "_B", 3); }
+    else if (which == 2 && std::strcmp(base[0], base[1]) == 0) { std::strncat(base[0], "_A", 3); std::strncat(base[1], "_B", 3); }
     bool ok = true;
     int step = 0;
+    const int steps = (which == 2 ? 4 : 2);
     for (int c = 0; c < 2; ++c) {
+        if (which != 2 && which != c) continue;
         char path[80], sn[16];
-        progress("EXPORT LSDJ", step++ * 25);
+        progress("EXPORT LSDJ", step++ * 100 / steps);
         std::snprintf(path, sizeof path, "%s/%s.lsdsng", kExportDir, base[c]);
         std::snprintf(sn, sizeof sn, "%.8s", base[c]);
         ok = saveSong(path, sn, c) && ok;
-        progress("EXPORT LSDJ", step++ * 25);
+        progress("EXPORT LSDJ", step++ * 100 / steps);
         std::snprintf(path, sizeof path, "%s/%s.sav", kExportDir, base[c]);
         ok = saveSav(path, c) && ok;
     }

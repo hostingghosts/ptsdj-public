@@ -135,7 +135,7 @@ TEST(first_screen_is_the_song_screen_on_the_game_boy_lcd) {
     r.loop(100);
     CHECK(r.display.frames > 0);
     CHECK_EQ(int(r.app.lsdj.screen()), int(gb::Scr::Song));
-    CHECK(r.display.texts <= 2);                       // only the lens legend and BATTERY: the screen itself is one bitmap
+    CHECK(r.display.texts <= 3);                       // only the lens legend, BATTERY and the ? over F8: the screen itself is one bitmap
     CHECK(r.display.maxWords < 100);                   // and the display list stays tiny
 }
 
@@ -145,7 +145,7 @@ TEST(splash_comes_first_then_the_lcd) {
     r.loop(100);
     CHECK(r.display.texts > 0);
     r.loop(400);
-    CHECK(r.display.texts <= 2);
+    CHECK(r.display.texts <= 3);
 }
 
 TEST(keys_edit_the_song_and_play_starts_the_player) {
@@ -194,7 +194,7 @@ TEST(power_hold_shows_the_shutdown_bar_and_mutes_then_cancel_restores) {
     r.push(ot::InputEvent::kButtonUp, b::Power);
     r.loop(50);
     CHECK(!gMuted);
-    CHECK(r.display.texts <= 2);
+    CHECK(r.display.texts <= 3);
 }
 
 TEST(display_list_stays_within_budget) {
@@ -830,6 +830,7 @@ TEST(f_keys_pick_the_console_mute_and_solo_tracks_and_set_levels) {
     r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
     r.loop(3);
     CHECK(r.app.player.muted(0) && !r.app.player.muted(1) && r.app.player.muted(2) && r.app.player.muted(3));
+    keyTap(r, ot::btn::Master);                                 // side by side: F8 is song B, and now selects it
     keyTap(r, ot::btn::F8);                                     // song B active: F5 now mutes track 5
     keyTap(r, ot::btn::F5);
     CHECK(r.app.playerB.muted(2));
@@ -894,4 +895,206 @@ TEST(instrument_library_saves_and_loads_an_instrument_with_its_table) {
     CHECK(s.instrument(9)[6] & 0x20);
     CHECK(t != 5);
     CHECK_EQ(int(s.at(uint16_t(gb::off::kTblEnv + t * 16 + 2))), 0x77);
+}
+
+
+TEST(the_instrument_number_at_the_top_scrolls_through_instruments) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Instr);
+    l.instrRow = 0; l.instr = 3;
+    tapKey(l, gb::Key::Up);
+    CHECK_EQ(l.instrRow, -1);
+    tapKey(l, gb::Key::Right);
+    CHECK_EQ(l.instr, 4);
+    r.app.lsdj.encoder(2);
+    CHECK_EQ(l.instr, 6);
+    padEvent(r, ot::InputEvent::kPadDown, 20);                  // and the pads play the instrument on screen
+    CHECK(r.app.player.voiceOn(0) || r.app.player.voiceOn(1) || r.app.player.voiceOn(2) || r.app.player.voiceOn(3));
+    padEvent(r, ot::InputEvent::kPadUp, 20);
+    tapKey(l, gb::Key::Down);
+    CHECK_EQ(l.instrRow, 0);
+}
+
+TEST(delete_clears_a_cell_or_every_selected_cell_and_the_jog_wheel_changes_them_all) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    gb::Song& s = r.app.song;
+    for (int c = 0; c < 4; ++c) for (int rr = 0; rr < 8; ++rr) s.songCell(rr, c) = 0xFF;
+    s.songCell(0, 0) = 3; s.songCell(1, 0) = 4; s.songCell(2, 0) = 5;
+    keyTap(r, ot::btn::Song);
+    l.songRow = 1; l.songCh = 0;
+    tapKey(l, gb::Key::B);                                      // a lone Delete tap clears the box
+    CHECK_EQ(int(s.songCell(1, 0)), 0xFF);
+    CHECK_EQ(int(s.songCell(0, 0)), 3);
+    l.songRow = 0;                                              // Shift + Insert + Down, Down: three boxes
+    l.key(gb::Key::Select, true); l.key(gb::Key::A, true);
+    tapKey(l, gb::Key::Down); tapKey(l, gb::Key::Down);
+    l.key(gb::Key::A, false); l.key(gb::Key::Select, false);
+    CHECK(l.selecting());
+    l.encoder(1);                                               // the jog wheel changes the filled boxes only
+    CHECK_EQ(int(s.songCell(0, 0)), 4);
+    CHECK_EQ(int(s.songCell(1, 0)), 0xFF);
+    CHECK_EQ(int(s.songCell(2, 0)), 6);
+    CHECK(l.selecting());
+    tapKey(l, gb::Key::B);                                      // Delete clears them all
+    CHECK_EQ(int(s.songCell(0, 0)), 0xFF);
+    CHECK_EQ(int(s.songCell(2, 0)), 0xFF);
+    CHECK(!l.selecting());
+    keyTap(r, ot::btn::Note);                                   // a phrase: a note and its command value clear together
+    l.phrase = 2; l.step = 4; l.phraseCol = 2;
+    s.note(2, 4) = 30; s.phraseCmd(2, 4) = 5; s.phraseVal(2, 4) = 0x12;
+    tapKey(l, gb::Key::B);
+    CHECK_EQ(int(s.phraseCmd(2, 4)), 0);
+    CHECK_EQ(int(s.phraseVal(2, 4)), 0);
+    CHECK_EQ(int(s.note(2, 4)), 30);
+}
+
+TEST(delete_and_the_name_keyboard_and_help_use_the_same_exit_key) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Instr);
+    l.instrRow = 0;
+    tapKey(l, gb::Key::A);
+    CHECK(l.nameEditing());
+    l.key(gb::Key::Select, true); l.key(gb::Key::Select, false);      // Shift no longer cancels
+    CHECK(l.nameEditing());
+    tapKey(l, gb::Key::B);                                      // Delete = NO
+    CHECK(!l.nameEditing());
+    keyTap(r, ot::btn::Help);
+    tapKey(l, gb::Key::A);                                      // only Delete leaves the help
+    CHECK(l.screen() == gb::Scr::Help);
+    tapKey(l, gb::Key::B);
+    CHECK(l.screen() != gb::Scr::Help);
+}
+
+TEST(f8_explains_the_page_while_held_and_arrows_turn_its_pages) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    CHECK(gb::Lsdj::docsFit());
+    keyTap(r, ot::btn::Pattern);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::F8);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kPageHelp);
+    const int pages = l.popupPages();
+    CHECK(pages >= 2);
+    const int chainPos = l.chainPos;
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Right); r.push(ot::InputEvent::kButtonUp, ot::btn::Right);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Down); r.push(ot::InputEvent::kButtonUp, ot::btn::Down);
+    r.loop(3);
+    CHECK_EQ(l.popupPage(), 1);
+    CHECK_EQ(l.chainPos, chainPos);                             // the arrows turned pages instead of moving the cursor
+    CHECK(l.screen() == gb::Scr::Chain);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::F8);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kNoPopup);
+    for (gb::Scr sc : {gb::Scr::Song, gb::Scr::Phrase, gb::Scr::Instr, gb::Scr::Table, gb::Scr::Groove, gb::Scr::Project, gb::Scr::Synth, gb::Scr::Wave}) {
+        l.show(sc);
+        l.showPopup(gb::Lsdj::kPageHelp);
+        CHECK(l.popupPages() >= 1);
+        gb::Lcd lcd;
+        l.draw(lcd);                                            // drawing every page must not crash
+        l.hidePopup();
+    }
+}
+
+TEST(shift_note_and_shift_instr_params_show_the_command_cheat_sheets_until_released) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Pattern);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Note);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kPhraseSheet);
+    CHECK(l.screen() == gb::Scr::Chain);                        // the page stays where it was
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Right); r.push(ot::InputEvent::kButtonUp, ot::btn::Right);
+    r.loop(3);
+    CHECK_EQ(l.popupPage(), 1);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Note);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kNoPopup);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::InstrParams);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kTableSheet);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);          // letting go of Shift closes it too
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kNoPopup);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::InstrParams);
+    r.loop(3);
+}
+
+TEST(export_lsdj_can_write_song_a_song_b_or_both) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    oneNote(r.app.songB, 3, 49, 3);
+    CHECK(r.app.exportFiles("X", 0));
+    CHECK_EQ(int(st.files.count("GB/Export/X_A.lsdsng")), 1);
+    CHECK_EQ(int(st.files.count("GB/Export/X_B.lsdsng")), 0);
+    CHECK(r.app.exportFiles("Y", 1));
+    CHECK_EQ(int(st.files.count("GB/Export/Y_B.sav")), 1);
+    CHECK_EQ(int(st.files.count("GB/Export/Y_A.sav")), 0);
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Config);
+    l.projRow = 13;
+    CHECK_EQ(l.exportSel, 2);                                   // A + B by default
+    tapKey(l, gb::Key::Left);                                   // plain Left only moves; Insert + Left picks
+    l.key(gb::Key::A, true); tapKey(l, gb::Key::Left); l.key(gb::Key::A, false);
+    CHECK_EQ(l.exportSel, 1);
+}
+
+namespace {
+struct LeadStub final : gb::Transport {
+    gb::Player* p = nullptr;
+    int lead = 0;
+    void start(int, int row) override { p->start(row); }
+    void startLoop(int, int ch, int phrase, int row) override { p->start(row, ch, phrase, true); }
+    void stop() override { p->stop(); }
+    bool running() const override { return p->running(); }
+    bool action(Action, int) override { return true; }
+    int listSongs() override { return 0; }
+    const char* songName(int) override { return ""; }
+    bool loadSongFile(int, int) override { return false; }
+    int syncMode(int) override { return 0; }
+    void setSyncMode(int, int) override {}
+    void tempoChanged(int) override {}
+    int listInstruments() override { return 0; }
+    const char* instrumentFile(int) override { return ""; }
+    bool saveInstrumentFile(const char*, const uint8_t*, int) override { return true; }
+    int loadInstrumentFile(int, uint8_t*, int) override { return -1; }
+    bool linked() override { return false; }
+    int volume(int) override { return 15; }
+    void setVolume(int, int) override {}
+    int look() override { return 0; }
+    void setLook(int) override {}
+    int audioLeadMs() override { return lead; }
+};
+}  // namespace
+
+TEST(recorded_pad_notes_land_where_they_were_heard_not_where_the_audio_queue_has_got_to) {
+    gb::Song s;
+    gb::Player p(s);
+    gb::Lsdj l(s, p);
+    LeadStub t; t.p = &p;
+    l.setTransport(&t, 0);
+    p.setTempo(100);                                            // a tick every 25 ms, a step every 150 ms
+    for (int i = 0; i < 16; ++i) { s.note(7, i) = 0; s.phraseInstr(7, i) = 0xFF; }
+    l.show(gb::Scr::Phrase);
+    l.phrase = 7; l.songCh = 0;
+    l.toggleRecMode();
+    l.key(gb::Key::Start, true); l.key(gb::Key::Start, false);
+    CHECK(p.running());
+    int16_t buf[2 * 512];
+    for (int i = 0; i < 40; ++i) p.render(buf, 512, 44100);
+    auto where = [&](int lead) {
+        for (int i = 0; i < 16; ++i) { s.note(7, i) = 0; s.phraseInstr(7, i) = 0xFF; }
+        t.lead = lead;
+        l.padDown(10);
+        l.padUp(10);
+        for (int i = 0; i < 16; ++i) if (s.note(7, i)) return i;
+        return -1;
+    };
+    const int now = where(0), heard = where(148);
+    CHECK(now >= 0 && heard >= 0);
+    CHECK_EQ((now - heard + 16) % 16, 1);                       // a step's worth of lead moves the note one step back
 }

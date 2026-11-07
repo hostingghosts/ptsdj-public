@@ -71,11 +71,17 @@ public:
     bool saveLinked(const char* base);
     // Renders both songs once from their first rows until every channel has come round again (or `maxSeconds`); writes a 16-bit stereo WAV.
     bool exportWav(const char* path, int rate = 44100, int maxSeconds = 600);
-    bool exportFiles(const char* name = nullptr);   // both songs as .lsdsng and .sav in GB/Export, named after the projects (or `name`_A / _B)
+    bool exportFiles(const char* name = nullptr, int which = 2);   // song A (0), B (1) or both (2) as .lsdsng and .sav in GB/Export, named after the projects (or `name`_A / _B)
     bool saveProject(int console);             // GB/Songs/<project name>.lsdsng
     void progress(const char* label, int pct); // a long action reports here: the bar is drawn at once, over whatever is on screen
     void bootChime(int stage);                 // 0 low note, 1 high note, 2 silence: the power-on sound of the splash
     int look() const { return look_; }
+    // How long a sound rendered now waits before the speakers play it: what is queued in the ring, plus the output buffer.
+    int audioLeadMs() const {
+        const uint32_t rate = p_.sampleRateMilliHz / 1000;
+        if (!rate) return 0;
+        return int((ringHead_.load(std::memory_order_relaxed) - ringTail_.load(std::memory_order_relaxed)) * 1000u / rate) + 6;
+    }
     bool saveSav(const char* path, int console);
     static constexpr const char* kSongDir = "GB/Songs";
     static constexpr const char* kExportDir = "GB/Export";   // WAV exports; the session is always called SESSION until a file browser exists
@@ -151,6 +157,7 @@ private:
         void setVolume(int console, int v) override { app->dual.setVolume(console, v); }
         int look() override { return app->look_; }
         void setLook(int i) override { app->look_ = i & 3; }
+        int audioLeadMs() override { return app->audioLeadMs(); }
     } transport_;
     Platform p_;
 };

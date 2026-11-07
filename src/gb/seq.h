@@ -43,7 +43,7 @@ public:
                 advance(h);
                 break;
             }
-            h.wait = grooveTicks(h);
+            h.len = h.wait = grooveTicks(h);
         }
     }
     // Called from the step callback: jump to `step` of the next phrase (H00-H0F); false ends the channel.
@@ -52,6 +52,7 @@ public:
     void setGroove(int c, uint8_t g) { ch_[c].groove = g & 31; ch_[c].gpos = 0; }
     bool playing() const { return ch_[0].active || ch_[1].active || ch_[2].active || ch_[3].active; }
     int row(int c) const { return ch_[c].row; }
+    int waitLen(int c) const { return ch_[c].len; }          // the ticks the channel's current step lasts in all
     int wait(int c) const { return ch_[c].wait; }          // ticks until the channel's next step starts
     bool active(int c) const { return ch_[c].active; }
     bool allLooped() const { for (const Ch& h : ch_) if (h.active && !h.looped) return false; return true; }
@@ -63,7 +64,7 @@ public:
 private:
     struct Ch {
         bool active = false, looped = false, loop = false;     // looped: the channel has come round to song row 0 again
-        int row = 0, cpos = 0, step = 0, gpos = 0, wait = 0;
+        int row = 0, cpos = 0, step = 0, gpos = 0, wait = 0, len = 6;
         uint8_t chain = 0xFF, phrase = 0xFF, groove = 0;
         int hopStep = -1;
     };

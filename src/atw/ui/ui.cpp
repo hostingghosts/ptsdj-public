@@ -1,6 +1,7 @@
 // GB tracker -- user interface shell (ui.h).
 #include "atw/ui/ui.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "atw/app.h"
@@ -80,9 +81,9 @@ void Ui::drawShutdown(ot::Gfx& g) {
 static constexpr uint32_t kSplashLand = 1500;
 
 void Ui::drawSplash(ot::Gfx& g, uint32_t el) {
-    GbScreen::drawLens(g, false);
+    GbScreen::drawLens(g, false, app_->look());
     g.color(0xFFFFFF);
-    blank_.lcd().draw(g.display(), 100, 24, 3);
+    blank_.lcd().draw(g.display(), GbScreen::kLcdX, GbScreen::kLcdY, 3);
     (void)el;
 }
 
@@ -168,11 +169,12 @@ namespace {
 constexpr uint32_t kLens = 0x77757F, kLensDark = 0x2E2C36, kLensLight = 0xD6D4DE, kMagenta = 0x8E2F5A, kNavy = 0x2D3258;
 }
 
-// The grey Game Boy bezel: dark frame round the display window, the "DOT MATRIX WITH STEREO SOUND" legend between two pairs of coloured lines,
-// and the battery light on the left.
-void GbScreen::drawLens(ot::Gfx& g, bool playing) {
+// The grey Game Boy bezel: dark frame round the display window (with a margin of the screen's own colour inside it), the "DOT MATRIX WITH
+// STEREO SOUND" legend between two pairs of coloured lines, and the battery light on the left.
+void GbScreen::drawLens(ot::Gfx& g, bool playing, int look) {
     g.fill(0, 0, 800, 480, kLens);
-    g.fill(94, 18, 612, 442, kLensDark);
+    g.fill(84, 14, 632, 460, kLensDark);
+    g.fill(92, 20, 616, 448, gb::Lcd::kPalettes[look & 3][0]);
     g.fill(100, 3, 165, 2, kMagenta); g.fill(100, 9, 165, 2, kNavy);
     g.fill(535, 3, 165, 2, kMagenta); g.fill(535, 9, 165, 2, kNavy);
     g.text(400, 1, ui::kSmall, kLensLight, "DOT MATRIX WITH STEREO SOUND", ot::IDisplay::kOptCenterX);
@@ -183,27 +185,33 @@ void GbScreen::drawLens(ot::Gfx& g, bool playing) {
 void GbScreen::draw(ot::Gfx& g) {
     if (!lsdj_) return;
     const bool play = lsdjA_->playing() || (lsdjB_ && lsdjB_->playing());
+    const int look = app_->look();
     if (!splitOn()) {
-        drawLens(g, play);
+        drawLens(g, play, look);
         g.color(0xFFFFFF);
-        lcd_.draw(g.display(), 100, 24, 3);
+        lcd_.draw(g.display(), kLcdX, kLcdY, 3);
+        g.text(750, 462, ui::kSmall, kLensLight, "?", ot::IDisplay::kOptCenterX);      // F8 explains the page
         return;
     }
     g.fill(0, 0, 800, 480, kLens);
     g.text(400, 1, ui::kSmall, kLensLight, "DOT MATRIX WITH STEREO SOUND", ot::IDisplay::kOptCenterX);
-    g.fill(0, 36, 800, 296, kLensDark);
+    g.fill(0, 52, 800, 296, kLensDark);
     const bool aActive = lsdj_ == lsdjA_;
     g.color(aActive ? 0xFFFFFF : 0x8C8C8C);                 // the console that is not controlled is dimmed
-    lcd_.draw(g.display(), 0, 40, 2);
+    lcd_.draw(g.display(), 0, 56, 2);
     g.color(aActive ? 0x8C8C8C : 0xFFFFFF);
-    lcd_.draw(g.display(), 400, 40, 2, gb::Lcd::kRamB);
-    g.frame(aActive ? 0 : 400, 38, 400, 292, 0xFFD84A, 3);
-    drawStrip(g);
+    lcd_.draw(g.display(), 400, 56, 2, gb::Lcd::kRamB);
+    g.text(50, 462, ui::kSmall, aActive ? 0xFFD84A : kLensLight, "A", ot::IDisplay::kOptCenterX);      // above F1 and F8: hold one to raise the dock
+    g.text(750, 462, ui::kSmall, aActive ? kLensLight : 0xFFD84A, "B", ot::IDisplay::kOptCenterX);
+    const bool want = aHeld_ || bHeld_ || volHeld_ >= 0;
+    dock_ = want ? std::min(1.f, dock_ + 0.4f) : std::max(0.f, dock_ - 0.4f);
+    if (dock_ > 0) drawStrip(g, 480 - int(136 * dock_));
 }
 
 // F1..F8 sit under the screen: song A, its level, the four tracks of the active song (mute, solo with Shift), song B's level, song B.
-void GbScreen::drawStrip(ot::Gfx& g) {
-    const int y = 344, h = 96, w = 94;
+void GbScreen::drawStrip(ot::Gfx& g, int dockTop) {
+    g.fill(0, dockTop, 800, 480 - dockTop, kLensDark);
+    const int y = dockTop + 4, h = 96, w = 94;
     const bool aActive = lsdj_ == lsdjA_;
     for (int i = 0; i < 8; ++i) {
         const int x = 3 + i * 100;
@@ -243,9 +251,22 @@ bool GbScreen::button(uint8_t id, bool down) {
     using gb::Key;
     using gb::Scr;
     if (id <= ot::btn::F8) {
-        if (id == 0 || id == 7) { if (down) lsdj_ = id == 0 ? lsdjA_ : lsdjB_; }
+        if (id == 7 && !splitOn()) {                       // F8 outside the side by side view: hold it for an explanation of the page
+            if (down && lsdj_->screen() != Scr::Help) { lsdj_->showPopup(gb::Lsdj::kPageHelp); popupKey_ = id; }
+            else if (!down && popupKey_ == id) closePopup();
+            return true;
+        }
+        if (id == 0 || id == 7) {
+            (id == 0 ? aHeld_ : bHeld_) = down;
+            if (down) lsdj_ = id == 0 ? lsdjA_ : lsdjB_;
+        }
         else if (id == 1 || id == 6) volHeld_ = down ? (id == 1 ? 0 : 1) : -1;
         else if (down) { if (shift_) lsdj_->soloChannel(id - 2); else lsdj_->toggleMuteChannel(id - 2); }
+        return true;
+    }
+    if (popupKey_ != 0xFF && (id == ot::btn::Left || id == ot::btn::Right || id == ot::btn::Up || id == ot::btn::Down)) {   // a pop-up is up: left / right turn its pages
+        if (down && id == ot::btn::Left) lsdj_->popupTurn(-1);
+        else if (down && id == ot::btn::Right) lsdj_->popupTurn(1);
         return true;
     }
     switch (id) {
@@ -255,7 +276,11 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::Right: lsdj_->key(Key::Right, down); break;
         case ot::btn::Insert: lsdj_->key(Key::A, down); break;       // A
         case ot::btn::Delete: lsdj_->key(Key::B, down); break;       // B
-        case ot::btn::Shift: shift_ = down; lsdj_->key(Key::Select, down); break;   // Select
+        case ot::btn::Shift:
+            shift_ = down;
+            if (!down && (popupKey_ == ot::btn::Note || popupKey_ == ot::btn::InstrParams)) closePopup();
+            lsdj_->key(Key::Select, down);
+            break;                                                                      // Select
         case ot::btn::Play: lsdj_->key(Key::Start, down); break;
         case ot::btn::Rec: if (down) lsdj_->toggleRecMode(); break;      // Phrase page: Rec mode on/off
         case ot::btn::Copy: if (down) lsdj_->copyKey(shift_); break;
@@ -264,9 +289,17 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::SampleLoader: if (down) lsdj_->openLibrary(); break;
         case ot::btn::Song: if (down) { if (shift_) swapConsole(); else lsdj_->jump(Scr::Song); } break;
         case ot::btn::Pattern: if (down) lsdj_->jump(Scr::Chain); break;
-        case ot::btn::Note: if (down) lsdj_->jump(Scr::Phrase); break;
+        case ot::btn::Note:                                                             // Shift + Note (held): the Phrase page's commands
+            if (down && shift_) { lsdj_->showPopup(gb::Lsdj::kPhraseSheet); popupKey_ = id; }
+            else if (down) lsdj_->jump(Scr::Phrase);
+            else if (popupKey_ == id) closePopup();
+            break;
         case ot::btn::Instr: if (down) lsdj_->jump(Scr::Instr); break;
-        case ot::btn::InstrParams: if (down) lsdj_->jump(Scr::Table); break;
+        case ot::btn::InstrParams:                                                      // Shift + Instr params (held): the Table page's commands
+            if (down && shift_) { lsdj_->showPopup(gb::Lsdj::kTableSheet); popupKey_ = id; }
+            else if (down) lsdj_->jump(Scr::Table);
+            else if (popupKey_ == id) closePopup();
+            break;
         case ot::btn::Fx1: if (down) lsdj_->jump(Scr::Synth); break;
         case ot::btn::Fx2: if (down) lsdj_->jump(Scr::Wave); break;
         case ot::btn::Config: if (down) lsdj_->jump(Scr::Project); break;

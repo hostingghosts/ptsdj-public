@@ -23,7 +23,7 @@ struct Transport {
     virtual void stop() = 0;
     virtual bool running() const = 0;
     enum Action { kSavePair, kLoadPair, kExportWav, kExportFiles, kSaveSong };
-    virtual bool action(Action a, int slot) = 0;      // kSaveSong: slot = the console; the others use the project names
+    virtual bool action(Action a, int slot) = 0;      // kSaveSong: slot = the console; kExportFiles: 0 = A, 1 = B, 2 = A + B; the others use the project names
     virtual int listSongs() = 0;                      // reads GB/Songs: how many .lsdsng files
     virtual const char* songName(int i) = 0;          // file name without the extension
     virtual bool loadSongFile(int i, int console) = 0;               // session actions from the Project screen; false = failed
@@ -41,6 +41,7 @@ struct Transport {
     virtual void setVolume(int console, int v) = 0;
     virtual int look() = 0;                           // LCD colours: 0 green, 1 gray, 2 amber, 3 ice
     virtual void setLook(int i) = 0;
+    virtual int audioLeadMs() { return 0; }           // how far ahead of the speakers the players run (a pad press is heard this much later than the sequencer's position)
 };
 
 class Lsdj {
@@ -63,6 +64,15 @@ public:
     void openFiles();                        // the song list for this console
     void openLibrary();                      // the instrument library (Sample loader key)
     void openHelp();                         // the help pages (Help key, or Insert on the Project page's HELP row)
+    // Pop-ups that stay up while a key is held: the page's help (F8), and the command cheat sheets for the Phrase (Shift + Note) and Table (Shift + Instr params) pages.
+    enum Popup : uint8_t { kNoPopup, kPageHelp, kPhraseSheet, kTableSheet };
+    void showPopup(Popup p) { popup_ = p; popupPage_ = 0; }
+    void hidePopup() { popup_ = kNoPopup; }
+    Popup popup() const { return popup_; }
+    void popupTurn(int d);
+    int popupPage() const { return popupPage_; }
+    int popupPages() const;
+    static bool docsFit();                       // every help line fits the pop-up (23 characters)
     void copyKey(bool paste);                // Copy copies the selected cells (or the one under the cursor), Shift + Copy pastes them
     void draw(Lcd& l) const;
     void setBanner(const char* s) { banner_ = s; }
@@ -100,7 +110,8 @@ public:
     int helpPage = 0;
     int libSel = 0, libCount = 0;               // Library screen: row 0 saves the current instrument, rows 1.. are the files
     const char* status() const { return status_; }   // result of the last Project action, shown on the Project screen
-    static constexpr int kHelpPages = 5;
+    static constexpr int kHelpPages = 7;
+    int exportSel = 2;                           // Project: EXPORT LSDJ writes A (0), B (1) or both (2)
     // Name entry (instrument names: 5 characters, the project name: 8), the keyboard that pops up over the page.
     bool nameEditing() const { return nameOpen_; }
     const char* nameBuffer() const { return nameBuf_; }
@@ -127,6 +138,10 @@ private:
     void drawSynth(Lcd& l) const;
     void drawHelp(Lcd& l) const;
     void drawNameEntry(Lcd& l) const;
+    void drawPopup(Lcd& l) const;
+    void clearCells();                       // Delete: empties the selected cells (or the one under the cursor)
+    void adjustCells(Key k);                 // the jog wheel with a selection: every filled cell changes
+    bool hasData(int row, int col) const;
     void drawProgress(Lcd& l) const;
     void synthEdit(Key k);                   // A + direction on the Synth screen
     void waveEdit(Key k);                    // plain / A + direction on the Wave screen
@@ -192,6 +207,8 @@ private:
     int progPct_ = 0;
     const char* msg_ = "";                   // one line under the page: COPIED / PASTED / why not
     bool edited_ = false;                    // A was used with a direction: releasing it does not insert
+    Popup popup_ = kNoPopup;
+    int popupPage_ = 0;
     bool prelisten_ = true;
     bool cloneDeep_ = true;
     int confirm_ = -1;                       // project row waiting for a second Insert (cleaning deletes things)
