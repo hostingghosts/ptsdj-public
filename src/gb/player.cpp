@@ -18,7 +18,7 @@ constexpr long long kSub = 70224 / 6;   // six steps per video frame (358.4 Hz),
 constexpr long long kKitChunk = 11712;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
 }  // namespace
 
-void Player::start(int row, int loopCh, int loopPhrase) {
+void Player::start(int row, int loopCh, int loopPhrase, bool withSong) {
     live_ = false;
     apu_.reset();
     apu_.write(0xFF26, 0x80);
@@ -30,7 +30,7 @@ void Player::start(int row, int loopCh, int loopPhrase) {
     if (tempo_ < 40) tempo_ = 40;
     nr50_ = 0x77;
     rngState_ = 0x0052;                                   // LSDJ seeds the generator with 0x52 whenever playback starts
-    if (loopCh >= 0) seq_.startLoop(loopCh, loopPhrase); else seq_.start(row);
+    if (loopCh >= 0) { if (withSong) seq_.startOverdub(row, loopCh, loopPhrase); else seq_.startLoop(loopCh, loopPhrase); } else seq_.start(row);
     tickNo_ = -1;
     running_ = true;
     hpInit_ = false;
@@ -741,6 +741,16 @@ void Player::powerLive() {
     next360_ = 0;
     tickAcc_ = 896 - tempo_;
     live_ = true;
+}
+
+// The Game Boy's boot sound: two pulse notes, about 1048 Hz then 2080 Hz (frequency registers 0x783 and 0x7C1), the second one decaying.
+void Player::bootChime(int stage) {
+    if (!running_ && !live_) powerLive();
+    apu_.write(0xFF11, 0x80);
+    apu_.write(0xFF12, stage ? 0xF3 : 0xF0);
+    const int f = stage ? 0x7C1 : 0x783;
+    apu_.write(0xFF13, uint8_t(f & 0xFF));
+    apu_.write(0xFF14, uint8_t(0x80 | (f >> 8)));
 }
 
 void Player::previewOn(int ch, int note, int instrIdx) {

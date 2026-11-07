@@ -17,6 +17,15 @@ void Song::reset() {
     }
 }
 
+uint8_t Song::defaultAt(uint16_t o) {
+    size_t p = 0;
+    for (const Run& r : kDefaults) {
+        if (o < p + r.n) return r.v;
+        p += r.n;
+    }
+    return 0;
+}
+
 void Song::writeSav(uint8_t* out) const {
     std::memset(out, 0xFF, kSavSize);
     std::memcpy(out, m_, kMemSize);

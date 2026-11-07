@@ -6,9 +6,9 @@ namespace ui {
 
 namespace col {
 // Game Boy greens (the DMG palette: 0F380F, 306230, 8BAC0F, 9BBC0F) and a few signal colours.
-uint32_t kBg = 0x0F380F, kPanel = 0x1B4A1B, kPanelHi = 0x306230, kRowHi = 0x153F15, kText = 0x9BBC0F, kDim = 0x6E8C14, kFaint = 0x2A5A2A,
-         kCursor = 0x8BAC0F, kEdit = 0xD83A2B, kPlayRow = 0x24501E, kNote = 0xB4D21A, kInst = 0x8BAC0F, kCmd = 0xB4D21A, kAccent1 = 0x9BBC0F,
-         kAccent2 = 0x6E8C14, kWarn = 0xE0D040, kBad = 0xE05040, kGood = 0x9BBC0F, kOnCursor = 0x0F380F;
+uint32_t kBg = 0x77757F, kPanel = 0x65636E, kPanelHi = 0x8B8995, kRowHi = 0x6D6B76, kText = 0xF0F0F4, kDim = 0xC4C2CC, kFaint = 0x55535E,
+         kCursor = 0xB8962C, kEdit = 0xD83A2B, kPlayRow = 0x24501E, kNote = 0xB4D21A, kInst = 0x8BAC0F, kCmd = 0xB4D21A, kAccent1 = 0xF0F0F4,
+         kAccent2 = 0x8E2F5A, kWarn = 0xE0D040, kBad = 0xE05040, kGood = 0x9BBC0F, kOnCursor = 0x0F380F;
 }  // namespace col
 
 char hexDigit(int v) { return "0123456789ABCDEF"[v & 15]; }

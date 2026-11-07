@@ -41,6 +41,16 @@ void Seq::startLoop(int c, int phrase) {
     h.wait = 0;
 }
 
+void Seq::startOverdub(int row, int c, int phrase) {
+    start(row);
+    Ch& h = ch_[c];
+    h = Ch();
+    h.active = true;
+    h.loop = true;
+    h.phrase = uint8_t(phrase);
+    h.chain = 0;
+}
+
 int Seq::grooveTicks(Ch& h) {
     const uint8_t* g = s_.groove(h.groove);
     int t = g[h.gpos & 15];

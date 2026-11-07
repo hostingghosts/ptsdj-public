@@ -85,7 +85,7 @@ extern "C" int main(void) {
         p.muteOutput = &hal::muteOutput;
         if (gApp.init(p)) {
             hal::setPowerOffHook(&powerOffHook);
-            gApp.ui.showSplash(1600);
+            gApp.ui.showSplash(3600);
             gApp.boot();
             gApp.run();
         }

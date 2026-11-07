@@ -135,7 +135,7 @@ TEST(first_screen_is_the_song_screen_on_the_game_boy_lcd) {
     r.loop(100);
     CHECK(r.display.frames > 0);
     CHECK_EQ(int(r.app.lsdj.screen()), int(gb::Scr::Song));
-    CHECK_EQ(r.display.texts, 0u);                     // no CMD_TEXT at all: the screen is one bitmap
+    CHECK(r.display.texts <= 2);                       // only the lens legend and BATTERY: the screen itself is one bitmap
     CHECK(r.display.maxWords < 100);                   // and the display list stays tiny
 }
 
@@ -145,7 +145,7 @@ TEST(splash_comes_first_then_the_lcd) {
     r.loop(100);
     CHECK(r.display.texts > 0);
     r.loop(400);
-    CHECK_EQ(r.display.texts, 0u);
+    CHECK(r.display.texts <= 2);
 }
 
 TEST(keys_edit_the_song_and_play_starts_the_player) {
@@ -194,7 +194,7 @@ TEST(power_hold_shows_the_shutdown_bar_and_mutes_then_cancel_restores) {
     r.push(ot::InputEvent::kButtonUp, b::Power);
     r.loop(50);
     CHECK(!gMuted);
-    CHECK_EQ(r.display.texts, 0u);
+    CHECK(r.display.texts <= 2);
 }
 
 TEST(display_list_stays_within_budget) {
@@ -296,21 +296,22 @@ TEST(wav_export_stops_when_the_song_loops) {
     CHECK(st.files["GB/loop.wav"].size() > 22050u * 4u / 2u);
 }
 
-TEST(project_screen_saves_loads_and_exports_the_session) {
+TEST(project_screen_saves_names_and_exports) {
     MemStorage st;
     Rig r(true, &st);
     oneNote(r.app.song, 0, 25, 3);
     r.app.lsdj.show(gb::Scr::Project);
     auto tap = [&](gb::Key k) { r.app.lsdj.key(k, true); r.app.lsdj.key(k, false); };
-    for (int i = 0; i < 9; ++i) tap(gb::Key::Down);
+    for (int i = 0; i < 10; ++i) tap(gb::Key::Down);           // SAVE SONG
     tap(gb::Key::A);
-    CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
-    CHECK(st.files.count("GB/Songs/S00_A.lsdsng") == 1 && st.files.count("GB/Songs/S00_B.lsdsng") == 1);
-    tap(gb::Key::Down); tap(gb::Key::A);                       // LOAD SESSION
-    CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
-    tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT WAV
-    CHECK(std::strcmp(r.app.lsdj.status(), "DONE") == 0);
-    CHECK(st.files["GB/Export/S00.wav"].size() > 44u);
+    CHECK(std::strcmp(r.app.lsdj.status(), "SAVED") == 0);
+    CHECK(st.files.count("GB/Songs/SONGA.lsdsng") == 1);
+    tap(gb::Key::Down); tap(gb::Key::Down); tap(gb::Key::A);   // EXPORT WAV
+    CHECK(std::strcmp(r.app.lsdj.status(), "WAV DONE") == 0);
+    CHECK(st.files["GB/Export/SONG.wav"].size() > 44u);
+    tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT LSDJ
+    CHECK(std::strcmp(r.app.lsdj.status(), "EXPORT DONE") == 0);
+    CHECK(st.files.count("GB/Export/SONGA.lsdsng") == 1 && st.files.count("GB/Export/SONGB.sav") == 1);
 }
 
 namespace {
@@ -420,7 +421,7 @@ TEST(file_screen_lists_songs_and_loads_one_into_the_console) {
     CHECK(r.app.saveSong("GB/Songs/ALPHA.lsdsng", "ALPHA", 0));
     gb::Lsdj& l = r.app.lsdjB;                                // load into console B
     l.show(gb::Scr::Project);
-    for (int i = 0; i < 13; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG FILE
+    for (int i = 0; i < 11; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG
     tapKey(l, gb::Key::A);
     CHECK(l.screen() == gb::Scr::File);
     CHECK_EQ(l.fileCount, 2);
@@ -667,4 +668,230 @@ TEST(hand_drawn_wave_asks_before_a_synth_edit_overwrites_it) {
     CHECK_EQ(int(r.app.song.synth(2)[0]), int(before));
     holdTap(l, gb::Key::A, gb::Key::Right);
     CHECK(int(r.app.song.synth(2)[0]) != int(before));
+}
+
+TEST(stopping_one_console_silences_it_so_no_note_is_left_hanging) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 3);
+    r.app.song.instrument(0)[4] = 0x7F;
+    r.app.dual.start(0, 0);                                     // A plays a held note
+    int16_t out[2 * 512];
+    for (int i = 0; i < 20; ++i) r.app.dual.render(out, 512, 44100);
+    r.app.dual.startOne(1, 0);                                  // B alone (it has no song): A must fall silent for good
+    int peak = 0;
+    for (int i = 0; i < 40; ++i) {
+        r.app.dual.render(out, 512, 44100);
+        if (i >= 10) for (int k = 0; k < 1024; ++k) peak = std::max(peak, std::abs(int(out[k])));
+    }
+    CHECK(peak < 40);
+}
+
+TEST(pads_follow_the_instrument_type_so_wave_and_kit_instruments_sound_on_the_wave_channel) {
+    Rig r;
+    uint8_t* w = r.app.song.instrument(5);
+    w[0] = 1; w[1] = 0xA8; w[2] = 0x0F; w[3] = 0; w[7] = 3;      // a wave instrument
+    keyTap(r, ot::btn::Note);
+    r.app.lsdj.songCh = 0;                                      // cursor on PU1, instrument is a wave one
+    keyTap(r, ot::btn::Rec);
+    r.app.lsdj.instr = 5;
+    padEvent(r, ot::InputEvent::kPadDown, 12);
+    CHECK(r.app.player.voiceOn(2));
+    CHECK(!r.app.player.voiceOn(0));
+    padEvent(r, ot::InputEvent::kPadUp, 12);
+}
+
+TEST(rec_play_loops_the_phrase_while_the_rest_of_the_song_plays_behind_it) {
+    Rig r;
+    oneNote(r.app.song, 1, 30, 3);                             // PU2 plays a note at song row 0
+    for (int i = 0; i < 16; ++i) { r.app.song.note(7, i) = 0; r.app.song.phraseInstr(7, i) = 0xFF; }
+    keyTap(r, ot::btn::Note);
+    r.app.lsdj.phrase = 7; r.app.lsdj.songCh = 0; r.app.lsdj.songRow = 0;
+    keyTap(r, ot::btn::Rec);
+    keyTap(r, ot::btn::Play);
+    r.loop(10);
+    CHECK(r.app.player.running());
+    CHECK(r.app.player.seq().active(0) && r.app.player.seq().phrase(0) == 7);   // PU1 loops the phrase on screen
+    CHECK(r.app.player.seq().active(1));                                         // PU2 plays the song behind it
+    keyTap(r, ot::btn::Play);
+    CHECK(!r.app.player.running());
+}
+
+TEST(instrument_names_are_typed_on_the_keyboard_and_stored_in_the_song) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Instr);
+    l.instr = 2; l.instrRow = 0;
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // Insert on the NAME row opens the keyboard
+    CHECK(l.nameEditing());
+    auto tap = [&](gb::Key k) { l.key(k, true); l.key(k, false); };
+    tap(gb::Key::Down);                                         // row of A..J
+    tap(gb::Key::A);                                            // A
+    tap(gb::Key::Right); tap(gb::Key::Right); tap(gb::Key::A);   // C
+    l.key(gb::Key::Start, true); l.key(gb::Key::Start, false);  // Play confirms
+    CHECK(!l.nameEditing());
+    CHECK_EQ(int(r.app.song.at(gb::off::kInstrNames + 2 * 5)), 'A');
+    CHECK_EQ(int(r.app.song.at(gb::off::kInstrNames + 2 * 5 + 1)), 'C');
+    CHECK_EQ(int(r.app.song.at(gb::off::kInstrNames + 2 * 5 + 2)), 0);
+}
+
+TEST(project_name_is_typed_and_names_the_saved_file) {
+    MemStorage st;
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    l.show(gb::Scr::Project);
+    l.projRow = 0;
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    CHECK(l.nameEditing());
+    l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
+    l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // K
+    l.key(gb::Key::Start, true); l.key(gb::Key::Start, false);
+    CHECK(std::strcmp(l.name(), "K") == 0);
+    l.projRow = 10;
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    CHECK(st.files.count("GB/Songs/K.lsdsng") == 1);
+}
+
+TEST(shift_insert_arrows_select_cells_copy_and_shift_copy_paste_on_the_same_page_only) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    for (int c = 0; c < 4; ++c) for (int rr = 0; rr < 8; ++rr) r.app.song.songCell(rr, c) = 0xFF;
+    r.app.song.songCell(0, 0) = 3; r.app.song.songCell(1, 0) = 4; r.app.song.songCell(2, 0) = 5;
+    keyTap(r, ot::btn::Song);
+    l.songRow = 0; l.songCh = 0;
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);        // Shift + Insert + Down, Down: three cells
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Insert);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Down); r.push(ot::InputEvent::kButtonUp, ot::btn::Down);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Down); r.push(ot::InputEvent::kButtonUp, ot::btn::Down);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Insert);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    CHECK(l.selecting());
+    CHECK(!r.app.player.muted(0));                              // selecting is not the mute shortcut
+    keyTap(r, ot::btn::Copy);
+    l.songRow = 4; l.songCh = 2;
+    r.app.lsdj.show(gb::Scr::Song);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Copy); r.push(ot::InputEvent::kButtonUp, ot::btn::Copy);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    int found = 0;
+    for (int rr = 4; rr < 7; ++rr) if (r.app.song.songCell(rr, 2) != 0xFF) ++found;   // pasted as three chains in channel 3 (clones: new numbers)
+    CHECK_EQ(found, 3);
+    keyTap(r, ot::btn::Pattern);                                // another page: the clipboard does not apply there
+    uint8_t before[32];
+    for (int i = 0; i < 16; ++i) { before[i] = r.app.song.chainPhrase(l.chain, i); before[16 + i] = r.app.song.chainTrans(l.chain, i); }
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Copy); r.push(ot::InputEvent::kButtonUp, ot::btn::Copy);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    for (int i = 0; i < 16; ++i) CHECK(r.app.song.chainPhrase(l.chain, i) == before[i] && r.app.song.chainTrans(l.chain, i) == before[16 + i]);
+}
+
+TEST(master_and_slave_sync_follow_the_master_tempo_and_the_master_page_key_splits_the_screen) {
+    Rig r;
+    gb::Lsdj& a = r.app.lsdj;
+    gb::Lsdj& b2 = r.app.lsdjB;
+    a.show(gb::Scr::Project); b2.show(gb::Scr::Project);
+    a.projRow = 3; b2.projRow = 3;
+    auto edit = [&](gb::Lsdj& l, gb::Key k) { l.key(gb::Key::A, true); l.key(k, true); l.key(k, false); l.key(gb::Key::A, false); };
+    edit(a, gb::Key::Right);                                    // A: OFF -> MASTER
+    edit(b2, gb::Key::Right);                                   // B: OFF -> MASTER, so A becomes SLAVE
+    CHECK(r.app.song.at(gb::off::kSync) == 1 && r.app.songB.at(gb::off::kSync) == 1);
+    edit(b2, gb::Key::Right);                                   // B: MASTER -> SLAVE, A becomes MASTER again
+    a.projRow = 1;
+    edit(a, gb::Key::Up);                                       // master tempo +16: the slave's project takes it
+    CHECK_EQ(int(r.app.songB.at(gb::off::kTempo)), int(r.app.song.at(gb::off::kTempo)));
+    const int before = r.app.song.at(gb::off::kTempo);
+    b2.projRow = 1;
+    edit(b2, gb::Key::Up);                                      // the slave cannot change it
+    CHECK_EQ(int(r.app.song.at(gb::off::kTempo)), before);
+    keyTap(r, ot::btn::Master);                                 // linked: the Master key splits the screen
+    r.loop(10);
+    r.push(ot::InputEvent::kButtonDown, 6);                     // F7 held: the jog wheel sets B's level
+    r.loop(2);
+    ot::InputEvent e; e.type = ot::InputEvent::kEncoder; e.delta = -2; r.input.q.push_back(e);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonUp, 6);
+    r.loop(2);
+    CHECK_EQ(r.app.dual.volume(1), 13);
+    CHECK_EQ(r.app.dual.volume(0), 15);
+}
+
+TEST(f_keys_pick_the_console_mute_and_solo_tracks_and_set_levels) {
+    Rig r;
+    r.app.song.at(gb::off::kSync) = 1; r.app.songB.at(gb::off::kSync) = 1;
+    keyTap(r, ot::btn::F3);                                     // mutes track 1 of song A
+    CHECK(r.app.player.muted(0));
+    keyTap(r, ot::btn::F3);
+    CHECK(!r.app.player.muted(0));
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::F4);                                     // Shift + F4 solos track 2
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    CHECK(r.app.player.muted(0) && !r.app.player.muted(1) && r.app.player.muted(2) && r.app.player.muted(3));
+    keyTap(r, ot::btn::F8);                                     // song B active: F5 now mutes track 5
+    keyTap(r, ot::btn::F5);
+    CHECK(r.app.playerB.muted(2));
+    r.push(ot::InputEvent::kButtonDown, ot::btn::F2);           // F2 held + jog: A's level
+    r.loop(2);
+    ot::InputEvent e; e.type = ot::InputEvent::kEncoder; e.delta = -3; r.input.q.push_back(e);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::F2);
+    r.loop(2);
+    CHECK(r.app.dual.volume(0) < 15);
+    CHECK_EQ(r.app.dual.volume(1), 15);
+}
+
+TEST(help_opens_with_the_help_key_and_closes_with_delete) {
+    Rig r;
+    keyTap(r, ot::btn::Help);
+    CHECK(r.app.lsdj.screen() == gb::Scr::Help);
+    r.app.lsdj.key(gb::Key::Right, true); r.app.lsdj.key(gb::Key::Right, false);
+    CHECK_EQ(r.app.lsdj.helpPage, 1);
+    r.app.lsdj.key(gb::Key::B, true); r.app.lsdj.key(gb::Key::B, false);
+    CHECK(r.app.lsdj.screen() == gb::Scr::Song);
+}
+
+TEST(clean_song_data_frees_unreferenced_chains_and_phrases_after_a_second_insert) {
+    Rig r;
+    gb::Song& s = r.app.song;
+    oneNote(s, 0, 25, 3);
+    s.note(9, 3) = 40; s.markPhrase(9);                         // a phrase nothing plays
+    gb::Lsdj& l = r.app.lsdj;
+    l.show(gb::Scr::Project);
+    l.projRow = 8;
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // asks first
+    CHECK_EQ(int(s.note(9, 3)), 40);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // second Insert does it
+    CHECK_EQ(int(s.note(9, 3)), 0);
+    CHECK_EQ(int(s.note(0, 0)), 25);                            // the phrase the song plays stays
+}
+
+TEST(instrument_library_saves_and_loads_an_instrument_with_its_table) {
+    MemStorage st;
+    Rig r(true, &st);
+    gb::Song& s = r.app.song;
+    uint8_t* in = s.instrument(4);
+    in[0] = 0; in[1] = 0xC3; in[6] = 0x20 | 5;                  // pulse, uses table 5
+    s.at(uint16_t(gb::off::kTblEnv + 5 * 16 + 2)) = 0x77;
+    s.at(uint16_t(gb::off::kInstrNames + 4 * 5)) = 'Z';
+    gb::Lsdj& l = r.app.lsdj;
+    l.instr = 4;
+    keyTap(r, ot::btn::SampleLoader);
+    CHECK(l.screen() == gb::Scr::Library);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // SAVE row: name keyboard (starts with the instrument's own name)
+    CHECK(l.nameEditing());
+    l.key(gb::Key::Start, true); l.key(gb::Key::Start, false);
+    CHECK(st.files.count("GB/Instruments/Z.gbi") == 1);
+    CHECK_EQ(l.libCount, 1);
+    l.instr = 9;                                                // load it into instrument 9: the table moves to a free slot
+    l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    CHECK_EQ(int(s.instrument(9)[1]), 0xC3);
+    CHECK_EQ(int(s.at(uint16_t(gb::off::kInstrNames + 9 * 5))), 'Z');
+    const int t = s.instrument(9)[6] & 0x1F;
+    CHECK(s.instrument(9)[6] & 0x20);
+    CHECK(t != 5);
+    CHECK_EQ(int(s.at(uint16_t(gb::off::kTblEnv + t * 16 + 2))), 0x77);
 }

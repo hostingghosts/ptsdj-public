@@ -71,10 +71,15 @@ public:
     bool saveLinked(const char* base);
     // Renders both songs once from their first rows until every channel has come round again (or `maxSeconds`); writes a 16-bit stereo WAV.
     bool exportWav(const char* path, int rate = 44100, int maxSeconds = 600);
-    bool exportFiles(const char* name);        // Snn_A / Snn_B as .lsdsng and .sav in GB/Export
+    bool exportFiles(const char* name = nullptr);   // both songs as .lsdsng and .sav in GB/Export, named after the projects (or `name`_A / _B)
+    bool saveProject(int console);             // GB/Songs/<project name>.lsdsng
+    void progress(const char* label, int pct); // a long action reports here: the bar is drawn at once, over whatever is on screen
+    void bootChime(int stage);                 // 0 low note, 1 high note, 2 silence: the power-on sound of the splash
+    int look() const { return look_; }
     bool saveSav(const char* path, int console);
     static constexpr const char* kSongDir = "GB/Songs";
     static constexpr const char* kExportDir = "GB/Export";   // WAV exports; the session is always called SESSION until a file browser exists
+    static constexpr const char* kInstDir = "GB/Instruments";   // saved instruments (.gbi)
     static constexpr const char* kKitDir = "GB/Kits";       // .kit files: the first two characters (hex) say which kit slot a file replaces, e.g. 0A_808.kit
     static constexpr const char* kRomPath = "GB/LSDJ.GB";   // the owner's own LSDJ ROM: its sample kits are read from it
     bool loadKits();                             // blocking: the whole ROM image and the .kit files (tests, tools); boot loads them step by step instead
@@ -115,16 +120,37 @@ private:
     ot::IStorage::Handle romH_ = -1;
     uint32_t romGot_ = 0;
     bool exporting_ = false;
+    int syncRole_[2] = {1, 2};                 // 1 master, 2 slave; only matters while both projects have SYNC on
+    int look_ = 0;
+    uint32_t progressAt_ = 0;
+    static constexpr int kMaxInst = 64;
+    char instNames_[kMaxInst][24] = {};
+    int instCount_ = 0;
+    bool linked() const { return song.at(gb::off::kSync) == 1 && songB.at(gb::off::kSync) == 1; }
+    int masterConsole() const { return syncRole_[0] == 1 || syncRole_[1] != 1 ? 0 : 1; }
+    void projectFileName(int console, char* out, size_t n, const char* fallback) const;
     struct LinkedTransport final : gb::Transport {
         App* app = nullptr;
         void start(int console, int row) override;
-        void startLoop(int console, int ch, int phrase) override { app->dual.startLoop(console, ch, phrase); app->flushRing(); }
+        void startLoop(int console, int ch, int phrase, int row) override;
         void stop() override { app->dual.stop(); }
         bool running() const override { return app->dual.running(); }
         bool action(Action a, int slot) override;
         int listSongs() override;
         const char* songName(int i) override { return app->songNames_[i]; }
         bool loadSongFile(int i, int console) override;
+        int syncMode(int console) override { const gb::Song& s = console ? app->songB : app->song; return s.at(gb::off::kSync) == 1 ? app->syncRole_[console] : 0; }
+        void setSyncMode(int console, int mode) override;
+        void tempoChanged(int console) override;
+        int listInstruments() override;
+        const char* instrumentFile(int i) override { return app->instNames_[i]; }
+        bool saveInstrumentFile(const char* name, const uint8_t* data, int n) override;
+        int loadInstrumentFile(int i, uint8_t* out, int max) override;
+        bool linked() override { return app->linked(); }
+        int volume(int console) override { return app->dual.volume(console); }
+        void setVolume(int console, int v) override { app->dual.setVolume(console, v); }
+        int look() override { return app->look_; }
+        void setLook(int i) override { app->look_ = i & 3; }
     } transport_;
     Platform p_;
 };

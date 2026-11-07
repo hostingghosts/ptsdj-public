@@ -1,6 +1,7 @@
 #include "gb/ui/lsdj.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -63,6 +64,7 @@ void Lsdj::markHandDrawn(int wave) {
 }
 
 void Lsdj::key(Key k, bool down) {
+    if (down) msg_ = "";
     if (prompt_ && down) {                              // the overwrite question takes the keys
         if (k == Key::Left) promptYes_ = true;
         else if (k == Key::Right) promptYes_ = false;
@@ -72,7 +74,33 @@ void Lsdj::key(Key k, bool down) {
         } else if (k == Key::B) prompt_ = false;
         return;
     }
-    if (k == Key::A) { if (down && a_) return; if (down) { a_ = true; edited_ = false; if (sel_ && scr_ == Scr::Song) { p_.mute(songCh, !p_.muted(songCh)); edited_ = true; } else if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; markHandDrawn(waveNo); } edited_ = true; } else if (b_) { cut(); edited_ = true; } } else { if (a_ && !edited_ && !b_ && !sel_) press(Key::A); a_ = false; } return; }
+    if (nameOpen_) { if (down) nameKey(k); return; }    // the name keyboard takes every key until it is closed
+    if (scr_ == Scr::Help) {                             // help pages: left / right turn the page, anything else leaves
+        if (down) {
+            if (k == Key::Left) helpPage = clampi(helpPage - 1, 0, kHelpPages - 1);
+            else if (k == Key::Right) helpPage = clampi(helpPage + 1, 0, kHelpPages - 1);
+            else if (k == Key::A || k == Key::B || k == Key::Start) scr_ = helpFrom_;
+        }
+        return;
+    }
+    if (confirm_ >= 0 && down) {                         // cleaning asks for a second Insert; anything else cancels
+        if (k == Key::A) { const int r = confirm_; confirm_ = -1; if (r == 8) cleanSong(); else cleanInstruments(); }
+        else { confirm_ = -1; status_ = ""; }
+        return;
+    }
+    if (k == Key::A) {
+        if (down && a_) return;
+        if (down) {
+            a_ = true; edited_ = false; selUsed_ = false;
+            if (sel_ && scr_ == Scr::Wave) { if (hasClip_) { for (int i = 0; i < 16; ++i) s_.wave(waveNo)[i] = waveClip_[i]; markHandDrawn(waveNo); } edited_ = true; }
+            else if (b_) { cut(); edited_ = true; }
+        } else {
+            if (a_ && sel_ && scr_ == Scr::Song && !selUsed_ && !edited_ && !b_) { p_.mute(songCh, !p_.muted(songCh)); }   // Shift + Insert alone mutes the channel
+            else if (a_ && !edited_ && !b_ && !sel_) press(Key::A);
+            a_ = false;
+        }
+        return;
+    }
     if (k == Key::B) {
         if (down) {
             bUsed_ = false;
@@ -84,6 +112,7 @@ void Lsdj::key(Key k, bool down) {
             }
         }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::File) scr_ = Scr::Project;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Library) scr_ = Scr::Instr;
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Wave) {          // a lone B tap copies the wave
             for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
             hasClip_ = true;
@@ -97,9 +126,9 @@ void Lsdj::key(Key k, bool down) {
         if (playing()) {
             rec_ = false;
             if (tr_) tr_->stop(); else p_.stop();
-        } else if (recMode_ && scr_ == Scr::Phrase) {      // Rec mode + Play: this phrase loops on the cursor channel and the pads record into it
+        } else if (recMode_ && scr_ == Scr::Phrase) {      // Rec mode + Play: this phrase loops on the cursor channel, the song plays behind it, the pads record
             rec_ = true;
-            if (tr_) tr_->startLoop(console_, songCh, phrase); else p_.start(0, songCh, phrase);
+            if (tr_) tr_->startLoop(console_, songCh, phrase, songRow); else p_.start(songRow, songCh, phrase, true);
         } else if (scr_ == Scr::Synth || scr_ == Scr::Wave) {   // Play audits the wave instead of starting the song
             if (auditionHeld_) { p_.previewOff(2); auditionHeld_ = false; }
             else {
@@ -114,19 +143,23 @@ void Lsdj::key(Key k, bool down) {
         else p_.start(startRow());
         return;
     }
+    if (sel_ && a_ && selectable()) { selUsed_ = true; selMove(k); return; }   // Shift + Insert + arrows selects cells
     if (sel_) { navigate(k); return; }
-    if (a_) { edited_ = true; editKey(k); return; }
+    if (a_) { edited_ = true; clearSel(); editKey(k); return; }
     if (b_) {
         bUsed_ = true;
         if (scr_ == Scr::Wave) { waveNo = clampi(waveNo + (k == Key::Left ? -1 : k == Key::Right ? 1 : k == Key::Up ? 16 : -16), 0, 255); return; }
         if (scr_ == Scr::Synth) { synth = clampi(synth + (k == Key::Left || k == Key::Up ? -1 : 1), 0, kSynths - 1); return; }
         changeId(k == Key::Left || k == Key::Up ? -1 : 1); if (k == Key::Up || k == Key::Down) changeId(0); return;
     }
+    clearSel();
     move(k);
 }
 
 void Lsdj::encoder(int delta) {
     if (!delta) return;
+    if (nameOpen_) { for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) nameKey(delta > 0 ? Key::Right : Key::Left); return; }
+    if (scr_ == Scr::Help) { helpPage = clampi(helpPage + (delta > 0 ? 1 : -1), 0, kHelpPages - 1); return; }
     if (recMode_ && scr_ == Scr::Phrase) { instr = clampi(instr + (delta > 0 ? 1 : -1), 0, 63); return; }   // Rec mode: the jog wheel picks the pad instrument
     const Key k = sel_ ? (delta > 0 ? Key::Up : Key::Down) : (delta > 0 ? Key::Right : Key::Left);
     for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) editKey(k);
@@ -139,18 +172,17 @@ int Lsdj::curInstr() const {
     return instr;
 }
 
-// Song, chain and phrase pads play the cursor channel; the instrument screens play the instrument's own channel type.
-int Lsdj::previewChannel() const {
+// The instrument decides the channel it can sound on: pulse on PU1/PU2 (the cursor channel when that is one of them), wave and kit on WAV, noise on NOI.
+int Lsdj::previewChannel(int ins) const {
     if (scr_ == Scr::Wave || scr_ == Scr::Synth) return 2;
-    if (scr_ == Scr::Song || scr_ == Scr::Chain || scr_ == Scr::Phrase) return songCh;
-    switch (s_.instrument(curInstr())[0] & 3) {
+    switch (s_.instrument(ins & 63)[0] & 3) {
         case 0: return songCh < 2 ? songCh : 0;
         case 1: case 2: return 2;
         default: return 3;
     }
 }
 
-// Records a played note into the phrase the channel is playing: the nearest step (the upcoming one in the last half of a step).
+// Records a played note into the phrase the cursor channel is looping or playing: the nearest step (the upcoming one in the last half of a step).
 void Lsdj::recordNote(int ch, int note) {
     const Seq& sq = p_.seq();
     if (!sq.active(ch)) return;
@@ -165,8 +197,7 @@ void Lsdj::recordNote(int ch, int note) {
 }
 
 void Lsdj::padDown(int pad) {
-    if (pad < 0 || pad >= 48) return;
-    const int ch = previewChannel();
+    if (pad < 0 || pad >= 48 || nameOpen_ || scr_ == Scr::Help) return;
     int ins = curInstr();
     int note;
     const bool scratch = scr_ == Scr::Wave || scr_ == Scr::Synth;
@@ -177,16 +208,18 @@ void Lsdj::padDown(int pad) {
         if (scr_ == Scr::Wave) sc[3] = uint8_t(waveNo); else { sc[3] = uint8_t(synth * 16); sc[9] = 2; }
         ins = Player::kScratch;
     }
-    const bool kit = !scratch && (s_.instrument(ins & 63)[0] & 3) == 2 && ch == 2;
+    const int ch = previewChannel(ins);
+    const bool kit = !scratch && (s_.instrument(ins & 63)[0] & 3) == 2;
     note = kit ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, 127);
-    if (scr_ == Scr::Phrase && !recMode_) {            // Rec mode off: the phrase cursor takes the note, as before
+    if (scr_ == Scr::Phrase && !recMode_) {            // Rec mode off: the phrase cursor takes the note (step mode), as before
         s_.note(phrase, step) = uint8_t(note);
         lastNote_ = uint8_t(note);
         if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = uint8_t(lastInstr_);
         s_.markPhrase(phrase); s_.markInstrument(s_.phraseInstr(phrase, step) & 63);
         step = clampi(step + 1, 0, 15);
     }
-    if (recMode_ && rec_ && p_.running()) recordNote(ch, note);
+    if (recMode_ && scr_ == Scr::Phrase && p_.running()) recordNote(songCh, note);   // armed and the song (or the phrase loop) is running: record
+    if (!prelisten_ && !(recMode_ && scr_ == Scr::Phrase)) return;                  // PRELISTEN off: pads stay silent outside Rec mode
     padCh_[pad] = int8_t(ch);
     p_.previewOn(ch, note, ins);
 }
@@ -199,6 +232,8 @@ void Lsdj::padUp(int pad) {
 
 // Direct page keys: between the main screens the cursor is carried as Select + arrow does.
 void Lsdj::jump(Scr target) {
+    clearSel();
+    if (scr_ == Scr::Help) scr_ = helpFrom_;
     static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
     auto idx = [&](Scr x) { for (int i = 0; i < 5; ++i) if (main[i] == x) return i; return -1; };
     int a = idx(scr_), b = idx(target);
@@ -210,6 +245,21 @@ void Lsdj::jump(Scr target) {
     scr_ = target;
 }
 
+void Lsdj::openLibrary() {
+    if (!tr_) return;
+    libCount = tr_->listInstruments();
+    libSel = 0;
+    status_ = "";
+    scr_ = Scr::Library;
+}
+
+void Lsdj::openHelp() {
+    if (scr_ == Scr::Help) { scr_ = helpFrom_; return; }
+    helpFrom_ = scr_;
+    helpPage = 0;
+    scr_ = Scr::Help;
+}
+
 void Lsdj::openFiles() {
     if (!tr_) return;
     fileCount = tr_->listSongs();
@@ -219,6 +269,7 @@ void Lsdj::openFiles() {
 }
 
 void Lsdj::navigate(Key k) {
+    clearSel();
     // screen map: Project Wave Synth over Song Chain Phrase Instr Table over Groove
     int col = -1, row = 1;
     switch (scr_) {
@@ -226,6 +277,8 @@ void Lsdj::navigate(Key k) {
         case Scr::Song: col = 0; break; case Scr::Chain: col = 1; break; case Scr::Phrase: col = 2; break;
         case Scr::Instr: col = 3; break; case Scr::Table: col = 4; break; case Scr::Groove: row = 2; col = 2; break;
         case Scr::File: scr_ = Scr::Project; return;                  // the song list is a sub-page of Project
+        case Scr::Help: return;
+        case Scr::Library: scr_ = Scr::Instr; return;
     }
     static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
     if (row == 1) {
@@ -256,6 +309,7 @@ void Lsdj::move(Key k) {
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
         case Scr::Project: projRow = clampi(projRow + dy, 0, 13); break;
         case Scr::File: fileSel = clampi(fileSel + dy, 0, fileCount ? fileCount - 1 : 0); break;
+        case Scr::Library: libSel = clampi(libSel + dy, 0, libCount); break;
         case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
         case Scr::Wave:
             waveCol = clampi(waveCol + dx, 0, 31);
@@ -277,11 +331,14 @@ void Lsdj::press(Key) {
             else if (phraseCol == 1) { uint8_t& i = s_.phraseInstr(phrase, step); if (i == 0xFF) i = lastInstr_; }
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
-        case Scr::Project:
-            if (tr_ && projRow == 13) { openFiles(); break; }
-            if (tr_ && projRow >= 9) {
-                const bool ok = tr_->action(projRow == 9 ? Transport::kSavePair : projRow == 10 ? Transport::kLoadPair : projRow == 11 ? Transport::kExportWav : Transport::kExportFiles, session);
-                status_ = ok ? "DONE" : "FAILED";
+        case Scr::Project: projectAct(); break;
+        case Scr::Instr: if (instrRow == 0) openName(0); break;
+        case Scr::Library:
+            if (libSel == 0) openName(2);
+            else if (tr_) {
+                uint8_t blob[128];
+                const int n = tr_->loadInstrumentFile(libSel - 1, blob, sizeof blob);
+                status_ = n > 0 && unpackInstrument(blob, n) ? "LOADED" : "LOAD FAILED";
             }
             break;
         case Scr::File:
@@ -357,17 +414,28 @@ void Lsdj::editKey(Key k) {
             break;
         }
         case Scr::Groove: { uint8_t& v = s_.groove(groove)[grooveStep]; v = uint8_t(clampi(v + d, 0, 255)); break; }
-        case Scr::Project:
-            if (projRow >= 9 && projRow <= 12) session = clampi(session + d, 0, 99);
-            else if (projRow == 2) s_.at(off::kSync) = uint8_t(s_.at(off::kSync) ? 0 : 1);     // OFF / LSDJ link cable
-            else if (projRow == 0) { uint8_t& t = s_.at(off::kTempo); t = uint8_t(clampi(t + d, 40, 255)); p_.setTempo(t); }
-            else if (projRow == 1) s_.at(off::kTranspose) = uint8_t(int8_t(s_.at(off::kTranspose)) + d);
+        case Scr::Project: {
+            if (projRow == 1) {
+                if (tr_ && tr_->syncMode(console_) == 2 && tr_->linked()) { status_ = "SLAVE FOLLOWS MASTER"; break; }   // the master sets the tempo
+                uint8_t& tp = s_.at(off::kTempo); tp = uint8_t(clampi(tp + d, 40, 255)); p_.setTempo(tp);
+                if (tr_) tr_->tempoChanged(console_);
+            }
+            else if (projRow == 2) s_.at(off::kTranspose) = uint8_t(int8_t(s_.at(off::kTranspose)) + d);
+            else if (projRow == 3) {                                                          // SYNC: OFF / MASTER / SLAVE
+                if (tr_) tr_->setSyncMode(console_, (tr_->syncMode(console_) + (sgn > 0 ? 1 : 2)) % 3);
+                else s_.at(off::kSync) = uint8_t(s_.at(off::kSync) ? 0 : 1);
+            }
+            else if (projRow == 4) cloneDeep_ = !cloneDeep_;
+            else if (projRow == 5 && tr_) tr_->setLook((tr_->look() + (sgn > 0 ? 1 : 3)) & 3);
+            else if (projRow == 6) prelisten_ = !prelisten_;
             break;
+        }
         default: break;
     }
 }
 
 void Lsdj::cut() {
+    clearSel();
     switch (scr_) {
         case Scr::Song: { uint8_t& c = s_.songCell(songRow, songCh); if (c != 0xFF) lastChain_ = c; c = 0xFF; break; }
         case Scr::Chain: s_.chainPhrase(chain, chainPos) = 0xFF; s_.chainTrans(chain, chainPos) = 0; break;
@@ -396,27 +464,380 @@ void Lsdj::changeId(int d) {
     }
 }
 
+// ---- project actions, names, cleaning ---------------------------------------------------------------------------------------
+
+void Lsdj::setName(const char* n) {
+    int i = 0;
+    for (; n && n[i] && i < 8; ++i) name_[i] = (n[i] >= 'a' && n[i] <= 'z') ? char(n[i] - 32) : n[i];
+    name_[i] = 0;
+}
+
+void Lsdj::projectAct() {
+    auto act = [&](Transport::Action a, int arg, const char* ok, const char* bad) { if (tr_) status_ = tr_->action(a, arg) ? ok : bad; };
+    switch (projRow) {
+        case 0: openName(1); break;
+        case 7: openHelp(); break;
+        case 8: confirm_ = 8; status_ = "CLEAN SONG? INSERT=YES"; break;
+        case 9: confirm_ = 9; status_ = "CLEAN INSTR? INSERT=YES"; break;
+        case 10: act(Transport::kSaveSong, console_, "SAVED", "SAVE FAILED"); break;
+        case 11: if (tr_) openFiles(); break;
+        case 12: act(Transport::kExportWav, 0, "WAV DONE", "WAV FAILED"); break;
+        case 13: act(Transport::kExportFiles, 0, "EXPORT DONE", "EXPORT FAILED"); break;
+        default: break;
+    }
+}
+
+namespace {
+void reachable(Song& s, bool* chainUsed, bool* phraseUsed) {
+    for (int r = 0; r < kSongRows; ++r)
+        for (int c = 0; c < 4; ++c) { const uint8_t v = s.songCell(r, c); if (v < kChains) chainUsed[v] = true; }
+    for (int c = 0; c < kChains; ++c)
+        if (chainUsed[c])
+            for (int i = 0; i < 16; ++i) { const uint8_t p = s.chainPhrase(c, i); if (p < kPhrases) phraseUsed[p] = true; }
+}
+bool bit(const Song& s, uint16_t base, int i) { return (s.at(uint16_t(base + i / 8)) >> (i & 7)) & 1; }
+void clearBit(Song& s, uint16_t base, int i) { s.at(uint16_t(base + i / 8)) &= uint8_t(~(1 << (i & 7))); }
+void resetBytes(Song& s, uint16_t o, int n) { for (int i = 0; i < n; ++i) s.at(uint16_t(o + i)) = Song::defaultAt(uint16_t(o + i)); }
+}  // namespace
+
+// Frees chains and phrases that no song row reaches (what LSDJ's CLEAN SONG DATA does).
+void Lsdj::cleanSong() {
+    bool chainUsed[kChains] = {}, phraseUsed[kPhrases] = {};
+    reachable(s_, chainUsed, phraseUsed);
+    int nc = 0, np = 0;
+    for (int c = 0; c < kChains; ++c)
+        if (!chainUsed[c]) {
+            if (bit(s_, off::kChainAlloc, c)) ++nc;
+            resetBytes(s_, uint16_t(off::kChainPhrase + c * 16), 16); resetBytes(s_, uint16_t(off::kChainTrans + c * 16), 16);
+            clearBit(s_, off::kChainAlloc, c);
+        }
+    for (int p = 0; p < kPhrases; ++p)
+        if (!phraseUsed[p]) {
+            if (bit(s_, off::kPhraseAlloc, p)) ++np;
+            resetBytes(s_, uint16_t(off::kNotes + p * 16), 16); resetBytes(s_, uint16_t(off::kPhraseInstr + p * 16), 16);
+            resetBytes(s_, uint16_t(off::kPhraseCmd + p * 16), 16); resetBytes(s_, uint16_t(off::kPhraseVal + p * 16), 16);
+            clearBit(s_, off::kPhraseAlloc, p);
+        }
+    std::snprintf(statusBuf_, sizeof statusBuf_, "CLEANED %d CH %d PHR", nc, np);
+    status_ = statusBuf_;
+}
+
+// Resets instruments that no phrase plays.
+void Lsdj::cleanInstruments() {
+    bool chainUsed[kChains] = {}, phraseUsed[kPhrases] = {}, instrUsed[kInstruments] = {};
+    reachable(s_, chainUsed, phraseUsed);
+    for (int p = 0; p < kPhrases; ++p)
+        if (phraseUsed[p])
+            for (int i = 0; i < 16; ++i) { const uint8_t v = s_.phraseInstr(p, i); if (v < kInstruments) instrUsed[v] = true; }
+    int n = 0;
+    for (int i = 0; i < kInstruments; ++i)
+        if (!instrUsed[i]) {
+            if (s_.at(uint16_t(off::kInstrAlloc + i))) ++n;
+            resetBytes(s_, uint16_t(off::kInstr + i * 16), 16);
+            for (int k = 0; k < 5; ++k) s_.at(uint16_t(off::kInstrNames + i * 5 + k)) = 0;
+            s_.at(uint16_t(off::kInstrAlloc + i)) = 0;
+        }
+    std::snprintf(statusBuf_, sizeof statusBuf_, "CLEANED %d INSTR", n);
+    status_ = statusBuf_;
+}
+
+const char* Lsdj::instrName(int i, char out[6]) const {
+    for (int k = 0; k < 5; ++k) { const uint8_t c = s_.at(uint16_t(off::kInstrNames + i * 5 + k)); out[k] = c >= 32 && c < 127 ? char(c) : ' '; }
+    out[5] = 0;
+    return out;
+}
+
+namespace {
+const char* const kKeyRows[4] = {"0123456789", "ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ"};
+int rowWidth(int cy) { return cy < 3 ? 10 : cy == 3 ? 6 : 9; }   // the last row: six letters, space, backspace, OK
+}  // namespace
+
+void Lsdj::openName(int target) {
+    nameTarget_ = target;
+    nameMax_ = target ? 8 : 5;
+    nameCx_ = nameCy_ = 0;
+    std::memset(nameBuf_, 0, sizeof nameBuf_);
+    if (target == 1) std::strncpy(nameBuf_, name_, 8);
+    else { char tmp[6]; instrName(instr, tmp); std::strncpy(nameBuf_, tmp, 5); }
+    for (int i = int(std::strlen(nameBuf_)) - 1; i >= 0 && nameBuf_[i] == ' '; --i) nameBuf_[i] = 0;
+    if (target == 2 && !nameBuf_[0]) std::snprintf(nameBuf_, sizeof nameBuf_, "INST%02X", instr);
+    nameOpen_ = true;
+}
+
+void Lsdj::nameCommit() {
+    int n = int(std::strlen(nameBuf_));
+    while (n > 0 && nameBuf_[n - 1] == ' ') nameBuf_[--n] = 0;
+    if (nameTarget_ == 0) {
+        for (int k = 0; k < 5; ++k) s_.at(uint16_t(off::kInstrNames + instr * 5 + k)) = k < n ? uint8_t(nameBuf_[k]) : 0;
+        s_.markInstrument(instr);
+    } else if (nameTarget_ == 1) setName(nameBuf_);
+    else if (n > 0 && tr_) {                                          // library: save the current instrument under this name
+        uint8_t blob[128];
+        const int len = packInstrument(blob);
+        status_ = tr_->saveInstrumentFile(nameBuf_, blob, len) ? "SAVED" : "SAVE FAILED";
+        libCount = tr_->listInstruments();
+    }
+    nameOpen_ = false;
+}
+
+void Lsdj::nameKey(Key k) {
+    auto append = [&](char c) { const int n = int(std::strlen(nameBuf_)); if (n < nameMax_) { nameBuf_[n] = c; nameBuf_[n + 1] = 0; } };
+    auto back = [&]() { const int n = int(std::strlen(nameBuf_)); if (n > 0) nameBuf_[n - 1] = 0; };
+    switch (k) {
+        case Key::Left: nameCx_ = nameCx_ > 0 ? nameCx_ - 1 : rowWidth(nameCy_) - 1; break;
+        case Key::Right: nameCx_ = nameCx_ + 1 < rowWidth(nameCy_) ? nameCx_ + 1 : 0; break;
+        case Key::Up: nameCy_ = nameCy_ > 0 ? nameCy_ - 1 : 4; nameCx_ = std::min(nameCx_, rowWidth(nameCy_) - 1); break;
+        case Key::Down: nameCy_ = nameCy_ < 4 ? nameCy_ + 1 : 0; nameCx_ = std::min(nameCx_, rowWidth(nameCy_) - 1); break;
+        case Key::A:
+            if (nameCy_ < 4) append(kKeyRows[nameCy_][nameCx_]);
+            else if (nameCx_ < 6) append(kKeyRows[3][nameCx_]);
+            else if (nameCx_ == 6) append(' ');
+            else if (nameCx_ == 7) back();
+            else nameCommit();
+            break;
+        case Key::B: back(); break;
+        case Key::Start: nameCommit(); break;
+        case Key::Select: nameOpen_ = false; break;
+    }
+}
+
+void Lsdj::soloChannel(int ch) {
+    bool othersMuted = true;
+    for (int c = 0; c < 4; ++c) if (c != ch) othersMuted = othersMuted && p_.muted(c);
+    if (othersMuted && !p_.muted(ch)) { for (int c = 0; c < 4; ++c) p_.mute(c, false); return; }   // soloed already: bring everything back
+    for (int c = 0; c < 4; ++c) p_.mute(c, c != ch);
+}
+
+// ---- instrument library --------------------------------------------------------------------------------------------------
+
+// File: 'G','B','I','1', flags (bit 0: a table follows), name[5], instrument[16], and the instrument's table (6 columns x 16 rows) if it uses one.
+int Lsdj::packInstrument(uint8_t* out) const {
+    const uint8_t* in = s_.instrument(instr);
+    const bool tbl = (in[6] & 0x20) != 0;
+    out[0] = 'G'; out[1] = 'B'; out[2] = 'I'; out[3] = '1';
+    out[4] = tbl ? 1 : 0;
+    char nm[6]; instrName(instr, nm);
+    for (int k = 0; k < 5; ++k) out[5 + k] = uint8_t(nm[k]);
+    std::memcpy(out + 10, in, 16);
+    int n = 26;
+    if (tbl) {
+        static const uint16_t o[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
+        const int t = in[6] & 0x1F;
+        for (int c = 0; c < 6; ++c) { std::memcpy(out + n, s_.mem() + o[c] + t * 16, 16); n += 16; }
+    }
+    return n;
+}
+
+// Loads into the current instrument. A table goes into a free table slot (no instrument uses it and it is empty); without one the instrument loads without it.
+bool Lsdj::unpackInstrument(const uint8_t* in, int n) {
+    if (n < 26 || in[0] != 'G' || in[1] != 'B' || in[2] != 'I' || in[3] != '1') return false;
+    const bool tbl = (in[4] & 1) && n >= 26 + 96;
+    uint8_t* dst = s_.instrument(instr);
+    std::memcpy(dst, in + 10, 16);
+    for (int k = 0; k < 5; ++k) s_.at(uint16_t(off::kInstrNames + instr * 5 + k)) = in[5 + k] >= 32 ? in[5 + k] : 0;
+    if (dst[6] & 0x20) {
+        int slot = -1;
+        if (tbl) {
+            static const uint16_t o[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
+            bool used[kTables] = {};
+            for (int i = 0; i < kInstruments; ++i) if (i != instr && (s_.instrument(i)[6] & 0x20)) used[s_.instrument(i)[6] & 0x1F] = true;
+            for (int t2 = 0; t2 < kTables && slot < 0; ++t2) {
+                if (used[t2]) continue;
+                bool empty = true;
+                for (int c = 0; c < 6 && empty; ++c) for (int r = 0; r < 16; ++r) if (s_.at(uint16_t(o[c] + t2 * 16 + r))) { empty = false; break; }
+                if (empty) slot = t2;
+            }
+            if (slot < 0 && (s_.instrument(instr)[6] & 0x20)) slot = -1;
+            if (slot >= 0) for (int c = 0; c < 6; ++c) std::memcpy(s_.mem() + o[c] + slot * 16, in + 26 + c * 16, 16);
+        }
+        dst[6] = slot >= 0 ? uint8_t(0x20 | slot) : uint8_t(dst[6] & ~0x3F);   // no table, or no room for it: play without
+    }
+    s_.markInstrument(instr);
+    return true;
+}
+
+void Lsdj::drawLibrary(Lcd& l) const {
+    l.text(0, 0, "INSTRUMENT LIBRARY");
+    char b[28];
+    char nm[6]; instrName(instr, nm);
+    std::snprintf(b, sizeof b, "SAVE I%02X %s AS...", instr, nm);
+    l.text(0, 2, b, libSel == 0);
+    if (!libCount) l.text(0, 4, "NO .GBI FILES SAVED YET");
+    const int rows = 13;
+    const int top = std::max(0, std::min(libSel - 1 - rows / 2, libCount - rows));
+    for (int r = 0; r < rows && top + r < libCount; ++r) {
+        std::snprintf(b, sizeof b, "%-24.24s", tr_ ? tr_->instrumentFile(top + r) : "");
+        l.text(0, 4 + r, b, libSel == top + r + 1);
+    }
+    l.text(0, 17, status_[0] ? status_ : "INSERT=SAVE/LOAD B=BACK");
+}
+
+// ---- selection and clipboard --------------------------------------------------------------------------------------------------
+
+bool Lsdj::selectable() const { return scr_ == Scr::Song || scr_ == Scr::Chain || scr_ == Scr::Phrase || scr_ == Scr::Table || scr_ == Scr::Groove; }
+int Lsdj::rowsOnPage() const { return scr_ == Scr::Song ? kSongRows : 16; }
+int Lsdj::colsOnPage() const { return scr_ == Scr::Song ? 4 : scr_ == Scr::Chain ? 2 : scr_ == Scr::Phrase ? 4 : scr_ == Scr::Table ? 6 : 1; }
+int Lsdj::curRow() const {
+    switch (scr_) { case Scr::Song: return songRow; case Scr::Chain: return chainPos; case Scr::Phrase: return step; case Scr::Table: return tableRow; default: return grooveStep; }
+}
+int Lsdj::curCol() const {
+    switch (scr_) { case Scr::Song: return songCh; case Scr::Chain: return chainCol; case Scr::Phrase: return phraseCol; case Scr::Table: return tableCol; default: return 0; }
+}
+void Lsdj::setCursor(int row, int col) {
+    switch (scr_) {
+        case Scr::Song: songRow = row; songCh = col; break;
+        case Scr::Chain: chainPos = row; chainCol = col; break;
+        case Scr::Phrase: step = row; phraseCol = col; break;
+        case Scr::Table: tableRow = row; tableCol = col; break;
+        default: grooveStep = row; break;
+    }
+}
+
+uint8_t* Lsdj::cellPtr(int row, int col) const {
+    Song& s = s_;
+    switch (scr_) {
+        case Scr::Song: return &s.songCell(row, col);
+        case Scr::Chain: return col == 0 ? &s.chainPhrase(chain, row) : &s.chainTrans(chain, row);
+        case Scr::Phrase: return col == 0 ? &s.note(phrase, row) : col == 1 ? &s.phraseInstr(phrase, row) : col == 2 ? &s.phraseCmd(phrase, row) : &s.phraseVal(phrase, row);
+        case Scr::Table: {
+            static const uint16_t o[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
+            return &s.at(uint16_t(o[col] + table * 16 + row));
+        }
+        default: return s.groove(groove) + row;
+    }
+}
+
+void Lsdj::markCell(int row, int col) {
+    const uint8_t v = *cellPtr(row, col);
+    if (scr_ == Scr::Song && v < kChains) s_.markChain(v);
+    else if (scr_ == Scr::Chain && col == 0 && v < kPhrases) s_.markPhrase(v);
+    else if (scr_ == Scr::Phrase) { s_.markPhrase(phrase); if (col == 1 && v < kInstruments) s_.markInstrument(v); }
+}
+
+void Lsdj::selMove(Key k) {
+    if (!selOn_) { selOn_ = true; selRow_ = curRow(); selCol_ = curCol(); }
+    const int r0 = curRow(), c0 = curCol();
+    move(k);
+    if (std::abs(curRow() - selRow_) >= kClipMaxRows) setCursor(r0, c0);      // the clipboard holds 64 rows
+}
+
+bool Lsdj::selected(int row, int col) const {
+    if (!selOn_) return false;
+    const int r0 = std::min(selRow_, curRow()), r1 = std::max(selRow_, curRow()), c0 = std::min(selCol_, curCol()), c1 = std::max(selCol_, curCol());
+    return row >= r0 && row <= r1 && col >= c0 && col <= c1;
+}
+
+void Lsdj::copyKey(bool paste) {
+    if (nameOpen_ || prompt_ || !selectable()) return;
+    if (paste) doPaste(); else doCopy();
+}
+
+void Lsdj::doCopy() {
+    int r0 = curRow(), r1 = r0, c0 = curCol(), c1 = c0;
+    if (selOn_) { r0 = std::min(selRow_, r1); r1 = std::max(selRow_, curRow()); c0 = std::min(selCol_, c1); c1 = std::max(selCol_, curCol()); }
+    clipPage_ = scr_;
+    clipRows_ = r1 - r0 + 1;
+    clipCols_ = c1 - c0 + 1;
+    clipCol0_ = c0;
+    for (int r = 0; r < clipRows_; ++r)
+        for (int c = 0; c < clipCols_; ++c) clip_[r * kClipMaxCols + c] = *cellPtr(r0 + r, c0 + c);
+    clearSel();
+    msg_ = "COPY";
+}
+
+namespace {
+bool phraseFree(Song& s, int p) {
+    if (bit(s, off::kPhraseAlloc, p)) return false;
+    for (int i = 0; i < 16; ++i) if (s.note(p, i) || s.phraseInstr(p, i) != 0xFF || s.phraseCmd(p, i)) return false;
+    return true;
+}
+bool chainFree(Song& s, int c) {
+    if (bit(s, off::kChainAlloc, c)) return false;
+    for (int i = 0; i < 16; ++i) if (s.chainPhrase(c, i) != 0xFF) return false;
+    return true;
+}
+}  // namespace
+
+int Lsdj::clonePhrase(int src) {
+    for (int p = 0; p < kPhrases; ++p) {
+        if (p == src || !phraseFree(s_, p)) continue;
+        for (int i = 0; i < 16; ++i) {
+            s_.note(p, i) = s_.note(src, i); s_.phraseInstr(p, i) = s_.phraseInstr(src, i);
+            s_.phraseCmd(p, i) = s_.phraseCmd(src, i); s_.phraseVal(p, i) = s_.phraseVal(src, i);
+        }
+        s_.markPhrase(p);
+        return p;
+    }
+    return src;                                                     // none free: share the original
+}
+
+int Lsdj::cloneChain(int src) {
+    for (int c = 0; c < kChains; ++c) {
+        if (c == src || !chainFree(s_, c)) continue;
+        s_.markChain(c);
+        for (int i = 0; i < 16; ++i) {
+            const uint8_t p = s_.chainPhrase(src, i);
+            s_.chainPhrase(c, i) = (p < kPhrases && cloneDeep_) ? uint8_t(clonePhrase(p)) : p;
+            s_.chainTrans(c, i) = s_.chainTrans(src, i);
+        }
+        return c;
+    }
+    return src;
+}
+
+void Lsdj::doPaste() {
+    if (!clipRows_) { msg_ = "NONE"; return; }
+    if (clipPage_ != scr_) { msg_ = "NOPE"; return; }                // data from another page would not make sense here
+    const int cols = colsOnPage();
+    const int c0 = scr_ == Scr::Song ? std::min(curCol(), cols - clipCols_) : clipCol0_;   // chains move between channels; other pages keep their columns
+    const int r0 = curRow();
+    for (int r = 0; r < clipRows_ && r0 + r < rowsOnPage(); ++r)
+        for (int c = 0; c < clipCols_ && c0 + c < cols; ++c) {
+            uint8_t v = clip_[r * kClipMaxCols + c];
+            if (cloneDeep_ && scr_ == Scr::Song && v < kChains) v = uint8_t(cloneChain(v));
+            else if (cloneDeep_ && scr_ == Scr::Chain && c0 + c == 0 && v < kPhrases) v = uint8_t(clonePhrase(v));
+            *cellPtr(r0 + r, c0 + c) = v;
+            markCell(r0 + r, c0 + c);
+        }
+    clearSel();
+    msg_ = "PSTE";
+}
+
 // ---- drawing --------------------------------------------------------------------------------------------------------
 
+namespace {
+constexpr int kPx = 168;            // the side panel (channel, tempo, screen map) sits at the right edge of the 200 px display
+constexpr int kPc = kPx / 8;        // its first text column
+const char hx16[] = "0123456789ABCDEF";
+}  // namespace
+
+namespace {
+void ptext(Lcd& l, int col, int row, const char* s, bool inv = false) { for (; *s; ++s, ++col) l.glyphAt(col * 8, row * 8, *s, inv, 3, inv ? 3 : 1); }
+}  // namespace
+
 void Lsdj::drawPanel(Lcd& l, bool full) const {
-    if (full) l.rect(128, 0, 32, 112, 1);
+    if (full) l.rect(kPx, 0, 32, 112, 1);
     static const char* ch[4] = {"PU1", "PU2", "WAV", "NOI"};
-    l.rect(128, 0, 32, 8, 3);
-    l.text(16, 0, ch[scr_ == Scr::Song ? songCh : (scr_ == Scr::Project ? 0 : songCh)], true);
+    l.rect(kPx, 0, 32, 8, 3);
+    l.text(kPc, 0, ch[scr_ == Scr::Song ? songCh : (scr_ == Scr::Project ? 0 : songCh)], true);
     char b[8];
     if (full) {
-        l.glyphAt(128, 24, '\x01', false, 3, 1);
+        l.glyphAt(kPx, 24, '\x01', false, 3, 1);
         std::snprintf(b, sizeof b, "%d", s_.at(off::kTempo));
-        for (int i = 0; b[i]; ++i) l.glyphAt(136 + i * 8, 24, b[i], false, 3, 1);
+        for (int i = 0; b[i]; ++i) l.glyphAt(kPx + 8 + i * 8, 24, b[i], false, 3, 1);
     }
     static const char lab[2][4] = {{'1', '2', '3', '4'}, {'5', '6', '7', '8'}};
-    for (int c = 0; full && c < 4; ++c) l.glyphAt(136, 40 + c * 8, lab[console_][c], p_.voiceOn(c), p_.voiceOn(c) ? 0 : 3, p_.voiceOn(c) ? 3 : 1);
+    for (int c = 0; full && c < 4; ++c) {
+        const bool on = p_.voiceOn(c) && !p_.muted(c);
+        l.glyphAt(kPx + 8, 40 + c * 8, lab[console_][c], on, on ? 0 : 3, on ? 3 : (p_.muted(c) ? 0 : 1));
+        if (p_.muted(c)) l.glyphAt(kPx + 16, 40 + c * 8, 'M', false, 3, 1);
+    }
     // screen map
     auto mark = [&](int col, int row, char c, Scr s) { l.glyph(col, row, c, scr_ == s); };
-    if (full) l.rect(120, 112, 40, 32, 0);
-    mark(15, 14, 'P', Scr::Project); mark(17, 14, 'Y', Scr::Synth); mark(18, 14, 'W', Scr::Wave);
-    mark(15, 16, 'S', Scr::Song); mark(16, 16, 'C', Scr::Chain); mark(17, 16, 'P', Scr::Phrase); mark(18, 16, 'I', Scr::Instr); mark(19, 16, 'T', Scr::Table);
-    mark(17, 17, 'G', Scr::Groove);
+    if (full) l.rect(160, 112, 40, 32, 0);
+    mark(20, 14, 'P', Scr::Project); mark(22, 14, 'Y', Scr::Synth); mark(23, 14, 'W', Scr::Wave);
+    mark(20, 16, 'S', Scr::Song); mark(21, 16, 'C', Scr::Chain); mark(22, 16, 'P', Scr::Phrase); mark(23, 16, 'I', Scr::Instr); mark(24, 16, 'T', Scr::Table);
+    mark(22, 17, 'G', Scr::Groove);
 }
 
 void Lsdj::draw(Lcd& l) const {
@@ -432,24 +853,37 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::File: drawFile(l); break;
         case Scr::Wave: drawWave(l); break;
         case Scr::Synth: drawSynth(l); break;
+        case Scr::Help: drawHelp(l); return;
+        case Scr::Library: drawLibrary(l); break;
     }
-    if (scr_ != Scr::File) drawPanel(l, scr_ != Scr::Wave);
-    if (recMode_ && scr_ == Scr::Phrase) { l.text(16, 10, "REC", rec_); char ii[8]; std::snprintf(ii, sizeof ii, "I%02X", instr); l.text(16, 11, ii); }
-    if (padOct_ != 0 && scr_ != Scr::File) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); l.text(16, 12, o); }
-    if (banner_[0]) { l.rect(0, 136, 160, 8, 0); l.text(0, 17, banner_); }
+    if (scr_ != Scr::File && scr_ != Scr::Library) drawPanel(l, scr_ != Scr::Wave);
+    if (msg_[0] && scr_ != Scr::Wave) ptext(l, kPc, 4, msg_, true);
+    else if (selOn_) ptext(l, kPc, 4, "SEL", true);
+    if (recMode_ && scr_ == Scr::Phrase) {
+        const uint8_t* in = s_.instrument(instr);
+        static const char* const ty[4] = {"PUL", "WAV", "KIT", "NOI"};
+        char ii[8]; std::snprintf(ii, sizeof ii, "I%02X", instr);
+        char nm[6]; instrName(instr, nm); nm[4] = 0;
+        ptext(l, kPc, 10, p_.running() ? "REC" : "ARM", p_.running());
+        ptext(l, kPc, 11, ii); ptext(l, kPc, 12, ty[in[0] & 3]); ptext(l, kPc, 13, nm);
+    }
+    if (padOct_ != 0 && scr_ != Scr::File && scr_ != Scr::Library) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); ptext(l, kPc, 9, o); }
+    if (banner_[0]) { l.rect(0, 136, 200, 8, 0); l.text(0, 17, banner_); }
     if (prompt_) {
-        l.rect(24, 32, 96, 56, 3);
-        l.rect(26, 34, 92, 52, 0);
-        l.text(4, 5, "OVERWRITE"); l.text(4, 6, "HAND-DRAWN"); l.text(4, 7, "WAVES?");
-        l.text(4, 9, "YES", promptYes_); l.text(11, 9, "NO", !promptYes_);
+        l.rect(32, 32, 120, 56, 3);
+        l.rect(34, 34, 116, 52, 0);
+        l.text(5, 5, "OVERWRITE"); l.text(5, 6, "HAND-DRAWN"); l.text(5, 7, "WAVES?");
+        l.text(5, 9, "YES", promptYes_); l.text(12, 9, "NO", !promptYes_);
     }
+    if (nameOpen_) drawNameEntry(l);
+    if (progLabel_[0]) drawProgress(l);
 }
 
 void Lsdj::drawSong(Lcd& l) const {
     l.text(0, 0, "SONG");
     l.text(5, 0, console_ ? "B 5-8" : "A 1-4");
     static const char* ch[4] = {"PU1", "PU2", "WAV", "NOI"};
-    for (int c = 0; c < 4; ++c) l.text(0, 1, "", false), [&] { for (int i = 0; i < 3; ++i) l.glyphAt(18 + c * 26 + i * 8 - 2, 8, ch[c][i], p_.muted(c), 2, 0); }();
+    for (int c = 0; c < 4; ++c) for (int i = 0; i < 3; ++i) l.glyphAt(26 + c * 36 + i * 8, 8, ch[c][i], p_.muted(c), 2, 0);
     const int base = std::max(0, std::min(songRow - 8, 256 - 16));
     for (int r = 0; r < 16; ++r) {
         const int row = base + r;
@@ -458,76 +892,121 @@ void Lsdj::drawSong(Lcd& l) const {
             const uint8_t v = s_.songCell(row, c);
             const bool cur = row == songRow && c == songCh;
             char t[3];
-            if (v == 0xFF) std::strcpy(t, "--"); else { t[0] = "0123456789ABCDEF"[v >> 4]; t[1] = "0123456789ABCDEF"[v & 15]; t[2] = 0; }
-            for (int i = 0; i < 2; ++i) l.glyphAt(22 + c * 26 + i * 8, 16 + r * 8, t[i], cur, 3, 0);
+            if (v == 0xFF) std::strcpy(t, "--"); else { t[0] = hx16[v >> 4]; t[1] = hx16[v & 15]; t[2] = 0; }
+            for (int i = 0; i < 2; ++i) l.glyphAt(30 + c * 36 + i * 8, 16 + r * 8, t[i], cur, 3, selected(row, c) ? 1 : 0);
         }
-        for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().row(c) == row) l.glyphAt(14 + c * 26, 16 + r * 8, '\x05', false, 3, 0);
+        for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().row(c) == row) l.glyphAt(20 + c * 36, 16 + r * 8, '\x05', false, 3, 0);
     }
 }
 
 void Lsdj::drawChain(Lcd& l) const {
     char t[16]; std::snprintf(t, sizeof t, "CHAIN %02X", chain); l.text(0, 0, t);
-    l.glyphAt(40, 8, 'P', false, 2, 0); l.glyphAt(48, 8, 'A', false, 2, 0); l.glyphAt(56, 8, 'T', false, 2, 0);
-    l.glyphAt(88, 8, 'T', false, 2, 0); l.glyphAt(96, 8, 'S', false, 2, 0); l.glyphAt(104, 8, 'P', false, 2, 0);
+    const char* hdr1 = "PHR"; const char* hdr2 = "TSP";
+    for (int i = 0; i < 3; ++i) { l.glyphAt(52 + i * 8, 8, hdr1[i], false, 2, 0); l.glyphAt(112 + i * 8, 8, hdr2[i], false, 2, 0); }
     for (int r = 0; r < 16; ++r) {
-        l.glyph(0, 2 + r, "0123456789ABCDEF"[r]);
+        l.glyph(0, 2 + r, hx16[r]);
         const uint8_t p = s_.chainPhrase(chain, r);
-        const char hx[] = "0123456789ABCDEF";
-        char a[3] = {p == 0xFF ? '-' : hx[p >> 4], p == 0xFF ? '-' : hx[p & 15], 0};
+        char a[3] = {p == 0xFF ? '-' : hx16[p >> 4], p == 0xFF ? '-' : hx16[p & 15], 0};
         const uint8_t tr = s_.chainTrans(chain, r);
-        char b[3] = {hx[tr >> 4], hx[tr & 15], 0};
+        char b[3] = {hx16[tr >> 4], hx16[tr & 15], 0};
         for (int i = 0; i < 2; ++i) {
-            l.glyphAt(40 + i * 8, 16 + r * 8, a[i], r == chainPos && chainCol == 0, 3, 0);
-            l.glyphAt(88 + i * 8, 16 + r * 8, b[i], r == chainPos && chainCol == 1, 3, 0);
+            l.glyphAt(56 + i * 8, 16 + r * 8, a[i], r == chainPos && chainCol == 0, 3, selected(r, 0) ? 1 : 0);
+            l.glyphAt(116 + i * 8, 16 + r * 8, b[i], r == chainPos && chainCol == 1, 3, selected(r, 1) ? 1 : 0);
         }
     }
-    for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().chain(c) == chain) l.glyphAt(24, 16 + p_.seq().chainPos(c) * 8, '\x05', false, 3, 0);
+    for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().chain(c) == chain) l.glyphAt(36, 16 + p_.seq().chainPos(c) * 8, '\x05', false, 3, 0);
 }
 
 void Lsdj::drawPhrase(Lcd& l) const {
     char t[16]; std::snprintf(t, sizeof t, "PHRASE %02X", phrase); l.text(0, 0, t);
-    const char* hd[3] = {"NOTE", "INSTR", "CMD"}; const int hx0[3] = {16, 56, 88};
+    const char* hd[3] = {"NOTE", "INSTR", "CMD"}; const int hx0[3] = {24, 76, 128};
     for (int h = 0; h < 3; ++h) for (int i = 0; hd[h][i]; ++i) l.glyphAt(hx0[h] + i * 6 - 2, 8, hd[h][i], false, 2, 0);
-    const char hx[] = "0123456789ABCDEF";
     for (int r = 0; r < 16; ++r) {
-        l.glyph(0, 2 + r, hx[r]);
+        l.glyph(0, 2 + r, hx16[r]);
         char nn[4]; noteName(s_.note(phrase, r), nn);
-        for (int i = 0; i < 3; ++i) l.glyphAt(16 + i * 8, 16 + r * 8, nn[i], r == step && phraseCol == 0, 3, 0);
+        for (int i = 0; i < 3; ++i) l.glyphAt(24 + i * 8, 16 + r * 8, nn[i], r == step && phraseCol == 0, 3, selected(r, 0) ? 1 : 0);
         const uint8_t in = s_.phraseInstr(phrase, r);
-        char ib[3] = {in == 0xFF ? '-' : hx[(in >> 4) & 15], in == 0xFF ? '-' : hx[in & 15], 0};
-        for (int i = 0; i < 2; ++i) l.glyphAt(56 + i * 8, 16 + r * 8, ib[i], r == step && phraseCol == 1, 3, 0);
+        char ib[3] = {in == 0xFF ? '-' : hx16[(in >> 4) & 15], in == 0xFF ? '-' : hx16[in & 15], 0};
+        for (int i = 0; i < 2; ++i) l.glyphAt(80 + i * 8, 16 + r * 8, ib[i], r == step && phraseCol == 1, 3, selected(r, 1) ? 1 : 0);
         const uint8_t c = s_.phraseCmd(phrase, r), v = s_.phraseVal(phrase, r);
-        l.glyphAt(88, 16 + r * 8, cmdLetter(c), r == step && phraseCol == 2, 3, 0);
-        l.glyphAt(96, 16 + r * 8, hx[v >> 4], r == step && phraseCol == 3, 3, 0);
-        l.glyphAt(104, 16 + r * 8, hx[v & 15], r == step && phraseCol == 3, 3, 0);
+        l.glyphAt(128, 16 + r * 8, cmdLetter(c), r == step && phraseCol == 2, 3, selected(r, 2) ? 1 : 0);
+        l.glyphAt(140, 16 + r * 8, hx16[v >> 4], r == step && phraseCol == 3, 3, selected(r, 3) ? 1 : 0);
+        l.glyphAt(148, 16 + r * 8, hx16[v & 15], r == step && phraseCol == 3, 3, selected(r, 3) ? 1 : 0);
     }
-    for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().phrase(c) == phrase) l.glyphAt(8, 16 + p_.seq().step(c) * 8, '\x05', false, 3, 0);
+    for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().phrase(c) == phrase) l.glyphAt(12, 16 + p_.seq().step(c) * 8, '\x05', false, 3, 0);
 }
 
 void Lsdj::drawTable(Lcd& l) const {
     char t[16]; std::snprintf(t, sizeof t, "TABLE %02X", table); l.text(0, 0, t);
-    const char* hd[4] = {"VOL", "TSP", "CMD", "CMD"}; const int hx0[4] = {12, 36, 60, 88};
+    const char* hd[4] = {"VOL", "TSP", "CMD", "CMD"}; const int hx0[4] = {16, 48, 88, 128};
     for (int h = 0; h < 4; ++h) for (int i = 0; hd[h][i]; ++i) l.glyphAt(hx0[h] + i * 6 - 2, 8, hd[h][i], false, 2, 0);
-    const char hx[] = "0123456789ABCDEF";
     const int o[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
     for (int r = 0; r < 16; ++r) {
-        l.glyph(0, 2 + r, hx[r]);
+        l.glyph(0, 2 + r, hx16[r]);
         auto cell = [&](int col) { return s_.at(uint16_t(o[col] + table * 16 + r)); };
-        auto two = [&](int x, int col) { const uint8_t v = cell(col); for (int i = 0; i < 2; ++i) l.glyphAt(x + i * 8, 16 + r * 8, hx[i ? v & 15 : v >> 4], r == tableRow && tableCol == col, 3, 0); };
-        two(12, 0); two(36, 1);
-        l.glyphAt(60, 16 + r * 8, cmdLetter(cell(2)), r == tableRow && tableCol == 2, 3, 0); two(68, 3);
-        l.glyphAt(88, 16 + r * 8, cmdLetter(cell(4)), r == tableRow && tableCol == 4, 3, 0); two(96, 5);
+        auto two = [&](int x, int col) { const uint8_t v = cell(col); for (int i = 0; i < 2; ++i) l.glyphAt(x + i * 8, 16 + r * 8, hx16[i ? v & 15 : v >> 4], r == tableRow && tableCol == col, 3, selected(r, col) ? 1 : 0); };
+        two(16, 0); two(48, 1);
+        l.glyphAt(88, 16 + r * 8, cmdLetter(cell(2)), r == tableRow && tableCol == 2, 3, selected(r, 2) ? 1 : 0); two(100, 3);
+        l.glyphAt(128, 16 + r * 8, cmdLetter(cell(4)), r == tableRow && tableCol == 4, 3, selected(r, 4) ? 1 : 0); two(140, 5);
     }
 }
 
 void Lsdj::drawGroove(Lcd& l) const {
     char t[16]; std::snprintf(t, sizeof t, "GROOVE %02X", groove); l.text(0, 0, t);
     for (int r = 0; r < 16; ++r) {
-        l.glyph(0, 2 + r, "0123456789ABCDEF"[r]);
-        l.hex2(3, 2 + r, s_.groove(groove)[r], r == grooveStep);
+        l.glyph(0, 2 + r, hx16[r]);
+        const uint8_t v = s_.groove(groove)[r];
+        for (int i = 0; i < 2; ++i) l.glyphAt(24 + i * 8, 16 + r * 8, hx16[i ? v & 15 : v >> 4], r == grooveStep, 3, selected(r, 0) ? 1 : 0);
     }
 }
 
+// The name keyboard, in the layout of the ROM's own: digits, letters, then space, backspace and OK.
+void Lsdj::drawNameEntry(Lcd& l) const {
+    l.rect(16, 24, 168, 96, 3);
+    l.rect(18, 26, 164, 92, 0);
+    l.text(3, 4, "NAME:");
+    for (int i = 0; i < nameMax_; ++i) {
+        const int n = int(std::strlen(nameBuf_));
+        l.glyphAt(72 + i * 8, 32, i < n ? nameBuf_[i] : ' ', i == n, 3, i == n ? 3 : 1);
+    }
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; kKeyRows[r][c]; ++c) l.glyphAt(48 + c * 8 + c * 4, 56 + r * 12, kKeyRows[r][c], nameCy_ == r && nameCx_ == c, 3, 0);
+    l.glyphAt(48 + 6 * 12, 56 + 3 * 12, '_', nameCy_ == 4 && nameCx_ == 6, 3, 0);
+    l.glyphAt(48 + 7 * 12, 56 + 3 * 12, '<', nameCy_ == 4 && nameCx_ == 7, 3, 0);
+    l.glyphAt(48 + 8 * 12, 56 + 3 * 12, 'O', nameCy_ == 4 && nameCx_ == 8, 3, 0);
+    l.glyphAt(48 + 8 * 12 + 8, 56 + 3 * 12, 'K', nameCy_ == 4 && nameCx_ == 8, 3, 0);
+    l.text(3, 13, "INS=TYPE DEL=BACK");
+    l.text(3, 14, "PLAY=OK SHIFT=NO");
+}
+
+void Lsdj::drawProgress(Lcd& l) const {
+    l.rect(20, 48, 160, 40, 3);
+    l.rect(22, 50, 156, 36, 0);
+    l.text(4, 7, progLabel_);
+    l.frame(32, 72, 136, 10, 3);
+    const int w = 132 * (progPct_ < 0 ? 0 : progPct_ > 100 ? 100 : progPct_) / 100;
+    l.rect(34, 74, w, 6, 3);
+}
+
+namespace {
+struct HelpPage { const char* title; const char* line[15]; };
+const HelpPage kHelp[Lsdj::kHelpPages] = {
+    {"BASICS", {"INSERT       ENTER / EDIT", "INSERT+ARROWS", " LEFT RIGHT   +-1", " UP DOWN      +-16 / OCT", "JOG WHEEL    INSERT+L/R", "DELETE+INSERT CUT", "DELETE+ARROWS NEXT CHAIN,", " PHRASE, INSTR, TABLE", "SHIFT+ARROWS  CHANGE PAGE", "PLAY         START / STOP", "", "SCREENS: PROJECT SYNTH", " WAVE / SONG CHAIN PHRASE", " INSTR TABLE / GROOVE", ""}},
+    {"PAGE KEYS", {"SONG         SONG PAGE", "PATTERN      CHAIN", "NOTE         PHRASE", "INSTR        INSTRUMENT", "INSTR PARAMS TABLE", "FX1          SYNTH", "FX2          WAVE", "CONFIG       PROJECT", "FILE         LOAD SONG", "PERFORMANCE  GROOVE", "HELP         THIS HELP", "MASTER       SIDE BY SIDE", "SHIFT+SONG   SWAP A / B", "", ""}},
+    {"PADS AND REC", {"PADS PLAY THE SOUND, NOT", " THE SONG. SHIFT+PAD ROW", " SETS THE OCTAVE", "PHRASE, REC OFF (STEP):", " PADS ENTER NOTES AT", " THE CURSOR", "REC ARMS: JOG PICKS THE", " INSTRUMENT, PADS SOUND", "REC+PLAY: THE PHRASE", " LOOPS, THE SONG PLAYS", " BEHIND IT, PADS RECORD", " INTO IT. PLAY STOPS.", "PRELISTEN OFF MUTES PADS", "", ""}},
+    {"COPY AND NAMES", {"SHIFT+INSERT+UP/DOWN", " SELECTS CELLS", "COPY        COPY THEM", "SHIFT+COPY  PASTE HERE", " (SAME PAGE ONLY)", "CLONE DEEP: PASTING A", " CHAIN OR PHRASE MAKES", " A NEW COPY. SLIM KEEPS", " THE SAME NUMBER.", "INSTR PAGE, NAME ROW:", " INSERT OPENS THE", " KEYBOARD. PLAY=OK", " DELETE=BACKSPACE", "PROJECT NAME: SAME", ""}},
+    {"SYNC AND EXPORT", {"PROJECT > SYNC (BOTH):", " MASTER SETS THE TEMPO,", " SLAVE FOLLOWS. PLAY", " STARTS BOTH.", "MASTER KEY: SIDE BY SIDE", " F1/F8  SONG A / B", " F2/F7  HOLD+JOG=VOLUME", " F3-F6  MUTE TRACK", " SHIFT+F3-F6  SOLO", "SAVE SONG   GB/SONGS", "EXPORT WAV  GB/EXPORT", "EXPORT LSDJ  TWO SONGS", " AND .SAV FILES FOR TWO", " GAME BOYS", ""}},
+};
+}  // namespace
+
+void Lsdj::drawHelp(Lcd& l) const {
+    const HelpPage& h = kHelp[clampi(helpPage, 0, kHelpPages - 1)];
+    char t[28]; std::snprintf(t, sizeof t, "HELP %d/%d %s", helpPage + 1, kHelpPages, h.title);
+    l.rect(0, 0, 200, 8, 3);
+    l.text(0, 0, t, true);
+    for (int i = 0; i < 15; ++i) l.text(0, 2 + i, h.line[i]);
+    l.text(0, 17, "< > PAGE        B EXIT");
+}
 
 // ---- Wave and Synth screens ---------------------------------------------------------------------------------------------
 
@@ -665,24 +1144,25 @@ void Lsdj::drawFile(Lcd& l) const {
 }
 
 void Lsdj::drawProject(Lcd& l) const {
-    l.text(0, 0, "PROJECT (NEW)");
     char b[24];
-    auto row = [&](int y, const char* name, const char* val, bool cur) { l.text(0, y, name, cur && !val[0]); l.text(9, y, val, cur); };   // a row with no value is selected by its name
-    std::snprintf(b, sizeof b, "%02X", s_.at(off::kTempo)); row(2, "TEMPO", b, projRow == 0);
-    std::snprintf(b, sizeof b, "%02X", s_.at(off::kTranspose)); row(3, "TRANSPOSE", b, projRow == 1);
-    row(4, "SYNC", s_.at(off::kSync) == 1 ? "LSDJ" : s_.at(off::kSync) ? "OTHER" : "OFF", projRow == 2);
-    row(5, "CLONE", "DEEP", projRow == 3);
-    row(6, "LOOK", "92K/GRAY", projRow == 4);
-    row(7, "PRELISTEN", "ON", projRow == 5);
-    row(8, "HELP", "", projRow == 6);
-    row(9, "CLEAN SONG DATA", "", projRow == 7);
-    row(10, "CLEAN INSTR DATA", "", projRow == 8);
-    row(11, "SAVE SESSION", "", projRow == 9);
-    row(12, "LOAD SESSION", "", projRow == 10);
-    row(13, "EXPORT WAV", "", projRow == 11);
-    row(14, "EXPORT LSDJ", "", projRow == 12);
-    row(15, console_ ? "LOAD SONG FILE B" : "LOAD SONG FILE A", "", projRow == 13);
-    { char s[8]; std::snprintf(s, sizeof s, "S%02d", session); l.text(13, 11, s, projRow == 9); l.text(13, 12, s, projRow == 10); l.text(13, 13, s, projRow == 11); l.text(13, 14, s, projRow == 12); }
+    std::snprintf(b, sizeof b, "PROJECT %s", name_[0] ? name_ : "(NEW)");
+    l.text(0, 0, b);
+    auto row = [&](int y, const char* nm, const char* val, bool cur) { l.text(0, y, nm, cur && !val[0]); if (val[0]) l.text(14, y, val, cur); };   // a row with no value is selected by its name
+    const int mode = tr_ ? tr_->syncMode(console_) : (s_.at(off::kSync) ? 1 : 0);
+    row(2, "NAME", name_[0] ? name_ : "-", projRow == 0);
+    std::snprintf(b, sizeof b, "%02X", s_.at(off::kTempo)); row(3, "TEMPO", b, projRow == 1);
+    std::snprintf(b, sizeof b, "%02X", s_.at(off::kTranspose)); row(4, "TRANSPOSE", b, projRow == 2);
+    row(5, "SYNC", mode == 1 ? "MASTER" : mode == 2 ? "SLAVE" : "OFF", projRow == 3);
+    row(6, "CLONE", cloneDeep_ ? "DEEP" : "SLIM", projRow == 4);
+    row(7, "LOOK", Lcd::lookName(tr_ ? tr_->look() : 0), projRow == 5);
+    row(8, "PRELISTEN", prelisten_ ? "ON" : "OFF", projRow == 6);
+    row(9, "HELP", "", projRow == 7);
+    row(10, "CLEAN SONG DATA", "", projRow == 8);
+    row(11, "CLEAN INSTR DATA", "", projRow == 9);
+    row(12, console_ ? "SAVE SONG B" : "SAVE SONG A", "", projRow == 10);
+    row(13, console_ ? "LOAD SONG B" : "LOAD SONG A", "", projRow == 11);
+    row(14, "EXPORT WAV", "", projRow == 12);
+    row(15, "EXPORT LSDJ (A+B)", "", projRow == 13);
     l.text(0, 17, status_);
     l.text(0, 16, audio_[0] ? audio_ : "WORK TIME: 0:00");
 }
@@ -690,10 +1170,10 @@ void Lsdj::drawProject(Lcd& l) const {
 void Lsdj::drawInstr(Lcd& l) const {
     char t[24]; std::snprintf(t, sizeof t, "INSTRUMENT %02X", instr); l.text(0, 0, t);
     const uint8_t* in = s_.instrument(instr);
-    l.text(0, 2, "NAME"); l.text(5, 2, "          ", instrRow == 0);
+    char nm[6]; instrName(instr, nm);
+    l.text(0, 2, "NAME"); l.rect(72, 16, 40, 8, 1); l.text(9, 2, nm, instrRow == 0);
     l.text(0, 3, "TYPE"); l.text(9, 3, kTypes[in[0] & 3], instrRow == 1);
     const FieldSet fs = fieldsFor(in[0]);
-    const char hx[] = "0123456789ABCDEF";
     for (int i = 0; i < fs.n; ++i) {
         const Field& f = fs.f[i];
         l.text(0, f.row, f.label);
@@ -704,7 +1184,7 @@ void Lsdj::drawInstr(Lcd& l) const {
             case 2: if (in[f.byte] & 0x40) std::snprintf(v, sizeof v, "%02X", in[f.byte] & 0x3F); else std::strcpy(v, "UNLIM"); break;
             case 3: if (in[f.byte] & 0x20) std::snprintf(v, sizeof v, "%02X", in[f.byte] & 0x1F); else std::strcpy(v, "OFF"); break;
             case 4: std::snprintf(v, sizeof v, "%02X", in[f.byte] ^ 0x80); break;
-            default: v[0] = hx[(raw >> 4) & 15]; v[1] = hx[raw & 15]; v[2] = 0; break;
+            default: v[0] = hx16[(raw >> 4) & 15]; v[1] = hx16[raw & 15]; v[2] = 0; break;
         }
         l.text(9, f.row, v, instrRow == 2 + i);
     }

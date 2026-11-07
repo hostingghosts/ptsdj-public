@@ -16,6 +16,12 @@ public:
     void startOne(int console, int row);
     void startLinked(int master, int rowA, int rowB);
     void startLoop(int console, int ch, int phrase);   // one console, one channel looping one phrase (live recording)
+    // Rec + Play: the console's channel `ch` loops `phrase` while the songs play behind it from rowA / rowB. master >= 0 links the consoles
+    // (the other console starts too and follows the master's tempo); otherwise only `console` plays.
+    void startOverdub(int console, int ch, int phrase, int rowA, int rowB, int master);
+    void setVolume(int console, int v) { vol_[console ? 1 : 0] = v < 0 ? 0 : v > 15 ? 15 : v; }   // 0-15, the Master page
+    int volume(int console) const { return vol_[console ? 1 : 0]; }
+    void setFollow(int master) { follow_ = master; }
     void stop();
     bool running() const { return a_.running() || b_.running(); }
     // `n` stereo frames at `rate` Hz, 16-bit interleaved: A plus B, each at 0.7 so two loud consoles do not clip.
@@ -28,6 +34,7 @@ public:
 private:
     Player& a_;
     Player& b_;
+    int vol_[2] = {15, 15};
     int follow_ = -1;                       // the console whose tempo the other one follows, -1 = none
 };
 

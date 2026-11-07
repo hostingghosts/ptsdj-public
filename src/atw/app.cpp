@@ -94,6 +94,11 @@ bool App::loadSong(const char* path, int console) {
     if (!gb::loadLsdsng(fresh, buf, size_t(n))) return false;
     if (!gb::upgradeSong(fresh)) return false;       // songs saved by older LSDJ versions
     std::memcpy((console ? songB : song).mem(), fresh.mem(), gb::kMemSize);
+    const char* stem = std::strrchr(path, '/');
+    stem = stem ? stem + 1 : path;
+    char nm[9] = {};
+    for (int i = 0; i < 8 && stem[i] && stem[i] != '.'; ++i) nm[i] = stem[i];
+    (console ? lsdjB : lsdj).setName(strncasecmp(nm, "AUTOLOAD", 8) == 0 ? "" : nm);
     return true;
 }
 
@@ -200,11 +205,39 @@ void App::LinkedTransport::start(int console, int row) {
     // The console whose Start was pressed starts at its cursor row; the other one at its own cursor row.
     const int rowA = console == 0 ? row : app->lsdj.startRow();
     const int rowB = console == 1 ? row : app->lsdjB.startRow();
-    // The virtual link cable: with SYNC = LSDJ in both projects the console that started is the master (the other follows its tempo and
-    // starts with it); otherwise it plays alone.
-    const bool linked = app->song.at(gb::off::kSync) == 1 && app->songB.at(gb::off::kSync) == 1;
-    if (linked) app->dual.startLinked(console, rowA, rowB); else app->dual.startOne(console, console ? rowB : rowA);
+    // The virtual link cable: with SYNC on in both projects, both consoles start together and the slave follows the master's tempo
+    // (the master is the one set to MASTER, whichever console Start was pressed on); otherwise Start plays only that console.
+    if (app->linked()) {
+        const int m = app->masterConsole();
+        gb::Song& slave = m ? app->song : app->songB;
+        slave.at(gb::off::kTempo) = (m ? app->songB : app->song).at(gb::off::kTempo);
+        app->dual.startLinked(m, rowA, rowB);
+    } else app->dual.startOne(console, console ? rowB : rowA);
     app->flushRing();
+}
+
+void App::LinkedTransport::startLoop(int console, int ch, int phrase, int row) {
+    const int rowA = console == 0 ? row : app->lsdj.startRow();
+    const int rowB = console == 1 ? row : app->lsdjB.startRow();
+    app->dual.startOverdub(console, ch, phrase, rowA, rowB, app->linked() ? app->masterConsole() : -1);
+    app->flushRing();
+}
+
+void App::LinkedTransport::setSyncMode(int console, int mode) {
+    gb::Song& s = console ? app->songB : app->song;
+    if (mode == 0) { s.at(gb::off::kSync) = 0; return; }
+    s.at(gb::off::kSync) = 1;
+    app->syncRole_[console] = mode;
+    app->syncRole_[1 - console] = mode == 1 ? 2 : 1;
+    if (app->linked()) tempoChanged(app->masterConsole());
+}
+
+// The master's tempo is the slave's: the slave's project takes it too, so the pair saves and exports with one tempo.
+void App::LinkedTransport::tempoChanged(int console) {
+    if (!app->linked() || console != app->masterConsole()) return;
+    const uint8_t t = (console ? app->songB : app->song).at(gb::off::kTempo);
+    (console ? app->song : app->songB).at(gb::off::kTempo) = t;
+    (console ? app->player : app->playerB).setTempo(t);
 }
 
 int App::LinkedTransport::listSongs() {
@@ -239,30 +272,124 @@ bool App::LinkedTransport::action(Action a, int slot) {
     switch (a) {
         case kSavePair: return app->saveLinked(name);
         case kLoadPair: return app->loadLinked(name);
+        case kSaveSong: return app->saveProject(slot ? 1 : 0);
         case kExportWav: {
             if (app->platform().storage) app->platform().storage->mkdir(kExportDir);
-            char path[64];
-            std::snprintf(path, sizeof path, "%s/%s.wav", kExportDir, name);
-            return app->exportWav(path, 44100, slot >= 90 ? 20 : 600);   // slots 90-99 make a 20 second test export
+            char base[16], path[64];
+            app->projectFileName(0, base, sizeof base, "SONG");
+            std::snprintf(path, sizeof path, "%s/%s.wav", kExportDir, base);
+            return app->exportWav(path, 44100, 600);
         }
-        case kExportFiles: return app->exportFiles(name);
+        case kExportFiles: return app->exportFiles();
     }
     return false;
+}
+
+// Instrument files: GB/Instruments/<name>.gbi
+int App::LinkedTransport::listInstruments() {
+    app->instCount_ = 0;
+    if (!app->platform().storage) return 0;
+    app->platform().storage->mkdir(kInstDir);
+    app->platform().storage->listDir(kInstDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
+        App* a = static_cast<App*>(ctx);
+        const size_t n = std::strlen(e.name);
+        if (e.isDir || n < 5 || n > 23 + 4 || strcasecmp(e.name + n - 4, ".gbi") != 0 || a->instCount_ >= kMaxInst) return a->instCount_ < kMaxInst;
+        std::snprintf(a->instNames_[a->instCount_], sizeof a->instNames_[0], "%.*s", int(std::min<size_t>(n - 4, 23)), e.name);
+        ++a->instCount_;
+        return true;
+    }, app);
+    for (int i = 1; i < app->instCount_; ++i)
+        for (int j = i; j > 0 && strcasecmp(app->instNames_[j - 1], app->instNames_[j]) > 0; --j) {
+            char tmp[24]; std::memcpy(tmp, app->instNames_[j], 24); std::memcpy(app->instNames_[j], app->instNames_[j - 1], 24); std::memcpy(app->instNames_[j - 1], tmp, 24);
+        }
+    return app->instCount_;
+}
+
+bool App::LinkedTransport::saveInstrumentFile(const char* name, const uint8_t* data, int n) {
+    if (!app->platform().storage) return false;
+    char base[12] = {};
+    for (int i = 0; i < 8 && name[i]; ++i) base[i] = name[i] == ' ' ? '_' : name[i];
+    app->platform().storage->mkdir("GB");
+    app->platform().storage->mkdir(kInstDir);
+    char path[64];
+    std::snprintf(path, sizeof path, "%s/%s.gbi", kInstDir, base);
+    const ot::IStorage::Handle h = app->platform().storage->open(path, ot::IStorage::kWrite);
+    if (h < 0) return false;
+    const bool ok = app->platform().storage->write(h, data, uint32_t(n)) == n;
+    app->platform().storage->close(h);
+    return ok;
+}
+
+int App::LinkedTransport::loadInstrumentFile(int i, uint8_t* out, int max) {
+    if (i < 0 || i >= app->instCount_ || !app->platform().storage) return -1;
+    char path[64];
+    std::snprintf(path, sizeof path, "%s/%s.gbi", kInstDir, app->instNames_[i]);
+    const ot::IStorage::Handle h = app->platform().storage->open(path, ot::IStorage::kRead);
+    if (h < 0) return -1;
+    const int32_t n = app->platform().storage->read(h, out, uint32_t(max));
+    app->platform().storage->close(h);
+    return n;
+}
+
+void App::projectFileName(int console, char* out, size_t n, const char* fallback) const {
+    const char* nm = (console ? lsdjB : lsdj).name();
+    if (!nm[0]) nm = fallback;
+    size_t i = 0;
+    for (; nm[i] && i + 1 < n; ++i) out[i] = nm[i] == ' ' ? '_' : nm[i];
+    out[i] = 0;
+}
+
+bool App::saveProject(int console) {
+    char base[16], path[64];
+    projectFileName(console, base, sizeof base, console ? "SONGB" : "SONGA");
+    if (p_.storage) p_.storage->mkdir(kSongDir);
+    progress("SAVING SONG", 30);
+    std::snprintf(path, sizeof path, "%s/%s.lsdsng", kSongDir, base);
+    const bool ok = saveSong(path, base, console);
+    progress("", 0);
+    return ok;
+}
+
+// One bar, drawn at once (the main loop is busy): the label and percent go to both consoles' screens and a frame goes out.
+void App::progress(const char* label, int pct) {
+    lsdj.setProgress(label, pct);
+    lsdjB.setProgress(label, pct);
+    if (!p_.clock || !label[0]) return;
+    const uint32_t now = p_.clock->millis();
+    if (now - progressAt_ < 60 && pct < 100) return;
+    progressAt_ = now;
+    ui.requestRedraw();
+    ui.update(now + 20);
+}
+
+void App::bootChime(int stage) {
+    if (stage >= 2) { player.stop(); return; }
+    player.bootChime(stage);
+    flushRing();
 }
 
 // Both songs as LSDJ files for two real Game Boys: Snn_A / Snn_B as .lsdsng (for the file manager) and as .sav (the song as working memory).
 bool App::exportFiles(const char* name) {
     if (!p_.storage || !fileBuf()) return false;
     p_.storage->mkdir(kExportDir);
+    char base[2][16];
+    projectFileName(0, base[0], sizeof base[0], "SONGA");
+    projectFileName(1, base[1], sizeof base[1], "SONGB");
+    if (name) { std::snprintf(base[0], sizeof base[0], "%s_A", name); std::snprintf(base[1], sizeof base[1], "%s_B", name); }
+    else if (std::strcmp(base[0], base[1]) == 0) { std::strncat(base[0], "_A", 3); std::strncat(base[1], "_B", 3); }
     bool ok = true;
+    int step = 0;
     for (int c = 0; c < 2; ++c) {
         char path[80], sn[16];
-        std::snprintf(path, sizeof path, "%s/%s_%c.lsdsng", kExportDir, name, 'A' + c);
-        std::snprintf(sn, sizeof sn, "%.7s%c", name, 'A' + c);
+        progress("EXPORT LSDJ", step++ * 25);
+        std::snprintf(path, sizeof path, "%s/%s.lsdsng", kExportDir, base[c]);
+        std::snprintf(sn, sizeof sn, "%.8s", base[c]);
         ok = saveSong(path, sn, c) && ok;
-        std::snprintf(path, sizeof path, "%s/%s_%c.sav", kExportDir, name, 'A' + c);
+        progress("EXPORT LSDJ", step++ * 25);
+        std::snprintf(path, sizeof path, "%s/%s.sav", kExportDir, base[c]);
         ok = saveSav(path, c) && ok;
     }
+    progress("", 0);
     return ok;
 }
 
@@ -296,11 +423,26 @@ bool App::exportWav(const char* path, int rate, int maxSeconds) {
     static int16_t buf[2 * 1024];
     uint32_t frames = 0;
     dual.start(0, 0);
+    int total[2] = {};                                  // song rows in use: the bar is how far the slowest console has come through them
+    for (int c = 0; c < 2; ++c) for (int r = 0; r < gb::kSongRows; ++r) for (int ch = 0; ch < 4; ++ch) if ((c ? songB : song).songCell(r, ch) != 0xFF) total[c] = r + 1;
+    uint32_t tick = 0;
     while (ok && dual.running() && !dual.looped() && frames < uint32_t(rate) * uint32_t(maxSeconds)) {
         dual.render(buf, 1024, rate);
         ok = p_.storage->write(h, buf, sizeof buf) == int32_t(sizeof buf);
         frames += 1024;
+        if ((++tick & 7) == 0) {
+            int pct = 100;
+            for (int c = 0; c < 2; ++c) {
+                if (!dual.player(c).running() || !total[c]) continue;
+                int row = 0;
+                for (int ch = 0; ch < 4; ++ch) if (dual.player(c).seq().active(ch)) row = std::max(row, dual.player(c).seq().row(ch));
+                pct = std::min(pct, 100 * row / total[c]);
+            }
+            static char lb[24]; std::snprintf(lb, sizeof lb, "EXPORT WAV %u:%02u", unsigned(frames / unsigned(rate) / 60), unsigned(frames / unsigned(rate) % 60));
+            progress(lb, pct);
+        }
     }
+    progress("", 0);
     dual.stop();
     const uint32_t bytes = frames * 4;
     auto w32 = [&](int o, uint32_t v) { for (int i = 0; i < 4; ++i) hdr[o + i] = uint8_t(v >> (8 * i)); };

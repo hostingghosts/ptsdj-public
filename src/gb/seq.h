@@ -22,6 +22,7 @@ public:
     explicit Seq(Song& s) : s_(s) {}
     void start(int row = 0);                  // play all channels from a song row
     void startLoop(int c, int phrase);        // only channel c, looping one phrase (live recording): no chain, no song
+    void startOverdub(int row, int c, int phrase);   // the song from `row`, but channel c loops `phrase` instead
     void stopAll() { for (Ch& h : ch_) h.active = false; }
     // Advance one tick; calls f(StepEvent) for every channel step that begins on this tick.
     template <class F> void tick(F&& f) {

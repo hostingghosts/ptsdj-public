@@ -10,6 +10,7 @@ namespace gb {
 
 namespace off {
 constexpr uint16_t kNotes = 0x0000;        // 255 phrases x 16, 0 = empty
+constexpr uint16_t kInstrNames = 0x1E7A;   // 64 x 5 ASCII characters, 0 = unused (measured: confirming an instrument name in the ROM writes them here)
 constexpr uint16_t kBookmarks = 0x0FF0;    // 16, 0xFF = none
 constexpr uint16_t kGroove = 0x1090;       // 32 x 16 ticks
 constexpr uint16_t kSong = 0x1290;         // 256 rows x 4 channels (row-major), chain id, 0xFF = empty
@@ -47,6 +48,7 @@ class Song {
 public:
     Song() { reset(); }
     void reset();                                   // a fresh song, as LSDJ makes after a memory reset
+    static uint8_t defaultAt(uint16_t o);           // the byte a fresh song holds at o (to clear a phrase, chain or instrument)
 
     bool currentFormat() const { return m_[0x7FFF] == kFormatVersion; }
     uint8_t* mem() { return m_; }

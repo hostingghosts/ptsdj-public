@@ -22,6 +22,15 @@ void Dual::startLoop(int console, int ch, int phrase) {
     (console ? a_ : b_).stop();
 }
 
+void Dual::startOverdub(int console, int ch, int phrase, int rowA, int rowB, int master) {
+    Player& me = console ? b_ : a_;
+    Player& other = console ? a_ : b_;
+    if (master >= 0) other.start(console ? rowA : rowB); else other.stop();
+    me.start(console ? rowB : rowA, ch, phrase, true);
+    follow_ = master;
+    if (master >= 0) (master ? a_ : b_).setTempo(player(master).tempo());
+}
+
 void Dual::startLinked(int master, int rowA, int rowB) {
     start(rowA, rowB);
     follow_ = master;
@@ -40,7 +49,7 @@ void Dual::render(int16_t* out, int n, int rate) {
         const int k = std::min(n, 512);
         a_.render(ta, k, rate);
         b_.render(tb, k, rate);
-        for (int i = 0; i < 2 * k; ++i) out[i] = int16_t(std::clamp((int(ta[i]) + int(tb[i])) * 7 / 10, -32767, 32767));
+        for (int i = 0; i < 2 * k; ++i) out[i] = int16_t(std::clamp((int(ta[i]) * vol_[0] + int(tb[i]) * vol_[1]) * 7 / 150, -32767, 32767));
         out += 2 * k;
         n -= k;
     }

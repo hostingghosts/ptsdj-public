@@ -20,9 +20,13 @@ enum Cmd : uint8_t {
 class Player {
 public:
     explicit Player(Song& s) : s_(s), seq_(s) {}
-    void start(int row = 0, int loopCh = -1, int loopPhrase = 0);   // loopCh >= 0: only that channel, looping one phrase
+    // loopCh >= 0: that channel loops one phrase; with withSong the other channels play the song from `row` behind it (Rec + Play overdub),
+    // without it they stay silent.
+    void start(int row = 0, int loopCh = -1, int loopPhrase = 0, bool withSong = false);
 
-    void stop() { running_ = false; seq_.stopAll(); }
+    // Stopping silences the chip: a console stopped while the other keeps playing is still rendered and must not hold its last notes.
+    void stop() { running_ = false; live_ = false; seq_.stopAll(); apu_.reset(); }
+    void bootChime(int stage);                       // the power-on "ba-ding": stage 0 the low note, 1 the high one (starts the live engine)
     bool running() const { return running_ && seq_.playing(); }
     void run(uint32_t cycles);                       // advance the whole machine
     Apu& apu() { return apu_; }

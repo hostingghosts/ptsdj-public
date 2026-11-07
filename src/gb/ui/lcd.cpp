@@ -6,7 +6,6 @@ namespace gb {
 
 namespace {
 #include "gb/ui/font.inc"
-constexpr uint32_t kRamG = 384000;   // the frame buffer slot the game screens of the stock firmware use
 
 uint8_t rgb332(uint32_t c) {
     const int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
@@ -20,7 +19,7 @@ const uint8_t* glyphOf(char c) {
 }
 }  // namespace
 
-constexpr uint32_t Lcd::kPalette[4];
+constexpr uint32_t Lcd::kPalettes[Lcd::kLooks][4];
 
 void Lcd::clear(uint8_t s) { std::memset(p_, s, sizeof p_); }
 
@@ -56,14 +55,21 @@ void Lcd::hex2(int col, int row, unsigned v, bool inv) {
 
 void Lcd::prepare(ot::IDisplay& d) {
     uint8_t lut[4];
-    for (int i = 0; i < 4; ++i) lut[i] = rgb332(kPalette[i]);
+    for (int i = 0; i < 4; ++i) lut[i] = rgb332(kPalettes[look_][i]);
     for (int y = 0; y < kH; ++y)
         for (int x = 0; x < kW; ++x) rgb332_[y * kW + x] = lut[p_[y][x] & 3];
-    uploaded_ = d.writeRamG(kRamG, rgb332_, sizeof rgb332_);
+    uploaded_ = d.writeRamG(ram_, rgb332_, sizeof rgb332_);
 }
 
-void Lcd::draw(ot::IDisplay& d, int x, int y) {
-    if (uploaded_) d.drawRgb332(int16_t(x), int16_t(y), kRamG, kW, kH, 3);
+void Lcd::draw(ot::IDisplay& d, int x, int y, int scale) {
+    if (uploaded_) d.drawRgb332(int16_t(x), int16_t(y), ram_, kW, kH, uint8_t(scale));
+}
+
+void Lcd::bigGlyph(int x, int y, char c, int scale, uint8_t shade) {
+    const uint8_t* g = glyphOf(c);
+    for (int j = 0; j < 8; ++j)
+        for (int i = 0; i < 8; ++i)
+            if ((g[j] >> (7 - i)) & 1) rect(x + i * scale, y + j * scale, scale, scale, shade);
 }
 
 }  // namespace gb

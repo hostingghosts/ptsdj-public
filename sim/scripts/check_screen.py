@@ -9,7 +9,7 @@ while pos < len(d):
 raw = zlib.decompress(idat); st = w * 3; cols = {}
 for y in range(24, 456):
     row = raw[y*(st+1)+1:(y+1)*(st+1)]
-    for x in range(160, 640): c = tuple(row[x*3:x*3+3]); cols[c] = cols.get(c, 0) + 1
+    for x in range(100, 700): c = tuple(row[x*3:x*3+3]); cols[c] = cols.get(c, 0) + 1
 print(sys.argv[1], len(cols), "colours", sorted(cols.items(), key=lambda a: -a[1])[:4])
 if len(cols) > 4: sys.exit("FAIL: more than four shades in the LCD area")
 if len(cols) < 2: sys.exit("FAIL: blank screen")
