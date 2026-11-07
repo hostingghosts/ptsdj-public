@@ -181,3 +181,6 @@ Each table remembers the row it stopped at; an instrument that comes back after 
 ## Hand-drawn waves (measured in the ROM)
 Editing a wave on the Wave page sets a bit for its synth (wave >> 4) in the 16-bit word at 0x3FC4: synths 0-7 are the bits of 0x3FC5, synths 8-F the bits of 0x3FC4. Changing a parameter on the Synth page of a flagged synth opens "OVERWRITE HAND-DRAWN WAVES? YES / NO" (NO selected) and applies nothing: NO keeps the flag; YES clears it and the edit has to be made again, which then regenerates the waves. The Synth page's "WAVE 00-0F" row cannot be selected: no range select.
 SYNC is project byte 0x3FBD (0 off, 1 LSDJ, 3 MIDI, 5 KEYBD, 6 ARDUINOBOY as the option list shows them).
+
+## Export check against the ROM
+A .sav written by Song::writeSav (PRESSURE, SYNC set to LSDJ) opens in the oracle ROM: the Project page shows tempo 152 and SYNC LSDJ, and the 92 note triggers of the first 400 frames are identical to the same song loaded from the ROM's own conversion. The .lsdsng files are not loaded by the ROM here (they need LSDJ's file manager); their format is covered by the round-trip tests.
