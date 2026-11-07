@@ -118,6 +118,7 @@ private:
     struct LinkedTransport final : gb::Transport {
         App* app = nullptr;
         void start(int console, int row) override;
+        void startLoop(int console, int ch, int phrase) override { app->dual.startLoop(console, ch, phrase); app->flushRing(); }
         void stop() override { app->dual.stop(); }
         bool running() const override { return app->dual.running(); }
         bool action(Action a, int slot) override;

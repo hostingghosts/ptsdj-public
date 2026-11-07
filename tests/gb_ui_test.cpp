@@ -547,28 +547,66 @@ TEST(a_pad_plays_the_cursor_channel_without_a_song_and_releasing_it_cuts_the_not
     CHECK(!r.app.player.voiceOn(1));
 }
 
-TEST(rec_play_records_pad_notes_into_the_playing_phrase) {
+TEST(phrase_rec_mode_loops_the_phrase_and_records_pads_only_while_playing) {
     Rig r;
-    for (int c = 0; c < 4; ++c) for (int row = 0; row < 256; ++row) r.app.song.songCell(row, c) = 0xFF;
-    for (int c = 0; c < 16; ++c) r.app.song.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
-    r.app.song.songCell(0, 0) = 0;
     for (int i = 0; i < 16; ++i) { r.app.song.note(0, i) = 0; r.app.song.phraseInstr(0, i) = 0xFF; }
-    uint8_t* in = r.app.song.instrument(0);
+    uint8_t* in = r.app.song.instrument(3);
     in[0] = 0; in[1] = 0xF0; in[4] = 0x7F; in[5] = 1; in[7] = 3;
     r.app.song.at(gb::off::kTempo) = 255;
-    r.push(ot::InputEvent::kButtonDown, ot::btn::Rec);
-    r.loop(2);
-    keyTap(r, ot::btn::Play);                                  // Rec held while Play: record armed
-    r.push(ot::InputEvent::kButtonUp, ot::btn::Rec);
+    keyTap(r, ot::btn::Note);                                  // Phrase page, phrase 00, channel PU1
+    r.app.lsdj.phrase = 0; r.app.lsdj.songCh = 0;
+    padEvent(r, ot::InputEvent::kPadDown, 12);                 // Rec mode off: the pad inserts a note at the cursor as before
+    padEvent(r, ot::InputEvent::kPadUp, 12);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 25);
+    r.app.song.note(0, 0) = 0;
+    r.app.lsdj.step = 0;
+    keyTap(r, ot::btn::Rec);                                   // Rec mode on
+    CHECK(r.app.lsdj.recMode());
+    r.app.lsdj.encoder(3);                                     // the jog wheel picks the instrument
+    CHECK_EQ(r.app.lsdj.instr, 1);
+    r.app.lsdj.encoder(2);
+    CHECK_EQ(r.app.lsdj.instr, 2);
+    r.app.lsdj.encoder(1);
+    CHECK_EQ(r.app.lsdj.instr, 3);
+    padEvent(r, ot::InputEvent::kPadDown, 12);                 // not playing: audition only, nothing written
+    padEvent(r, ot::InputEvent::kPadUp, 12);
+    int notes = 0;
+    for (int i = 0; i < 16; ++i) if (r.app.song.note(0, i)) ++notes;
+    CHECK_EQ(notes, 0);
+    keyTap(r, ot::btn::Play);                                  // Rec mode + Play: this phrase loops on PU1, recording
     r.loop(40);
     CHECK(r.app.lsdj.recording());
     CHECK(r.app.player.running());
+    CHECK(!r.app.playerB.running());
     padEvent(r, ot::InputEvent::kPadDown, 12);
-    int notes = 0;
-    for (int i = 0; i < 16; ++i) if (r.app.song.note(0, i) == 25) ++notes;
+    notes = 0;
+    for (int i = 0; i < 16; ++i) if (r.app.song.note(0, i) == 25) { ++notes; CHECK_EQ(int(r.app.song.phraseInstr(0, i)), 3); }
     CHECK_EQ(notes, 1);
-    keyTap(r, ot::btn::Play);                                  // Play again stops and disarms
+    keyTap(r, ot::btn::Play);                                  // Play again stops and stops recording
     CHECK(!r.app.lsdj.recording());
+    CHECK(!r.app.player.running());
+}
+
+TEST(pads_and_play_on_the_synth_and_wave_pages_never_start_the_song) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 3);                             // a song with a note on PU1
+    keyTap(r, ot::btn::Play);
+    r.loop(20);
+    keyTap(r, ot::btn::Play);                                  // played and stopped: the sequencer must stay stopped
+    CHECK(!r.app.player.running());
+    keyTap(r, ot::btn::Fx2);                                   // Wave page
+    r.app.lsdj.waveNo = 2;
+    padEvent(r, ot::InputEvent::kPadDown, 20);
+    r.loop(80);
+    CHECK(r.app.player.voiceOn(2));
+    CHECK(!r.app.player.voiceOn(0));                           // the song's PU1 note did not play
+    padEvent(r, ot::InputEvent::kPadUp, 20);
+    keyTap(r, ot::btn::Play);                                  // Play on the wave page auditions the wave, not the song
+    CHECK(r.app.player.voiceOn(2));
+    CHECK(!r.app.player.running());
+    CHECK(!r.app.player.voiceOn(0));
+    keyTap(r, ot::btn::Play);
+    CHECK(!r.app.player.voiceOn(2));
 }
 
 TEST(export_lsdj_writes_both_songs_as_lsdsng_and_128k_sav_with_the_sync_flag) {

@@ -21,6 +21,8 @@ class Seq {
 public:
     explicit Seq(Song& s) : s_(s) {}
     void start(int row = 0);                  // play all channels from a song row
+    void startLoop(int c, int phrase);        // only channel c, looping one phrase (live recording): no chain, no song
+    void stopAll() { for (Ch& h : ch_) h.active = false; }
     // Advance one tick; calls f(StepEvent) for every channel step that begins on this tick.
     template <class F> void tick(F&& f) {
         for (int c = 0; c < 4; ++c) {
@@ -29,7 +31,7 @@ public:
             if (h.wait > 0 && --h.wait > 0) continue;
             for (int depth = 0;; ++depth) {
                 StepEvent e{c, h.phrase, uint8_t(h.step), s_.note(h.phrase, h.step), s_.phraseInstr(h.phrase, h.step),
-                            s_.phraseCmd(h.phrase, h.step), s_.phraseVal(h.phrase, h.step), int8_t(s_.chainTrans(h.chain, h.cpos))};
+                            s_.phraseCmd(h.phrase, h.step), s_.phraseVal(h.phrase, h.step), int8_t(h.loop ? 0 : s_.chainTrans(h.chain, h.cpos))};
                 h.hopStep = -1;
                 f(e);
                 if (!h.active) break;
@@ -59,7 +61,7 @@ public:
 
 private:
     struct Ch {
-        bool active = false, looped = false;     // looped: the channel has come round to song row 0 again
+        bool active = false, looped = false, loop = false;     // looped: the channel has come round to song row 0 again
         int row = 0, cpos = 0, step = 0, gpos = 0, wait = 0;
         uint8_t chain = 0xFF, phrase = 0xFF, groove = 0;
         int hopStep = -1;

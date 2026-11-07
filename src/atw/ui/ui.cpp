@@ -145,7 +145,7 @@ void GbScreen::draw(ot::Gfx& g) {
 
 // The Tracker's keys: arrows, Insert = A, Delete = B, Shift = Select, Play = Start; the module and editing keys jump straight to a page
 // (Song, Pattern = Chain, Note = Phrase, Instr, Instr params = Table, Fx1 = Synth, Fx2 = Wave, Config = Project, File = songs, Performance = Groove);
-// Shift + Song swaps the console on screen; Rec held while Play starts live recording, and Rec while playing arms or disarms it.
+// Shift + Song swaps the console on screen; Rec toggles the Phrase page's Rec mode, and Play in Rec mode loops the phrase and records the pads.
 bool GbScreen::button(uint8_t id, bool down) {
     if (!lsdj_) return false;
     using gb::Key;
@@ -158,14 +158,8 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::Insert: lsdj_->key(Key::A, down); break;       // A
         case ot::btn::Delete: lsdj_->key(Key::B, down); break;       // B
         case ot::btn::Shift: shift_ = down; lsdj_->key(Key::Select, down); break;   // Select
-        case ot::btn::Play:
-            if (down && recHeld_ && !lsdj_->playing()) lsdj_->setRecord(true);
-            lsdj_->key(Key::Start, down);
-            break;
-        case ot::btn::Rec:
-            recHeld_ = down;
-            if (down && lsdj_->playing()) lsdj_->setRecord(!lsdj_->recording());
-            break;
+        case ot::btn::Play: lsdj_->key(Key::Start, down); break;
+        case ot::btn::Rec: if (down) lsdj_->toggleRecMode(); break;      // Phrase page: Rec mode on/off
         case ot::btn::Song: if (down) { if (shift_) swapConsole(); else lsdj_->jump(Scr::Song); } break;
         case ot::btn::Pattern: if (down) lsdj_->jump(Scr::Chain); break;
         case ot::btn::Note: if (down) lsdj_->jump(Scr::Phrase); break;

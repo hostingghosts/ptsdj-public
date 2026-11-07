@@ -20,8 +20,9 @@ enum Cmd : uint8_t {
 class Player {
 public:
     explicit Player(Song& s) : s_(s), seq_(s) {}
-    void start(int row = 0);
-    void stop() { running_ = false; }
+    void start(int row = 0, int loopCh = -1, int loopPhrase = 0);   // loopCh >= 0: only that channel, looping one phrase
+
+    void stop() { running_ = false; seq_.stopAll(); }
     bool running() const { return running_ && seq_.playing(); }
     void run(uint32_t cycles);                       // advance the whole machine
     Apu& apu() { return apu_; }

@@ -18,6 +18,7 @@ enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Tab
 struct Transport {
     virtual ~Transport() = default;
     virtual void start(int console, int row) = 0;   // the console whose Start was pressed and its row
+    virtual void startLoop(int console, int ch, int phrase) = 0;   // live recording: one channel loops one phrase
     virtual void stop() = 0;
     virtual bool running() const = 0;
     enum Action { kSavePair, kLoadPair, kExportWav, kExportFiles };
@@ -37,6 +38,9 @@ public:
     void setPadOctave(int o) { padOct_ = o < -2 ? -2 : o > 3 ? 3 : o; }
     int padOctave() const { return padOct_; }
     void setRecord(bool on) { rec_ = on; }
+    // Phrase page Rec mode: pads audition the selected instrument (jog wheel picks it) and, only while Rec + Play loops this phrase, write into it.
+    bool recMode() const { return recMode_; }
+    void toggleRecMode() { if (scr_ == Scr::Phrase) { recMode_ = !recMode_; if (!recMode_ && !playing()) rec_ = false; } }
     bool recording() const { return rec_; }
     bool playing() const;
     void jump(Scr target);                   // a direct page key: carries the cursor along like Select + arrows does between the main screens
@@ -99,7 +103,9 @@ private:
     int console_ = 0;                         // 0 = tracks 1-4, 1 = tracks 5-8
     Scr scr_ = Scr::Song;
     bool a_ = false, b_ = false, sel_ = false;
-    bool rec_ = false;                       // Rec + Play: pads write into the playing phrase
+    bool rec_ = false;                       // recording is running: pads write into the looping phrase
+    bool recMode_ = false;
+    bool auditionHeld_ = false;              // Play on the Synth / Wave page holds a preview note
     int padOct_ = 0;
     int8_t padCh_[48];                       // channel each held pad started a note on, -1 none
     int curInstr() const;

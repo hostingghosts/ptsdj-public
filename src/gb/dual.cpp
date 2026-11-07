@@ -16,6 +16,12 @@ void Dual::startOne(int console, int row) {
     (console ? a_ : b_).stop();
 }
 
+void Dual::startLoop(int console, int ch, int phrase) {
+    follow_ = -1;
+    (console ? b_ : a_).start(0, ch, phrase);
+    (console ? a_ : b_).stop();
+}
+
 void Dual::startLinked(int master, int rowA, int rowB) {
     start(rowA, rowB);
     follow_ = master;

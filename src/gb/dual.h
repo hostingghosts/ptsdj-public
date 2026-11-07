@@ -15,6 +15,7 @@ public:
     // One console alone (SYNC off), or both with the virtual link cable: the console that started is the master and the other follows its tempo.
     void startOne(int console, int row);
     void startLinked(int master, int rowA, int rowB);
+    void startLoop(int console, int ch, int phrase);   // one console, one channel looping one phrase (live recording)
     void stop();
     bool running() const { return a_.running() || b_.running(); }
     // `n` stereo frames at `rate` Hz, 16-bit interleaved: A plus B, each at 0.7 so two loud consoles do not clip.

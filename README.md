@@ -8,8 +8,15 @@ summed stereo), WAV export. Synth and Wave screens (Select+Up from Phrase = Synt
 so they need `GB/LSDJ.GB` on the card, like the kits). Project > LOAD SONG FILE A/B lists `GB/Songs` and loads a song into that console. Not yet: wave range select, the "hand-drawn waves?" prompt.
 Desktop simulator first; nothing tested on the Tracker.
 
-Controls (Game Boy key = Tracker key): D-pad = arrows, A = Insert, B = Delete, Select = Shift, Start = Play. Jog wheel =
-A+left/right (Shift: A+up/down). Pads enter notes in the phrase screen. Shift+arrows move between screens.
+Controls on the Tracker: arrows = D-pad, Insert = A, Delete = B, Shift = Select, Play = Start. Jog wheel = A + left/right (Shift: A + up/down).
+Page keys jump straight to a page: Song = Song, Pattern = Chain, Note = Phrase, Instr = Instr, Instr params = Table, Fx1 = Synth, Fx2 = Wave,
+Config = Project, File = song files, Performance = Groove. Shift + arrows still move between screens; Shift + Song swaps console A/B.
+Pads play the sound (never the song): the cursor channel on Song / Chain / Phrase, the instrument's own channel on Instr / Table, the wave being edited on
+Synth / Wave. Shift + a pad row sets the octave. On the Phrase page the pads insert notes at the cursor; Rec turns on Rec mode instead: the jog wheel picks
+the instrument, pads only play it, and Play loops this phrase on the cursor channel and records the pads into it (quantised to steps) until Play stops it.
+On the Synth and Wave pages Play auditions the wave instead of starting the song. Shift + Insert mutes a channel on the Song page, Shift + Delete a console.
+Project: SYNC OFF / LSDJ (project byte 0x3FBD). With both projects on LSDJ, Play on either console starts both and the other follows its tempo
+(the virtual link cable); with SYNC off Play starts only that console. EXPORT LSDJ writes `GB/Export/Snn_A/B.lsdsng` and `.sav` for two real Game Boys.
 
 ```
 make host-test                    # unit tests

@@ -18,7 +18,7 @@ constexpr long long kSub = 70224 / 6;   // six steps per video frame (358.4 Hz),
 constexpr long long kKitChunk = 11712;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
 }  // namespace
 
-void Player::start(int row) {
+void Player::start(int row, int loopCh, int loopPhrase) {
     live_ = false;
     apu_.reset();
     apu_.write(0xFF26, 0x80);
@@ -30,7 +30,7 @@ void Player::start(int row) {
     if (tempo_ < 40) tempo_ = 40;
     nr50_ = 0x77;
     rngState_ = 0x0052;                                   // LSDJ seeds the generator with 0x52 whenever playback starts
-    seq_.start(row);
+    if (loopCh >= 0) seq_.startLoop(loopCh, loopPhrase); else seq_.start(row);
     tickNo_ = -1;
     running_ = true;
     hpInit_ = false;
@@ -592,7 +592,7 @@ void Player::tick() {
         if (v.kill > 0 && --v.kill == 0) killNote(c);
         if (v.pending > 0 && --v.pending == 0) noteOn(c, v.delayed);
     }
-    seq_.tick([&](const StepEvent& e) { onStep(e); });
+    if (running_) seq_.tick([&](const StepEvent& e) { onStep(e); });      // previewed notes alone never start the song
     for (int c = 0; c < 4; ++c) {
         Voice& v = v_[c];
         if (!v.on) continue;
@@ -726,6 +726,7 @@ void Player::mute(int ch, bool m) {
 
 // The engine for previewed notes: the chip powered and the clocks running, no song.
 void Player::powerLive() {
+    seq_.stopAll();
     apu_.reset();
     apu_.write(0xFF26, 0x80);
     apu_.write(0xFF24, 0x77);

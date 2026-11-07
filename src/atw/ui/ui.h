@@ -33,7 +33,7 @@ private:
     gb::Lsdj* lsdjA_ = nullptr;
     gb::Lsdj* lsdjB_ = nullptr;
     gb::Lcd lcd_;
-    bool shift_ = false, recHeld_ = false;
+    bool shift_ = false;
     void swapConsole() { if (lsdjB_) lsdj_ = lsdj_ == lsdjA_ ? lsdjB_ : lsdjA_; }
 };
 

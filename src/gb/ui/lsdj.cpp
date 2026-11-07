@@ -79,9 +79,24 @@ void Lsdj::key(Key k, bool down) {
     if (k == Key::Select) { sel_ = down; return; }
     if (!down) return;
     if (k == Key::Start) {
-        if (playing()) rec_ = false;
-        if (tr_) { if (tr_->running()) tr_->stop(); else tr_->start(console_, startRow()); }
-        else if (p_.running()) p_.stop(); else p_.start(startRow());
+        if (playing()) {
+            rec_ = false;
+            if (tr_) tr_->stop(); else p_.stop();
+        } else if (recMode_ && scr_ == Scr::Phrase) {      // Rec mode + Play: this phrase loops on the cursor channel and the pads record into it
+            rec_ = true;
+            if (tr_) tr_->startLoop(console_, songCh, phrase); else p_.start(0, songCh, phrase);
+        } else if (scr_ == Scr::Synth || scr_ == Scr::Wave) {   // Play audits the wave instead of starting the song
+            if (auditionHeld_) { p_.previewOff(2); auditionHeld_ = false; }
+            else {
+                uint8_t* sc = p_.scratchInstr();
+                for (int i = 0; i < 16; ++i) sc[i] = 0;
+                sc[0] = 1; sc[1] = 0xA8; sc[2] = 0x0F; sc[7] = 0x03;
+                if (scr_ == Scr::Wave) sc[3] = uint8_t(waveNo); else { sc[3] = uint8_t(synth * 16); sc[9] = 2; }
+                p_.previewOn(2, 25, Player::kScratch);
+                auditionHeld_ = true;
+            }
+        } else if (tr_) tr_->start(console_, startRow());
+        else p_.start(startRow());
         return;
     }
     if (sel_) { navigate(k); return; }
@@ -97,6 +112,7 @@ void Lsdj::key(Key k, bool down) {
 
 void Lsdj::encoder(int delta) {
     if (!delta) return;
+    if (recMode_ && scr_ == Scr::Phrase) { instr = clampi(instr + (delta > 0 ? 1 : -1), 0, 63); return; }   // Rec mode: the jog wheel picks the pad instrument
     const Key k = sel_ ? (delta > 0 ? Key::Up : Key::Down) : (delta > 0 ? Key::Right : Key::Left);
     for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) editKey(k);
 }
@@ -104,7 +120,7 @@ void Lsdj::encoder(int delta) {
 bool Lsdj::playing() const { return tr_ ? tr_->running() : p_.running(); }
 
 int Lsdj::curInstr() const {
-    if (scr_ == Scr::Phrase) { const uint8_t i = s_.phraseInstr(phrase, step); return i != 0xFF ? (i & 63) : lastInstr_; }
+    if (scr_ == Scr::Phrase && !recMode_) { const uint8_t i = s_.phraseInstr(phrase, step); return i != 0xFF ? (i & 63) : lastInstr_; }
     return instr;
 }
 
@@ -148,14 +164,14 @@ void Lsdj::padDown(int pad) {
     }
     const bool kit = !scratch && (s_.instrument(ins & 63)[0] & 3) == 2 && ch == 2;
     note = kit ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, 127);
-    if (scr_ == Scr::Phrase && !rec_) {                // the phrase cursor takes the note, as before
+    if (scr_ == Scr::Phrase && !recMode_) {            // Rec mode off: the phrase cursor takes the note, as before
         s_.note(phrase, step) = uint8_t(note);
         lastNote_ = uint8_t(note);
         if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = uint8_t(lastInstr_);
         s_.markPhrase(phrase); s_.markInstrument(s_.phraseInstr(phrase, step) & 63);
         step = clampi(step + 1, 0, 15);
     }
-    if (rec_ && p_.running()) recordNote(ch, note);
+    if (recMode_ && rec_ && p_.running()) recordNote(ch, note);
     padCh_[pad] = int8_t(ch);
     p_.previewOn(ch, note, ins);
 }
@@ -403,8 +419,8 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Synth: drawSynth(l); break;
     }
     if (scr_ != Scr::File) drawPanel(l, scr_ != Scr::Wave);
-    if (rec_) l.text(16, 10, "REC", true);
-    if (padOct_ != 0 && scr_ != Scr::File) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); l.text(16, 11, o); }
+    if (recMode_ && scr_ == Scr::Phrase) { l.text(16, 10, "REC", rec_); char ii[8]; std::snprintf(ii, sizeof ii, "I%02X", instr); l.text(16, 11, ii); }
+    if (padOct_ != 0 && scr_ != Scr::File) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); l.text(16, 12, o); }
     if (banner_[0]) { l.rect(0, 136, 160, 8, 0); l.text(0, 17, banner_); }
 }
 
