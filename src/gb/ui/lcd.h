@@ -41,6 +41,8 @@ private:
     uint8_t p_[kH][kW] = {};
     uint8_t rgb332_[kW * kH];
     bool uploaded_ = false;
+    uint32_t slotHash_[2] = {};                    // what each RAM_G slot holds (kRamA, kRamB)
+    bool slotValid_[2] = {};
     int look_ = 0;
 };
 

@@ -54,11 +54,19 @@ void Lcd::hex2(int col, int row, unsigned v, bool inv) {
 }
 
 void Lcd::prepare(ot::IDisplay& d, uint32_t ram) {
+    // The SPI upload (28.8 KB) is the costly part of a frame: skip it when this slot already holds exactly these pixels in this look.
+    const int slot = ram == kRamA ? 0 : 1;
+    uint32_t h = 2166136261u ^ uint32_t(look_);
+    const uint32_t* w = reinterpret_cast<const uint32_t*>(p_);
+    for (size_t i = 0; i < sizeof p_ / 4; ++i) h = (h ^ w[i]) * 16777619u;
+    if (uploaded_ && slotHash_[slot] == h && slotValid_[slot]) return;
     uint8_t lut[4];
     for (int i = 0; i < 4; ++i) lut[i] = rgb332(kPalettes[look_][i]);
     for (int y = 0; y < kH; ++y)
         for (int x = 0; x < kW; ++x) rgb332_[y * kW + x] = lut[p_[y][x] & 3];
     uploaded_ = d.writeRamG(ram, rgb332_, sizeof rgb332_);
+    slotHash_[slot] = h;
+    slotValid_[slot] = uploaded_;
 }
 
 void Lcd::draw(ot::IDisplay& d, int x, int y, int scale, uint32_t ram) {

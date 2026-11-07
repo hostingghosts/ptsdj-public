@@ -158,6 +158,7 @@ void GbScreen::prepare(ot::IDisplay& d) {
     lcd_.setLook(app_->look());
     if (splitOn()) {
         lsdjA_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamA);
+        app_->pump();                               // keep the audio queue topped up between the two uploads
         lsdjB_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamB);
     } else {
         lsdj_->draw(lcd_);
