@@ -1,0 +1,2 @@
+wait 2000
+screenshot ../build/sim/splash.png

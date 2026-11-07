@@ -98,18 +98,18 @@ void Ui::update(uint32_t nowMs) {
     if (splashSet_ && int32_t(nowMs - splashUntil_) < 0) {
         const uint32_t el = nowMs - splashStart_;
         if (chime_ == 0 && el >= kSplashLand) { app_->bootChime(0); chime_ = 1; }
-        if (chime_ == 1 && el >= kSplashLand + 95) { app_->bootChime(1); chime_ = 2; }
+        if (chime_ == 1 && el >= kSplashLand + 85) { app_->bootChime(1); chime_ = 2; }
         if (chime_ == 2 && el >= kSplashLand + 1700) { app_->bootChime(2); chime_ = 3; }
         if (nowMs - lastFrame_ >= 33 || frames_ == 0) {
             lastFrame_ = nowMs;
             blank_.lcd().setLook(app_->look());
             blank_.lcd().clear(0);
-            const int n = 5, scale = 3, adv = 8 * scale + 2;
-            const int x0 = (gb::Lcd::kW - n * adv + 2) / 2;
-            const int y = el >= kSplashLand ? 56 : -24 + int(80u * el / kSplashLand);
+            const int scale = 4;
             static const char word[] = "PTSDJ";
-            for (int i = 0; i < n; ++i) blank_.lcd().bigGlyph(x0 + i * adv, y, word[i], scale, 3);
-            if (el >= kSplashLand) blank_.lcd().text(9, 11, "TRACKER");
+            int x = (gb::Lcd::kW - gb::Lcd::logoWidth(word, scale)) / 2;
+            const int y = el >= kSplashLand ? 48 : -36 + int(84u * el / kSplashLand);
+            for (int i = 0; word[i]; ++i) x = blank_.lcd().logoGlyph(x, y, word[i], scale, 3);
+            if (el >= kSplashLand) blank_.lcd().text(9, 12, "TRACKER");
 #ifdef GB_VERSION
             { char line[32]; std::snprintf(line, sizeof line, "v%s", GB_VERSION); blank_.lcd().text(1, 17, line); }
 #endif

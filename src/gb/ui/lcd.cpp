@@ -80,4 +80,32 @@ void Lcd::bigGlyph(int x, int y, char c, int scale, uint8_t shade) {
             if ((g[j] >> (7 - i)) & 1) rect(x + i * scale, y + j * scale, scale, scale, shade);
 }
 
+namespace {
+// The power-on logo font: heavy letters with two-pixel strokes and clipped corners, in the manner of the Game Boy's boot screen.
+struct LogoGlyph { char c; int w; const char* row[8]; };
+const LogoGlyph kLogo[] = {
+    {'P', 7, {"######.", "###..##", "##...##", "###..##", "######.", "##.....", "##.....", "##....."}},
+    {'T', 6, {"######", "######", "..##..", "..##..", "..##..", "..##..", "..##..", "..##.."}},
+    {'S', 7, {".######", "###..##", "###....", ".#####.", "....###", "##...##", "###..##", "######."}},
+    {'D', 7, {"#####..", "###.###", "###..##", "###..##", "###..##", "###..##", "###.###", "#####.."}},
+    {'J', 6, {"...###", "...###", "...###", "...###", "...###", "##.###", "##.###", ".####."}},
+};
+const LogoGlyph* logoOf(char c) { for (const LogoGlyph& g : kLogo) if (g.c == c) return &g; return nullptr; }
+}  // namespace
+
+int Lcd::logoWidth(const char* s, int scale) {
+    int w = 0;
+    for (; *s; ++s) { const LogoGlyph* g = logoOf(*s); w += ((g ? g->w : 4) + 1) * scale; }
+    return w > 0 ? w - scale : 0;
+}
+
+int Lcd::logoGlyph(int x, int y, char c, int scale, uint8_t shade) {
+    const LogoGlyph* g = logoOf(c);
+    if (!g) return x + 5 * scale;
+    for (int j = 0; j < 8; ++j)
+        for (int i = 0; i < g->w; ++i)
+            if (g->row[j][i] == '#') rect(x + i * scale, y + j * scale, scale, scale, shade);
+    return x + (g->w + 1) * scale;
+}
+
 }  // namespace gb

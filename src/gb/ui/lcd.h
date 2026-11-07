@@ -36,6 +36,9 @@ public:
     void draw(ot::IDisplay& d, int x = 100, int y = 24, int scale = 3, uint32_t ram = kRamA);
     // A glyph scaled up (the splash's block letters).
     void bigGlyph(int x, int y, char c, int scale, uint8_t shade);
+    // The boot logo's heavy letters (P T S D J): width of a word, and one letter (returns the x for the next one).
+    static int logoWidth(const char* s, int scale);
+    int logoGlyph(int x, int y, char c, int scale, uint8_t shade);
 
 private:
     uint8_t p_[kH][kW] = {};

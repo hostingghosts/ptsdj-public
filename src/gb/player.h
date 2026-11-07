@@ -25,7 +25,7 @@ public:
     void start(int row = 0, int loopCh = -1, int loopPhrase = 0, bool withSong = false);
 
     // Stopping silences the chip: a console stopped while the other keeps playing is still rendered and must not hold its last notes.
-    void stop() { running_ = false; live_ = false; seq_.stopAll(); apu_.reset(); }
+    void stop() { running_ = false; live_ = false; seq_.stopAll(); apu_.reset(); hpPole_ = 0.9995f; }
     void bootChime(int stage);                       // the power-on "ba-ding": stage 0 the low note, 1 the high one (starts the live engine)
     bool running() const { return running_ && seq_.playing(); }
     void run(uint32_t cycles);                       // advance the whole machine
@@ -147,6 +147,7 @@ private:
     uint32_t carryFx_ = 0;                // render: fractional cycles carried, 16.16 fixed point (no doubles: the Tracker's FPU is single precision)
     float hpL_ = 0, hpR_ = 0, prevL_ = 0, prevR_ = 0;
     bool hpInit_ = false;
+    float hpPole_ = 0.9995f;                // the chime uses a quick one so its notes start level, with no settling thump
 };
 
 }  // namespace gb

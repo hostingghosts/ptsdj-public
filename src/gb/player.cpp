@@ -33,6 +33,7 @@ void Player::start(int row, int loopCh, int loopPhrase, bool withSong) {
     if (loopCh >= 0) { if (withSong) seq_.startOverdub(row, loopCh, loopPhrase); else seq_.startLoop(loopCh, loopPhrase); } else seq_.start(row);
     tickNo_ = -1;
     running_ = true;
+    hpPole_ = 0.9995f;
     hpInit_ = false;
     now_ = 0;
     next360_ = 0;
@@ -736,6 +737,7 @@ void Player::powerLive() {
     nr50_ = 0x77;
     rngState_ = 0x0052;
     tickNo_ = -1;
+    hpPole_ = 0.9995f;
     hpInit_ = false;
     now_ = 0;
     next360_ = 0;
@@ -746,6 +748,7 @@ void Player::powerLive() {
 // The Game Boy's boot sound: two pulse notes, about 1048 Hz then 2080 Hz (frequency registers 0x783 and 0x7C1), the second one decaying.
 void Player::bootChime(int stage) {
     if (!running_ && !live_) powerLive();
+    hpPole_ = 0.99f;
     apu_.write(0xFF11, 0x80);
     apu_.write(0xFF12, stage ? 0xF3 : 0xF0);
     const int f = stage ? 0x7C1 : 0x783;
@@ -775,8 +778,8 @@ void Player::render(int16_t* out, int n, int rate) {
         apu_.takeAverage(c ? c : 1, l, r);
         if (!hpInit_) { prevL_ = l; prevR_ = r; hpL_ = hpR_ = 0; hpInit_ = true; }
         // one-pole high-pass: the real output stage is AC coupled
-        hpL_ = l - prevL_ + 0.9995f * hpL_; prevL_ = l;
-        hpR_ = r - prevR_ + 0.9995f * hpR_; prevR_ = r;
+        hpL_ = l - prevL_ + hpPole_ * hpL_; prevL_ = l;
+        hpR_ = r - prevR_ + hpPole_ * hpR_; prevR_ = r;
         out[2 * i] = int16_t(std::clamp(hpL_ * 50.0f, -32767.0f, 32767.0f));
         out[2 * i + 1] = int16_t(std::clamp(hpR_ * 50.0f, -32767.0f, 32767.0f));
     }

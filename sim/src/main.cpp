@@ -137,6 +137,7 @@ struct Machine {
             std::fprintf(stderr, "App::init failed\n");
             return false;
         }
+        if (std::getenv("GB_SPLASH")) app->ui.showSplash(uint32_t(std::atoi(std::getenv("GB_SPLASH"))));
         app->boot();
         return true;
     }
