@@ -22,4 +22,8 @@ Checks, in order (stop at the first failure and report what the screen showed):
 12. Hold F8 on any page: a pop-up explains it, Left/Right turn its pages, release closes it. Hold Shift + Note (Phrase commands) and Shift + Instr params (Table commands): cheat sheets until you let go.
 13. Rec + Play on the Phrase page: the note you play should land on the step you heard it on. If it is still early or late by a step, tell me which and by how much.
 14. Master key (linked): an A over F1 and a B over F8, no yellow frame; hold either and the F key dock rises, release and it drops.
-15. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.
+15. New in 0.4.0, saving: SAVE SONG on A, then on B; the card now has `GB/Saves/A.srm` and `B.srm` (128 KB each). Change the song, SAVE under a new NAME: LOAD SONG lists both. Same name replaces. Shift + Delete, then Insert, erases a listed song. Loose `.lsdsng` files in `GB/Songs` show with a `+`.
+16. EXPORT LSDJ: `GB/Export/LSDJ_A.srm` / `LSDJ_B.srm` appear. Copy one next to your LSDJ ROM under the ROM's name (`LSDJ.srm`), start LSDJ: the file manager (Project > LOAD/SAVE) should list the songs; report anything odd (a missing song, garbled names, a song that will not load).
+17. Power-on chime: a recording of the supplied WAV now. Tell me if it still sounds short or different.
+18. Help key and F8 pop-ups: text is left aligned, names in bold, a blank line between entries; more pages than before.
+19. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.

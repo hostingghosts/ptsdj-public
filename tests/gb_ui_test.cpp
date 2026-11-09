@@ -305,13 +305,13 @@ TEST(project_screen_saves_names_and_exports) {
     for (int i = 0; i < 10; ++i) tap(gb::Key::Down);           // SAVE SONG
     tap(gb::Key::A);
     CHECK(std::strcmp(r.app.lsdj.status(), "SAVED") == 0);
-    CHECK(st.files.count("GB/Songs/SONGA.lsdsng") == 1);
+    CHECK(st.files.count("GB/Saves/A.srm") == 1);              // the song went into Game Boy A's bank under its project name
     tap(gb::Key::Down); tap(gb::Key::Down); tap(gb::Key::A);   // EXPORT WAV
     CHECK(std::strcmp(r.app.lsdj.status(), "WAV DONE") == 0);
     CHECK(st.files["GB/Export/SONG.wav"].size() > 44u);
     tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT LSDJ
     CHECK(std::strcmp(r.app.lsdj.status(), "EXPORT DONE") == 0);
-    CHECK(st.files.count("GB/Export/SONGA.lsdsng") == 1 && st.files.count("GB/Export/SONGB.sav") == 1);
+    CHECK(st.files.count("GB/Export/SONGA.lsdsng") == 1 && st.files.count("GB/Export/LSDJ_B.srm") == 1);
 }
 
 namespace {
@@ -610,7 +610,7 @@ TEST(pads_and_play_on_the_synth_and_wave_pages_never_start_the_song) {
     CHECK(!r.app.player.voiceOn(2));
 }
 
-TEST(export_lsdj_writes_both_songs_as_lsdsng_and_128k_sav_with_the_sync_flag) {
+TEST(export_lsdj_fills_each_games_bank_and_copies_it_as_srm) {
     MemStorage st;
     Rig r(true, &st);
     oneNote(r.app.song, 0, 25, 3);
@@ -620,12 +620,103 @@ TEST(export_lsdj_writes_both_songs_as_lsdsng_and_128k_sav_with_the_sync_flag) {
     CHECK(r.app.exportFiles("S01"));
     CHECK(st.files.count("GB/Export/S01_A.lsdsng") == 1);
     CHECK(st.files.count("GB/Export/S01_B.lsdsng") == 1);
-    CHECK_EQ(int(st.files["GB/Export/S01_A.sav"].size()), 0x20000);
-    CHECK_EQ(int(st.files["GB/Export/S01_B.sav"].size()), 0x20000);
-    CHECK_EQ(int(st.files["GB/Export/S01_B.sav"][gb::off::kSync]), 1);          // the project's SYNC setting travels in the file
+    CHECK_EQ(int(st.files["GB/Saves/A.srm"].size()), 0x20000);
+    CHECK_EQ(int(st.files["GB/Saves/B.srm"].size()), 0x20000);
+    CHECK(st.files["GB/Export/S01_A.srm"] == st.files["GB/Saves/A.srm"]);
+    CHECK(st.files["GB/Export/S01_B.srm"] == st.files["GB/Saves/B.srm"]);
+    CHECK_EQ(int(st.files["GB/Export/S01_B.srm"][gb::off::kSync]), 1);          // the working song at the start of the file keeps the SYNC setting
     gb::Song back;
-    CHECK(back.readSav(st.files["GB/Export/S01_B.sav"].data(), st.files["GB/Export/S01_B.sav"].size()));
+    CHECK(back.readSav(st.files["GB/Export/S01_B.srm"].data(), st.files["GB/Export/S01_B.srm"].size()));
     CHECK_EQ(int(back.songCell(0, 3)), 0);
+}
+
+TEST(save_song_files_it_in_the_consoles_own_bank_and_load_lists_it) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    oneNote(r.app.songB, 3, 49, 3);
+    r.app.lsdj.setName("TUNE");
+    r.app.lsdjB.setName("DRUMS");
+    CHECK(r.app.saveToBank(0));
+    CHECK(r.app.saveToBank(1));
+    CHECK_EQ(int(st.files.count("GB/Saves/A.srm")), 1);
+    CHECK_EQ(int(st.files.count("GB/Saves/B.srm")), 1);
+    r.app.lsdj.setName("TUNE2");                                // a second song in the same bank
+    r.app.song.note(0, 0) = 30;
+    CHECK(r.app.saveToBank(0));
+    r.app.lsdj.setName("TUNE");
+    r.app.song.note(0, 0) = 31;
+    CHECK(r.app.saveToBank(0));                                 // the same name replaces
+    gb::Lsdj& l = r.app.lsdj;
+    l.openFiles();
+    CHECK_EQ(l.fileCount, 2);                                   // TUNE and TUNE2; DRUMS is on the other Game Boy
+    r.app.song.note(0, 0) = 1;
+    l.fileSel = 0;
+    keyTap(r, ot::btn::Insert);                                 // load the first entry into this console
+    CHECK_EQ(int(r.app.song.note(0, 0)), 31);
+    CHECK(std::strcmp(l.name(), "TUNE") == 0);
+    r.app.lsdjB.openFiles();
+    CHECK_EQ(r.app.lsdjB.fileCount, 1);
+}
+
+TEST(loose_lsdsng_files_are_listed_after_the_bank_and_saved_into_it) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    r.app.lsdj.setName("OLD");
+    CHECK(r.app.saveSong("GB/Songs/OLD.lsdsng", "OLD", 0));
+    r.app.lsdj.setName("NEW");
+    CHECK(r.app.saveToBank(0));
+    r.app.lsdj.openFiles();
+    CHECK_EQ(r.app.lsdj.fileCount, 2);                          // NEW (bank) then +OLD (file)
+    r.app.song.note(0, 0) = 1;
+    r.app.lsdj.fileSel = 1;
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 25);
+    CHECK(std::strcmp(r.app.lsdj.name(), "OLD") == 0);
+    CHECK(r.app.saveToBank(0));                                 // now it is in the bank too
+    r.app.lsdj.openFiles();
+    CHECK_EQ(r.app.lsdj.fileCount, 3);
+}
+
+TEST(a_bank_song_can_be_erased_with_select_delete_and_a_second_insert) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    r.app.lsdj.setName("ONE");
+    CHECK(r.app.saveToBank(0));
+    r.app.lsdj.setName("TWO");
+    CHECK(r.app.saveToBank(0));
+    gb::Lsdj& l = r.app.lsdj;
+    l.openFiles();
+    CHECK_EQ(l.fileCount, 2);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Delete);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    CHECK_EQ(l.fileCount, 2);                                   // asked first
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(l.fileCount, 1);
+    CHECK(std::strcmp(l.status(), "ERASED") == 0);
+}
+
+TEST(a_full_bank_says_so_and_changes_nothing) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    for (int i = 0; i < 32; ++i) {
+        char nm[16];
+        std::snprintf(nm, sizeof nm, "S%02d", i);
+        r.app.lsdj.setName(nm);
+        CHECK(r.app.saveToBank(0));
+    }
+    const std::vector<uint8_t> before = st.files["GB/Saves/A.srm"];
+    r.app.lsdj.setName("EXTRA");
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Config);
+    l.projRow = 10;
+    keyTap(r, ot::btn::Insert);
+    CHECK(std::strstr(l.status(), "BANK FULL") != nullptr);
+    CHECK(st.files["GB/Saves/A.srm"] == before);
 }
 
 TEST(wave_screen_pads_preview_the_wave_being_edited) {
@@ -749,7 +840,9 @@ TEST(project_name_is_typed_and_names_the_saved_file) {
     CHECK(std::strcmp(l.name(), "K") == 0);
     l.projRow = 10;
     l.key(gb::Key::A, true); l.key(gb::Key::A, false);
-    CHECK(st.files.count("GB/Songs/K.lsdsng") == 1);
+    CHECK_EQ(int(st.files["GB/Saves/A.srm"].size()), 0x20000);
+    l.openFiles();
+    CHECK_EQ(l.fileCount, 1);
 }
 
 TEST(shift_insert_arrows_select_cells_copy_and_shift_copy_paste_on_the_same_page_only) {
@@ -1032,8 +1125,8 @@ TEST(export_lsdj_can_write_song_a_song_b_or_both) {
     CHECK_EQ(int(st.files.count("GB/Export/X_A.lsdsng")), 1);
     CHECK_EQ(int(st.files.count("GB/Export/X_B.lsdsng")), 0);
     CHECK(r.app.exportFiles("Y", 1));
-    CHECK_EQ(int(st.files.count("GB/Export/Y_B.sav")), 1);
-    CHECK_EQ(int(st.files.count("GB/Export/Y_A.sav")), 0);
+    CHECK_EQ(int(st.files.count("GB/Export/Y_B.srm")), 1);
+    CHECK_EQ(int(st.files.count("GB/Export/Y_A.srm")), 0);
     gb::Lsdj& l = r.app.lsdj;
     keyTap(r, ot::btn::Config);
     l.projRow = 13;
@@ -1053,9 +1146,10 @@ struct LeadStub final : gb::Transport {
     void stop() override { p->stop(); }
     bool running() const override { return p->running(); }
     bool action(Action, int) override { return true; }
-    int listSongs() override { return 0; }
+    int listSongs(int) override { return 0; }
     const char* songName(int) override { return ""; }
     bool loadSongFile(int, int) override { return false; }
+    bool deleteSongFile(int, int) override { return false; }
     int syncMode(int) override { return 0; }
     void setSyncMode(int, int) override {}
     void tempoChanged(int) override {}
@@ -1098,4 +1192,24 @@ TEST(recorded_pad_notes_land_where_they_were_heard_not_where_the_audio_queue_has
     const int now = where(0), heard = where(148);
     CHECK(now >= 0 && heard >= 0);
     CHECK_EQ((now - heard + 16) % 16, 1);                       // a step's worth of lead moves the note one step back
+}
+
+TEST(the_power_on_chime_plays_the_recording_and_then_stops) {
+    Rig r;
+    r.app.bootChime(0);
+    int peak = 0, early = 0, late = 0;
+    int16_t out[2 * 512];
+    for (int block = 0; block < 100; ++block) {              // about 1.16 s at 44.1 kHz
+        r.loop(2);
+        r.app.fill(out, 512);
+        int m = 0;
+        for (int i = 0; i < 512; ++i) m = std::max(m, std::abs(int(out[2 * i])));
+        peak = std::max(peak, m);
+        if (block == 40) early = m;                           // about 0.46 s: still ringing
+        if (block == 90) late = m;                            // after the 0.82 s recording
+    }
+    CHECK(peak > 5000 && peak < 12000);                      // the recording peaks near 5000, played 1.5 times louder
+    CHECK(early > 1500);
+    CHECK_EQ(late, 0);
+    r.app.bootChime(2);
 }

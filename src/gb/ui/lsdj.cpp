@@ -78,14 +78,24 @@ void Lsdj::key(Key k, bool down) {
     if (nameOpen_) { if (down) nameKey(k); return; }    // the name keyboard takes every key until it is closed
     if (scr_ == Scr::Help) {                             // help pages: left / right turn the page, Delete leaves
         if (down) {
-            if (k == Key::Left) helpPage = clampi(helpPage - 1, 0, kHelpPages - 1);
-            else if (k == Key::Right) helpPage = clampi(helpPage + 1, 0, kHelpPages - 1);
+            if (k == Key::Left) helpPage = clampi(helpPage - 1, 0, helpPages() - 1);
+            else if (k == Key::Right) helpPage = clampi(helpPage + 1, 0, helpPages() - 1);
             else if (k == Key::B) scr_ = helpFrom_;
         }
         return;
     }
     if (confirm_ >= 0 && down) {                         // cleaning asks for a second Insert; anything else cancels
-        if (k == Key::A) { const int r = confirm_; confirm_ = -1; if (r == 8) cleanSong(); else cleanInstruments(); }
+        if (k == Key::A) {
+            const int r = confirm_;
+            confirm_ = -1;
+            if (r == 8) cleanSong();
+            else if (r == 9) cleanInstruments();
+            else {                                       // 10: erase the song under the cursor from the bank
+                status_ = tr_ && tr_->deleteSongFile(fileSel, console_) ? "ERASED" : "CAN'T ERASE";
+                fileCount = tr_ ? tr_->listSongs(console_) : 0;
+                fileSel = clampi(fileSel, 0, fileCount ? fileCount - 1 : 0);
+            }
+        }
         else { confirm_ = -1; status_ = ""; }
         return;
     }
@@ -105,7 +115,8 @@ void Lsdj::key(Key k, bool down) {
     if (k == Key::B) {
         if (down) {
             bUsed_ = false;
-            if (sel_ && scr_ == Scr::Song) {                  // Shift + Delete: mute this whole console, or bring it all back
+            if (sel_ && scr_ == Scr::File && fileCount) { confirm_ = 10; status_ = "ERASE? INSERT=YES"; bUsed_ = true; }
+            else if (sel_ && scr_ == Scr::Song) {                  // Shift + Delete: mute this whole console, or bring it all back
                 bool any = false;
                 for (int c = 0; c < 4; ++c) any = any || !p_.muted(c);
                 for (int c = 0; c < 4; ++c) p_.mute(c, any);
@@ -161,7 +172,7 @@ void Lsdj::key(Key k, bool down) {
 void Lsdj::encoder(int delta) {
     if (!delta) return;
     if (nameOpen_) { for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) nameKey(delta > 0 ? Key::Right : Key::Left); return; }
-    if (scr_ == Scr::Help) { helpPage = clampi(helpPage + (delta > 0 ? 1 : -1), 0, kHelpPages - 1); return; }
+    if (scr_ == Scr::Help) { helpPage = clampi(helpPage + (delta > 0 ? 1 : -1), 0, helpPages() - 1); return; }
     if (popup_) { popupTurn(delta > 0 ? 1 : -1); return; }
     if (recMode_ && scr_ == Scr::Phrase) { instr = clampi(instr + (delta > 0 ? 1 : -1), 0, 63); return; }   // Rec mode: the jog wheel picks the pad instrument
     const Key k = sel_ ? (delta > 0 ? Key::Up : Key::Down) : (delta > 0 ? Key::Right : Key::Left);
@@ -269,7 +280,7 @@ void Lsdj::openHelp() {
 
 void Lsdj::openFiles() {
     if (!tr_) return;
-    fileCount = tr_->listSongs();
+    fileCount = tr_->listSongs(console_);
     fileSel = 0;
     status_ = "";
     scr_ = Scr::File;
@@ -519,7 +530,10 @@ void Lsdj::setName(const char* n) {
 }
 
 void Lsdj::projectAct() {
-    auto act = [&](Transport::Action a, int arg, const char* ok, const char* bad) { if (tr_) status_ = tr_->action(a, arg) ? ok : bad; };
+    auto act = [&](Transport::Action a, int arg, const char* ok, const char* bad) {
+        if (!tr_) return;
+        status_ = tr_->action(a, arg) ? ok : (tr_->errorText() ? tr_->errorText() : bad);
+    };
     switch (projRow) {
         case 0: openName(1); break;
         case 7: openHelp(); break;
@@ -1035,127 +1049,407 @@ void Lsdj::drawProgress(Lcd& l) const {
 }
 
 namespace {
-// Help text: pages of up to 13 lines of 22 characters, written to be easy to read. The same pages feed the Help screen, the F8 pop-up and the cheat sheets.
-struct Doc { const char* title; const char* line[13]; };
+// Help text. A section is a title and entries; an entry is a bold name and a few words about it, wrapped to 23 characters and left aligned,
+// with a blank line between entries. Sections turn into pages by themselves (13 lines each): an entry is never split across two pages.
+// The same text feeds the Help screen, the F8 pop-up and the cheat sheets.
+struct Entry { const char* term; const char* text; };
+struct Section { const char* title; const Entry* e; int n; };
+template <size_t N> constexpr Section sec(const char* t, const Entry (&e)[N]) { return {t, e, int(N)}; }
 
-const Doc kHelpDocs[Lsdj::kHelpPages] = {
-    {"WELCOME", {"PTSDJ MAKES MUSIC LIKE", "A GAME BOY. YOU WRITE", "SMALL PIECES AND LINK", "THEM TOGETHER.", "", "PHRASE  16 STEPS WITH", "        NOTES IN THEM", "CHAIN   A LIST OF", "        PHRASES", "SONG    CHAINS FOR ALL", "        4 TRACKS", "", "PRESS > FOR MORE"}},
-    {"MOVING AROUND", {"ARROWS MOVE THE CURSOR", "", "SONG KEY    SONG PAGE", "PATTERN KEY CHAIN PAGE", "NOTE KEY    PHRASE PAGE", "INSTR KEY   INSTRUMENT", "INSTR PARAMS TABLE", "FX1 SYNTH   FX2 WAVE", "CONFIG      PROJECT", "PERFORMANCE GROOVE", "FILE        SONG FILES", "SHIFT+ARROWS MOVE", "BETWEEN THE PAGES"}},
-    {"EDITING", {"INSERT  PUT IN A VALUE", "INSERT+LEFT/RIGHT", "  CHANGE BY 1", "INSERT+UP/DOWN", "  CHANGE BY 16", "JOG WHEEL  SAME AS", "  INSERT+LEFT/RIGHT", "BKSP  CLEARS THE CELL", "SHIFT+INSERT+ARROWS", "  PICK MANY CELLS", "COPY  COPIES THEM", "SHIFT+COPY  PASTES", "  (SAME PAGE ONLY)"}},
-    {"PLAYING", {"PLAY  START / STOP", "", "PADS PLAY SOUNDS. THEY", "NEVER START THE SONG.", "SHIFT+PAD ROW SETS", "  THE OCTAVE", "", "ON THE PHRASE PAGE:", "REC OFF  PADS TYPE", "  NOTES AT THE CURSOR", "REC ON   PADS ONLY MAKE", "  SOUND. JOG PICKS IT", "REC+PLAY  PADS RECORD"}},
-    {"NAMES, LIBRARY", {"TO NAME A SOUND, GO TO", "THE INSTR PAGE, MOVE TO", "NAME AND PRESS INSERT.", "", "INSERT   TYPE A LETTER", "<        ERASE A LETTER", "PLAY     OK", "BKSP     NO", "", "SAMPLE LOADER KEY:", "SAVE A SOUND TO THE", "CARD OR LOAD ONE.", ""}},
-    {"TWO SONGS", {"PROJECT PAGE, SYNC:", "MASTER  SETS THE TEMPO", "SLAVE   FOLLOWS IT", "PLAY STARTS BOTH.", "", "MASTER KEY SHOWS BOTH", "SONGS SIDE BY SIDE.", "HOLD A OR B (F1 / F8)", "TO SEE THE F KEYS.", "F2 / F7 + JOG = VOLUME", "F3-F6 MUTE A TRACK", "SHIFT+F3-F6  SOLO", ""}},
-    {"SAVING", {"PROJECT PAGE:", "", "SAVE SONG  KEEPS IT", "LOAD SONG  PICKS ONE", "EXPORT WAV  AUDIO FILE", "EXPORT LSDJ  FOR A REAL", "  GAME BOY. PICK A, B", "  OR A+B WITH THE JOG", "  WHEEL, THEN INSERT.", "", "FILES ARE ON THE SD", "CARD IN THE GB FOLDER.", ""}},
-};
+constexpr int kDocW = 23, kDocLines = 13;
+struct DLine { const char* s; int len; bool bold; };
 
-const Doc kSongDocs[] = {
-    {"SONG PAGE", {"THE SONG PAGE IS THE", "BIG PLAN. EACH ROW HAS", "4 BOXES, ONE PER TRACK:", "PU1 PU2 WAV NOI", "", "A BOX HOLDS A CHAIN", "NUMBER. -- MEANS NONE.", "THE TRACKS PLAY DOWN", "THE ROWS TOGETHER.", "", "TO MAKE MUSIC:", "1 PRESS INSERT IN A BOX", "2 PRESS > TO OPEN IT"}},
-    {"SONG PAGE", {"PLAY STARTS AT THE ROW", "YOU ARE ON.", "", "SHIFT+INSERT  MUTES", "  THE TRACK", "SHIFT+BKSP  MUTES ALL", "SHIFT+SONG  SWAP", "  SONG A AND SONG B", "BKSP  CLEARS A BOX", "SHIFT+INSERT+ARROWS", "  PICK MANY BOXES", "COPY, SHIFT+COPY", "  COPY AND PASTE"}},
-};
-const Doc kChainDocs[] = {
-    {"CHAIN PAGE", {"A CHAIN IS A LIST OF", "UP TO 16 PHRASES THAT", "PLAY ONE AFTER ANOTHER.", "", "LEFT COLUMN  PHRASE", "RIGHT COLUMN  TRANSPOSE", "  HIGHER OR LOWER NOTES", "  0C IS ONE OCTAVE", "", "INSERT FILLS A BOX.", "> OPENS THE PHRASE.", "< GOES BACK TO SONG.", ""}},
-    {"CHAIN PAGE", {"BKSP+LEFT/RIGHT", "  SWITCH CHAINS", "BKSP  CLEARS A BOX", "SHIFT+INSERT+ARROWS", "  PICK MANY BOXES", "COPY, SHIFT+COPY", "  COPY AND PASTE", "", "PROJECT > CLONE:", "DEEP  PASTE MAKES NEW", "  COPIES OF PHRASES", "SLIM  PASTE KEEPS THE", "  SAME PHRASES"}},
-};
-const Doc kPhraseDocs[] = {
-    {"PHRASE PAGE", {"A PHRASE HAS 16 STEPS.", "THE NOTES LIVE HERE.", "", "NOTE   THE PITCH", "INSTR  WHICH SOUND", "CMD    A SPECIAL TRICK", "       HOLD SHIFT+NOTE", "       TO SEE THEM ALL", "", "INSERT PUTS IN A NOTE.", "L / R MOVES IT 1 NOTE.", "UP / DOWN MOVES IT", "  AN OCTAVE."}},
-    {"MAKING NOTES", {"WITH THE PADS:", "REC OFF  PRESS A PAD TO", "  TYPE THE NOTE AT THE", "  CURSOR.", "REC ON  PADS MAKE SOUND", "  BUT WRITE NOTHING.", "  THE JOG WHEEL PICKS", "  THE SOUND.", "REC+PLAY  THE PHRASE", "  LOOPS WHILE THE SONG", "  PLAYS. PADS WRITE THE", "  NOTES. PLAY STOPS.", ""}},
-    {"PHRASE PAGE", {"BKSP  CLEARS A STEP", "BKSP+UP/DOWN  GO TO", "  ANOTHER PHRASE", "SHIFT+INSERT+ARROWS", "  PICK MANY STEPS. THE", "  JOG WHEEL CHANGES", "  THEM ALL.", "COPY, SHIFT+COPY", "  COPY AND PASTE", "", "SHIFT+NOTE (HOLD)", "  SHOWS ALL COMMANDS", ""}},
-};
-const Doc kInstrDocs[] = {
-    {"INSTRUMENT PAGE", {"AN INSTRUMENT IS A", "SOUND YOU CAN PLAY.", "", "MOVE UP TO THE NUMBER", "AT THE TOP. THEN USE", "< > OR THE JOG WHEEL TO", "PICK ONE. THE PADS PLAY", "IT AS YOU GO.", "", "TYPE: PULSE, WAVE, KIT", "OR NOISE. THE ROWS", "BELOW CHANGE WITH THE", "TYPE."}},
-    {"INSTRUMENT PAGE", {"NAME  PRESS INSERT TO", "  TYPE A NAME", "ENVELOPE  HOW THE", "  VOLUME GOES UP/DOWN", "TABLE  A LIST OF EXTRA", "  STEPS FOR THIS SOUND", "OUTPUT  LEFT, RIGHT OR", "  BOTH SPEAKERS", "LENGTH  HOW LONG A NOTE", "  LASTS", "", "SAMPLE LOADER KEY SAVES", "AND LOADS SOUNDS."}},
-};
-const Doc kTableDocs[] = {
-    {"TABLE PAGE", {"A TABLE IS A TINY", "PATTERN THAT PLAYS BY", "ITSELF WITH A SOUND.", "", "VOL  LOUDNESS", "TSP  PITCH CHANGE", "CMD  A SPECIAL TRICK", "     (TWO PER ROW)", "", "TO USE IT, SET TABLE", "ON THE INSTR PAGE.", "HOLD SHIFT+INSTR PARAMS", "TO SEE ALL COMMANDS."}},
-    {"TABLE PAGE", {"BKSP+LEFT/RIGHT", "  PICK ANOTHER TABLE", "BKSP  CLEARS A CELL", "SHIFT+INSERT+ARROWS", "  PICK MANY CELLS. THE", "  JOG WHEEL CHANGES", "  THEM ALL.", "COPY, SHIFT+COPY", "  COPY AND PASTE", "", "", "", ""}},
-};
-const Doc kGrooveDocs[] = {
-    {"GROOVE PAGE", {"A GROOVE SETS HOW LONG", "EACH STEP LASTS. THE", "NUMBERS ARE TICKS.", "", "6 AND 6  EVEN BEAT", "7 AND 5  SWING", "", "THE LIST REPEATS.", "USE COMMAND G IN A", "PHRASE TO PICK A", "GROOVE NUMBER.", "BKSP+LEFT/RIGHT PICKS", "ANOTHER GROOVE."}},
-};
-const Doc kProjectDocs[] = {
-    {"PROJECT PAGE", {"SETTINGS FOR THE SONG.", "", "NAME  INSERT TO TYPE", "TEMPO  BIGGER = FASTER", "TRANSPOSE  ALL NOTES UP", "  OR DOWN", "SYNC  OFF, MASTER OR", "  SLAVE (TWO SONGS)", "CLONE  DEEP OR SLIM", "LOOK  SCREEN COLORS", "PRELISTEN  PADS MAKE", "  SOUND WHEN ON", ""}},
-    {"PROJECT PAGE", {"CLEAN SONG DATA FREES", "CHAINS AND PHRASES YOU", "DO NOT USE. PRESS", "INSERT TWICE.", "CLEAN INSTR DATA DOES", "THE SAME FOR SOUNDS.", "", "SAVE / LOAD SONG USE", "FILES ON THE SD CARD.", "EXPORT WAV  AUDIO FILE", "EXPORT LSDJ  PICK A, B", "  OR A+B WITH THE JOG", "  WHEEL, THEN INSERT"}},
-};
-const Doc kSynthDocs[] = {
-    {"SYNTH PAGE", {"SYNTHS MAKE THE SHAPES", "THE WAV TRACK PLAYS.", "", "EACH ROW SHAPES THE", "SOUND: FILTER, DISTORT,", "PHASE AND VOLUME.", "", "L / R PICKS A DIGIT.", "INSERT+ARROWS CHANGES", "A VALUE.", "PLAY HEARS THE SYNTH.", "BKSP+L/R PICKS ANOTHER", "NEEDS GB/LSDJ.GB."}},
-};
-const Doc kWaveDocs[] = {
-    {"WAVE PAGE", {"A WAVE IS 32 DOTS THAT", "MAKE THE SHAPE OF A", "SOUND.", "", "< > MOVES ALONG.", "UP / DOWN MOVES A DOT.", "PLAY HEARS THE WAVE.", "BKSP+L/R PICKS ANOTHER", "  WAVE", "BKSP (TAP) COPIES IT.", "SHIFT+INSERT PASTES IT.", "", ""}},
-};
-const Doc kFileDocs[] = {
-    {"SONG FILES", {"THESE ARE THE SONGS ON", "THE SD CARD.", "", "UP / DOWN  CHOOSE", "INSERT  LOAD INTO THE", "  SONG ON SCREEN", "BKSP  GO BACK", "", "", "", "", "", ""}},
-};
-const Doc kLibraryDocs[] = {
-    {"LIBRARY", {"THE LIBRARY KEEPS YOUR", "SOUNDS ON THE CARD.", "", "TOP ROW  SAVES THE", "  SOUND ON SCREEN.", "  PRESS INSERT, TYPE A", "  NAME, THEN PRESS PLAY", "OTHER ROWS  LOAD A", "  FILE INTO THE SOUND", "  ON SCREEN", "BKSP  GO BACK", "", ""}},
-};
-
-// Cheat sheets: what the CMD column does. The first page is about the columns of the page; the command pages are shared.
-const Doc kCmdDocs[3] = {
-    {"COMMANDS", {"A xx  START TABLE xx", "      A20 STOPS IT", "B xy  MAYBE PLAY THE", "      NOTE. BIG = OFTEN", "C xy  CHORD: THE NOTE", "      +x AND +y STEPS", "D xx  DELAY THE NOTE", "      BY xx TICKS", "E xy  VOLUME x, THEN", "      FADE SPEED y", "F xy  FINE TUNE (PU)", "", ""}},
-    {"COMMANDS", {"G xx  GROOVE NUMBER", "H xx  HOP TO STEP x OF", "      NEXT PHRASE", "      HFF STOPS ALL", "K xx  STOP THE NOTE", "      AFTER xx TICKS", "L xx  SLIDE TO THE NEW", "      NOTE IN xx TICKS", "M xy  MASTER VOLUME", "O xx  OUTPUT (0 = OFF)", "      1 L  2 R  3 BOTH", "", ""}},
-    {"COMMANDS", {"P xx  PITCH BEND", "      FF BENDS DOWN", "R xy  REPEAT THE NOTE", "      EVERY y TICKS", "S xy  SWEEP (PU1) OR", "      SHAPE (NOISE)", "T xx  TEMPO", "V xy  VIBRATO: x SPEED", "      y DEPTH", "W xx  PULSE WIDTH", "Z xy  RANDOMIZE THE", "      LAST COMMAND", ""}},
-};
-const Doc kPhraseSheetDocs[4] = {
-    {"PHRASE COLUMNS", {"NOTE   THE PITCH", "INSTR  WHICH SOUND", "CMD    A SPECIAL TRICK", "       A LETTER AND A", "       2-DIGIT NUMBER", "", "x AND y ARE EACH ONE", "DIGIT, 0 TO F.", "xx IS BOTH DIGITS AS", "ONE NUMBER, 00 TO FF.", "", "TURN THE PAGE WITH", "< > FOR EVERY COMMAND"}},
-    kCmdDocs[0], kCmdDocs[1], kCmdDocs[2]};
-const Doc kTableSheetDocs[4] = {
-    {"TABLE COLUMNS", {"VOL  LOUDNESS", "TSP  PITCH CHANGE", "CMD  A SPECIAL TRICK,", "     A LETTER AND A", "     2-DIGIT NUMBER", "     (TWO PER ROW)", "", "x AND y ARE EACH ONE", "DIGIT, 0 TO F.", "xx IS BOTH DIGITS AS", "ONE NUMBER, 00 TO FF.", "", "TURN < > FOR COMMANDS"}},
-    kCmdDocs[0], kCmdDocs[1], kCmdDocs[2]};
-
-const Doc* docsFor(Lsdj::Popup p, Scr s, int& n) {
-    n = 0;
-    auto set = [&](const Doc* d, size_t c) { n = int(c); return d; };
-    if (p == Lsdj::kPhraseSheet) return set(kPhraseSheetDocs, 4);
-    if (p == Lsdj::kTableSheet) return set(kTableSheetDocs, 4);
-    switch (s) {
-        case Scr::Song: return set(kSongDocs, 2);
-        case Scr::Chain: return set(kChainDocs, 2);
-        case Scr::Phrase: return set(kPhraseDocs, 3);
-        case Scr::Instr: return set(kInstrDocs, 2);
-        case Scr::Table: return set(kTableDocs, 2);
-        case Scr::Groove: return set(kGrooveDocs, 1);
-        case Scr::Project: return set(kProjectDocs, 2);
-        case Scr::Synth: return set(kSynthDocs, 1);
-        case Scr::Wave: return set(kWaveDocs, 1);
-        case Scr::File: return set(kFileDocs, 1);
-        case Scr::Library: return set(kLibraryDocs, 1);
-        default: return set(kHelpDocs, Lsdj::kHelpPages);
-    }
+// The next row of wrapped text from p (which starts at a word): up to kDocW characters, broken at a space. Returns where the following row starts.
+const char* wrapNext(const char* p, int& len) {
+    const int n = int(std::strlen(p));
+    if (n <= kDocW) { len = n; return p + n; }
+    int cut = kDocW;
+    while (cut > 0 && p[cut] != ' ') --cut;
+    if (cut == 0) cut = kDocW;                          // one word longer than a row
+    len = cut;
+    const char* q = p + cut;
+    while (*q == ' ') ++q;
+    return q;
 }
 
-// A page of text: a title bar, up to 13 lines starting one column in from the edge, and the page counter at the bottom.
-void drawDoc(Lcd& l, const Doc& d, int page, int pages, int x0, int w, const char* foot) {
-    l.rect(x0, 8, w, 8, 3);
-    l.text(1, 1, d.title, true);
-    for (int i = 0; i < 13; ++i) if (d.line[i] && d.line[i][0]) l.text(1, 2 + i, d.line[i]);
+// The rows of one entry: its name (bold) and its wrapped text. Returns the count (at most cap).
+int entryRows(const Entry& e, DLine* out, int cap) {
+    int h = 0;
+    if (e.term && e.term[0] && h < cap) out[h++] = {e.term, int(std::strlen(e.term)), true};
+    for (const char* p = e.text; p && *p && h < cap;) {
+        int len;
+        const char* nx = wrapNext(p, len);
+        out[h++] = {p, len, false};
+        p = nx;
+    }
+    return h;
+}
+
+// Lays the section out in pages. Fills `out` with the rows of page `want` (when want >= 0); returns how many pages the section has.
+int paginate(const Section& s, int want, DLine* out, int& count) {
+    int page = 0, used = 0;
+    count = 0;
+    for (int i = 0; i < s.n; ++i) {
+        DLine rows[kDocLines + 1];
+        const int h = std::min(entryRows(s.e[i], rows, kDocLines + 1), kDocLines);
+        if (used && used + 1 + h > kDocLines) { ++page; used = 0; }
+        if (used) { if (page == want) out[count++] = {"", 0, false}; ++used; }
+        for (int k = 0; k < h; ++k) { if (page == want) out[count++] = rows[k]; ++used; }
+    }
+    return page + 1;
+}
+
+// ---- the Help screen (these chapters follow one another) ---------------------------------------------------------------------
+
+const Entry kWelcomeTxt[] = {
+    {"", "PTSDJ makes music like a Game Boy."},
+    {"", "You write small pieces and link them together."},
+    {"PHRASE", "16 steps with notes in them."},
+    {"CHAIN", "A list of phrases."},
+    {"SONG", "Chains for all 4 tracks."},
+    {"TWO SONGS", "PTSDJ has two Game Boys. Song A is tracks 1 to 4. Song B is tracks 5 to 8."},
+};
+const Entry kMovingTxt[] = {
+    {"ARROWS", "Move the cursor."},
+    {"SONG KEY", "Song page."},
+    {"PATTERN KEY", "Chain page."},
+    {"NOTE KEY", "Phrase page."},
+    {"INSTR KEY", "Instrument page."},
+    {"INSTR PARAMS KEY", "Table page."},
+    {"FX1 AND FX2 KEYS", "Synth page and Wave page."},
+    {"CONFIG KEY", "Project page."},
+    {"PERFORMANCE KEY", "Groove page."},
+    {"FILE KEY", "The song list."},
+    {"SHIFT + ARROWS", "Move between the pages."},
+};
+const Entry kEditingTxt[] = {
+    {"INSERT", "Puts in a value."},
+    {"INSERT + LEFT/RIGHT", "Changes it by 1."},
+    {"INSERT + UP/DOWN", "Changes it by 16."},
+    {"JOG WHEEL", "Does the same as Insert + Left/Right."},
+    {"BKSP", "Clears the cell."},
+    {"SHIFT+INSERT+ARROWS", "Picks many cells. Then BKSP clears them all, or the jog wheel changes them all."},
+    {"COPY", "Copies the cells."},
+    {"SHIFT + COPY", "Pastes them. Same page only."},
+};
+const Entry kPlayingTxt[] = {
+    {"PLAY", "Starts and stops the song."},
+    {"PADS", "Play sounds. They never start the song."},
+    {"SHIFT + A PAD ROW", "Sets the octave."},
+    {"REC OFF", "On the Phrase page, the pads type notes at the cursor."},
+    {"REC ON", "The pads only make sound. The jog wheel picks the sound."},
+    {"REC + PLAY", "The phrase loops while the song plays. The pads write the notes. Play stops it."},
+};
+const Entry kNamesTxt[] = {
+    {"", "To name a sound, go to the Instr page, move to NAME and press Insert."},
+    {"INSERT", "Types a letter."},
+    {"< KEY", "Erases a letter."},
+    {"PLAY", "OK."},
+    {"BKSP", "No."},
+    {"SAMPLE LOADER KEY", "Saves a sound to the card, or loads one from it."},
+};
+const Entry kTwoSongsTxt[] = {
+    {"SYNC", "On the Project page. MASTER sets the tempo. SLAVE follows it. Play starts both."},
+    {"MASTER KEY", "Shows both songs side by side."},
+    {"SHIFT + SONG KEY", "Switches the screen between song A and song B."},
+    {"F1 AND F8", "In the side by side view, pick song A or B. Hold one to see what every F key does."},
+    {"F2 / F7 + JOG", "Volume of song A / song B."},
+    {"F3 TO F6", "Mute a track. Add Shift to play only that track."},
+};
+const Entry kSavingTxt[] = {
+    {"", "Each Game Boy has its own save file on the SD card, in the GB/Saves folder. Song A is in A.SRM. Song B is in B.SRM."},
+    {"", "A file holds up to 32 songs, like a real LSDJ cartridge."},
+    {"SAVE SONG", "Puts the song on screen into its file. The same name replaces the old song. A new name adds a song."},
+    {"LOAD SONG", "Lists the songs in the file. A + means a loose file from GB/Songs."},
+    {"SHIFT + BKSP", "In the song list, erases the song under the cursor."},
+    {"EXPORT WAV", "Makes an audio file."},
+    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as LSDJ_A.SRM or LSDJ_B.SRM."},
+    {"ON A GAME BOY", "Give the copy the same name as your LSDJ ROM, like LSDJ.SRM."},
+};
+const Section kHelpDocs[] = {sec("WELCOME", kWelcomeTxt), sec("MOVING AROUND", kMovingTxt), sec("EDITING", kEditingTxt), sec("PLAYING", kPlayingTxt),
+                             sec("NAMES, LIBRARY", kNamesTxt), sec("TWO SONGS", kTwoSongsTxt), sec("SAVING", kSavingTxt)};
+
+// ---- the F8 pop-ups ------------------------------------------------------------------------------------------------------
+
+const Entry kSongTxt[] = {
+    {"", "The Song page is the big plan. Each row has 4 boxes, one for each track: PU1 PU2 WAV NOI."},
+    {"A BOX", "Holds a chain number. -- means none. The tracks play down the rows together."},
+    {"TO MAKE MUSIC", "Press Insert in a box. Then press > to open it."},
+    {"PLAY", "Starts at the row you are on."},
+    {"SHIFT + INSERT", "Mutes the track."},
+    {"SHIFT + BKSP", "Mutes all tracks."},
+    {"SHIFT + SONG KEY", "Swaps song A and song B."},
+    {"BKSP", "Clears a box."},
+    {"SHIFT+INSERT+ARROWS", "Pick many boxes."},
+    {"COPY, SHIFT + COPY", "Copy and paste."},
+};
+const Entry kChainTxt[] = {
+    {"", "A chain is a list of up to 16 phrases. They play one after another."},
+    {"LEFT COLUMN", "The phrase."},
+    {"RIGHT COLUMN", "Transpose. Higher or lower notes. 0C is one octave."},
+    {"INSERT", "Fills a box."},
+    {"> KEY", "Opens the phrase."},
+    {"< KEY", "Goes back to the song."},
+    {"BKSP + LEFT/RIGHT", "Switch chains."},
+    {"BKSP", "Clears a box."},
+    {"SHIFT+INSERT+ARROWS", "Pick many boxes."},
+    {"COPY, SHIFT + COPY", "Copy and paste."},
+    {"CLONE: DEEP", "On the Project page. Pasting makes new copies of the phrases."},
+    {"CLONE: SLIM", "Pasting keeps the same phrases."},
+};
+const Entry kPhraseTxt[] = {
+    {"", "A phrase has 16 steps. The notes live here."},
+    {"NOTE", "The pitch."},
+    {"INSTR", "Which sound."},
+    {"CMD", "A special trick. Hold Shift + Note to see them all."},
+    {"INSERT", "Puts in a note."},
+    {"LEFT / RIGHT", "Moves the note by 1."},
+    {"UP / DOWN", "Moves it by an octave."},
+    {"PADS, REC OFF", "Press a pad to type the note at the cursor."},
+    {"PADS, REC ON", "The pads make sound but write nothing. The jog wheel picks the sound."},
+    {"REC + PLAY", "The phrase loops while the song plays. The pads write the notes. Play stops it."},
+    {"BKSP", "Clears a step."},
+    {"BKSP + UP/DOWN", "Go to another phrase."},
+    {"SHIFT+INSERT+ARROWS", "Pick many steps. The jog wheel changes them all."},
+    {"COPY, SHIFT + COPY", "Copy and paste."},
+};
+const Entry kInstrTxt[] = {
+    {"", "An instrument is a sound you can play."},
+    {"THE NUMBER", "Move up to the number at the top. Then use < > or the jog wheel to pick one. The pads play it as you go."},
+    {"TYPE", "Pulse, wave, kit or noise. The rows below change with the type."},
+    {"NAME", "Press Insert to type a name."},
+    {"ENVELOPE", "How the volume goes up and down."},
+    {"TABLE", "A list of extra steps for this sound."},
+    {"OUTPUT", "Left, right or both speakers."},
+    {"LENGTH", "How long a note lasts."},
+    {"SAMPLE LOADER KEY", "Saves and loads sounds."},
+};
+const Entry kTableTxt[] = {
+    {"", "A table is a tiny pattern that plays by itself with a sound."},
+    {"VOL", "Loudness."},
+    {"TSP", "Pitch change."},
+    {"CMD", "A special trick. Two per row. Hold Shift + Instr Params to see them all."},
+    {"TO USE IT", "Set TABLE on the Instr page."},
+    {"BKSP + LEFT/RIGHT", "Pick another table."},
+    {"BKSP", "Clears a cell."},
+    {"SHIFT+INSERT+ARROWS", "Pick many cells. The jog wheel changes them all."},
+    {"COPY, SHIFT + COPY", "Copy and paste."},
+};
+const Entry kGrooveTxt[] = {
+    {"", "A groove sets how long each step lasts. The numbers are ticks."},
+    {"6 AND 6", "An even beat."},
+    {"7 AND 5", "Swing."},
+    {"", "The list repeats."},
+    {"COMMAND G", "In a phrase, picks a groove number."},
+    {"BKSP + LEFT/RIGHT", "Pick another groove."},
+};
+const Entry kProjectTxt[] = {
+    {"", "Settings for the song."},
+    {"NAME", "Press Insert to type it."},
+    {"TEMPO", "Bigger is faster."},
+    {"TRANSPOSE", "All notes up or down."},
+    {"SYNC", "Off, master or slave. For two songs."},
+    {"CLONE", "Deep or slim."},
+    {"LOOK", "Screen colors."},
+    {"PRELISTEN", "The pads make sound when on."},
+    {"CLEAN SONG DATA", "Frees chains and phrases you do not use. Press Insert twice."},
+    {"CLEAN INSTR DATA", "Does the same for sounds."},
+    {"SAVE SONG", "Puts the song in this Game Boy's save file on the SD card."},
+    {"LOAD SONG", "Lists the songs in that file."},
+    {"EXPORT WAV", "Makes an audio file."},
+    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. Copies the save files to GB/Export."},
+};
+const Entry kSynthTxt[] = {
+    {"", "Synths make the shapes the WAV track plays."},
+    {"EACH ROW", "Shapes the sound: filter, distort, phase and volume."},
+    {"LEFT / RIGHT", "Picks a digit."},
+    {"INSERT + ARROWS", "Changes a value."},
+    {"PLAY", "Hears the synth."},
+    {"BKSP + LEFT/RIGHT", "Picks another synth."},
+    {"", "Needs GB/LSDJ.GB on the card."},
+};
+const Entry kWaveTxt[] = {
+    {"", "A wave is 32 dots that make the shape of a sound."},
+    {"< >", "Moves along."},
+    {"UP / DOWN", "Moves a dot."},
+    {"PLAY", "Hears the wave."},
+    {"BKSP + LEFT/RIGHT", "Picks another wave."},
+    {"BKSP (TAP)", "Copies the wave."},
+    {"SHIFT + INSERT", "Pastes it."},
+};
+const Entry kFileTxt[] = {
+    {"", "These are the songs for this Game Boy."},
+    {"UP / DOWN", "Choose a song."},
+    {"INSERT", "Loads it into the song on screen."},
+    {"+ BEFORE A NAME", "A loose file from GB/Songs. Saving files it in the save file."},
+    {"SHIFT + BKSP", "Erases the song under the cursor. Press Insert to say yes."},
+    {"BKSP", "Go back."},
+};
+const Entry kLibraryTxt[] = {
+    {"", "The library keeps your sounds on the card."},
+    {"TOP ROW", "Saves the sound on screen. Press Insert, type a name, then press Play."},
+    {"OTHER ROWS", "Load a file into the sound on screen."},
+    {"BKSP", "Go back."},
+};
+
+// ---- cheat sheets (Shift + Note, Shift + Instr Params) -------------------------------------------------------------------
+
+const Entry kPhraseColsTxt[] = {
+    {"NOTE", "The pitch."},
+    {"INSTR", "Which sound."},
+    {"CMD", "A special trick. It is a letter and a 2-digit number."},
+    {"x AND y", "Each is one digit, 0 to F."},
+    {"xx", "Both digits as one number, 00 to FF."},
+    {"", "Turn the page with < > to see every command."},
+};
+const Entry kTableColsTxt[] = {
+    {"VOL", "Loudness."},
+    {"TSP", "Pitch change."},
+    {"CMD", "A special trick. It is a letter and a 2-digit number. Two per row."},
+    {"x AND y", "Each is one digit, 0 to F."},
+    {"xx", "Both digits as one number, 00 to FF."},
+    {"", "Turn the page with < > to see every command."},
+};
+const Entry kCmdAFTxt[] = {
+    {"A xx", "Start table xx. A20 stops it."},
+    {"B xy", "Maybe play the note. A big number means often."},
+    {"C xy", "Chord: the note, then +x and +y steps."},
+    {"D xx", "Delay the note by xx ticks."},
+    {"E xy", "Volume x, then fade speed y."},
+    {"F xy", "Fine tune (pulse)."},
+};
+const Entry kCmdGOTxt[] = {
+    {"G xx", "Groove number."},
+    {"H xx", "Hop to step x of the next phrase. HFF stops everything."},
+    {"K xx", "Stop the note after xx ticks."},
+    {"L xx", "Slide to the new note in xx ticks."},
+    {"M xy", "Master volume."},
+    {"O xx", "Output. 0 is off, 1 left, 2 right, 3 both."},
+};
+const Entry kCmdPZTxt[] = {
+    {"P xx", "Pitch bend. FF bends down."},
+    {"R xy", "Repeat the note every y ticks."},
+    {"S xy", "Sweep (pulse 1) or shape (noise)."},
+    {"T xx", "Tempo."},
+    {"V xy", "Vibrato: x is speed, y is depth."},
+    {"W xx", "Pulse width."},
+    {"Z xy", "Randomize the last command."},
+};
+const Section kPhraseSheetDocs[] = {sec("PHRASE COLUMNS", kPhraseColsTxt), sec("COMMANDS A TO F", kCmdAFTxt), sec("COMMANDS G TO O", kCmdGOTxt), sec("COMMANDS P TO Z", kCmdPZTxt)};
+const Section kTableSheetDocs[] = {sec("TABLE COLUMNS", kTableColsTxt), sec("COMMANDS A TO F", kCmdAFTxt), sec("COMMANDS G TO O", kCmdGOTxt), sec("COMMANDS P TO Z", kCmdPZTxt)};
+const Section kSongDocs[] = {sec("SONG PAGE", kSongTxt)};
+const Section kChainDocs[] = {sec("CHAIN PAGE", kChainTxt)};
+const Section kPhraseDocs[] = {sec("PHRASE PAGE", kPhraseTxt)};
+const Section kInstrDocs[] = {sec("INSTRUMENT PAGE", kInstrTxt)};
+const Section kTableDocs[] = {sec("TABLE PAGE", kTableTxt)};
+const Section kGrooveDocs[] = {sec("GROOVE PAGE", kGrooveTxt)};
+const Section kProjectDocs[] = {sec("PROJECT PAGE", kProjectTxt)};
+const Section kSynthDocs[] = {sec("SYNTH PAGE", kSynthTxt)};
+const Section kWaveDocs[] = {sec("WAVE PAGE", kWaveTxt)};
+const Section kFileDocs[] = {sec("SONG FILES", kFileTxt)};
+const Section kLibraryDocs[] = {sec("LIBRARY", kLibraryTxt)};
+
+#define DOC_SET(a) (n = int(sizeof a / sizeof *a), a)
+const Section* docsFor(Lsdj::Popup p, Scr s, int& n) {
+    n = 0;
+    if (p == Lsdj::kPhraseSheet) return DOC_SET(kPhraseSheetDocs);
+    if (p == Lsdj::kTableSheet) return DOC_SET(kTableSheetDocs);
+    switch (s) {
+        case Scr::Song: return DOC_SET(kSongDocs);
+        case Scr::Chain: return DOC_SET(kChainDocs);
+        case Scr::Phrase: return DOC_SET(kPhraseDocs);
+        case Scr::Instr: return DOC_SET(kInstrDocs);
+        case Scr::Table: return DOC_SET(kTableDocs);
+        case Scr::Groove: return DOC_SET(kGrooveDocs);
+        case Scr::Project: return DOC_SET(kProjectDocs);
+        case Scr::Synth: return DOC_SET(kSynthDocs);
+        case Scr::Wave: return DOC_SET(kWaveDocs);
+        case Scr::File: return DOC_SET(kFileDocs);
+        case Scr::Library: return DOC_SET(kLibraryDocs);
+        default: return DOC_SET(kHelpDocs);
+    }
+}
+#undef DOC_SET
+
+int totalPages(const Section* d, int n) {
+    int pages = 0, c;
+    for (int i = 0; i < n; ++i) pages += paginate(d[i], -1, nullptr, c);
+    return pages;
+}
+
+// A page of text, counted across the sections: a title bar with the page counter, up to 13 left aligned rows starting one column in from the edge
+// (names in bold), and a hint at the bottom.
+void drawDoc(Lcd& l, const Section* d, int n, int page, int x0, int w, const char* foot) {
+    int total = totalPages(d, n), first = 0;
+    page = clampi(page, 0, std::max(0, total - 1));
+    int s = 0, c;
+    for (; s < n - 1; ++s) {
+        const int pages = paginate(d[s], -1, nullptr, c);
+        if (page < first + pages) break;
+        first += pages;
+    }
+    DLine rows[kDocLines + 1];
+    paginate(d[s], page - first, rows, c);
     char t[24];
-    std::snprintf(t, sizeof t, "%d/%d", page + 1, pages);
-    l.text(1, 15, foot);
-    l.text(23 - int(std::strlen(t)), 15, t);
+    std::snprintf(t, sizeof t, "%d/%d", page + 1, total);
+    l.rect(x0, 8, w, 8, 3);
+    l.text(1, 1, d[s].title, true);
+    l.text(23 - int(std::strlen(t)), 1, t, true);                // the page counter sits at the right end of the title bar
+    for (int i = 0; i < c && i < kDocLines; ++i) {
+        if (!rows[i].len) continue;
+        char row[kDocW + 1];
+        std::memcpy(row, rows[i].s, size_t(rows[i].len));
+        row[rows[i].len] = 0;
+        if (rows[i].bold) l.boldText(1, 3 + i, row); else l.text(1, 3 + i, row);
+    }
+    l.text(1, 16, foot);
 }
 }  // namespace
 
 bool Lsdj::docsFit() {
-    auto fits = [](const Doc* d, int n) { for (int i = 0; i < n; ++i) for (const char* ln : d[i].line) if (ln && std::strlen(ln) > 23) return false; return true; };
-    return fits(kHelpDocs, kHelpPages) && fits(kSongDocs, 2) && fits(kChainDocs, 2) && fits(kPhraseDocs, 3) && fits(kInstrDocs, 2) && fits(kTableDocs, 2) && fits(kGrooveDocs, 1) &&
-           fits(kProjectDocs, 2) && fits(kSynthDocs, 1) && fits(kWaveDocs, 1) && fits(kFileDocs, 1) && fits(kLibraryDocs, 1) && fits(kPhraseSheetDocs, 4) && fits(kTableSheetDocs, 4);
+    auto fits = [](const Section* d, int n) {
+        for (int i = 0; i < n; ++i)
+            for (int k = 0; k < d[i].n; ++k) {
+                const Entry& e = d[i].e[k];
+                if (e.term && std::strlen(e.term) > size_t(kDocW)) return false;
+                DLine rows[kDocLines + 2];
+                if (entryRows(e, rows, kDocLines + 2) > kDocLines) return false;          // an entry has to fit on a page
+                for (const char* p = e.text; p && *p;) {                                   // no word longer than a row
+                    int len;
+                    const char* nx = wrapNext(p, len);
+                    if (len == kDocW && p[len] != ' ' && p[len] != 0) return false;
+                    p = nx;
+                }
+            }
+        return true;
+    };
+    int n;
+    bool ok = true;
+    for (Popup p : {kPhraseSheet, kTableSheet}) { const Section* d = docsFor(p, Scr::Song, n); ok = ok && fits(d, n); }
+    for (Scr s : {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table, Scr::Groove, Scr::Project, Scr::Synth, Scr::Wave, Scr::File, Scr::Library, Scr::Help}) {
+        const Section* d = docsFor(kPageHelp, s, n);
+        ok = ok && fits(d, n);
+    }
+    return ok;
 }
 
-int Lsdj::popupPages() const { int n; docsFor(popup_, scr_, n); return n; }
+int Lsdj::popupPages() const { int n; const Section* d = docsFor(popup_, scr_, n); return totalPages(d, n); }
 void Lsdj::popupTurn(int d) { popupPage_ = clampi(popupPage_ + d, 0, std::max(0, popupPages() - 1)); }
+int Lsdj::helpPages() const { int n; const Section* d = docsFor(kPageHelp, Scr::Help, n); return totalPages(d, n); }
 
 void Lsdj::drawPopup(Lcd& l) const {
     int n;
-    const Doc* d = docsFor(popup_, scr_, n);
-    const int page = clampi(popupPage_, 0, n - 1);
+    const Section* d = docsFor(popup_, scr_, n);
+    const int pages = totalPages(d, n);
     l.rect(0, 0, 200, 144, 3);                       // covers the page and the side panel; a border of the dark shade
     l.rect(2, 2, 196, 140, 0);
-    drawDoc(l, d[page], page, n, 2, 196, n > 1 ? "< > PAGE" : "");
+    drawDoc(l, d, n, clampi(popupPage_, 0, pages - 1), 2, 196, pages > 1 ? "< > PAGE" : "");
 }
 
 void Lsdj::drawHelp(Lcd& l) const {
-    const int p = clampi(helpPage, 0, kHelpPages - 1);
-    drawDoc(l, kHelpDocs[p], p, kHelpPages, 0, 200, "<> PAGE  BKSP EXIT");
+    int n;
+    const Section* d = docsFor(kPageHelp, Scr::Help, n);
+    drawDoc(l, d, n, clampi(helpPage, 0, helpPages() - 1), 0, 200, "<> PAGE  BKSP EXIT");
 }
 
 // ---- Wave and Synth screens ---------------------------------------------------------------------------------------------
@@ -1285,7 +1579,8 @@ void Lsdj::drawWave(Lcd& l) const {
 
 void Lsdj::drawFile(Lcd& l) const {
     l.text(0, 0, console_ ? "LOAD SONG B" : "LOAD SONG A");
-    if (!fileCount) { l.text(0, 2, "NO SONGS IN GB/SONGS"); return; }
+    if (!fileCount) { l.text(0, 2, "NO SONGS YET"); l.text(0, 3, "SAVE SONG ADDS ONE"); return; }
+    l.text(0, 1, status_[0] ? status_ : "SHIFT+BKSP=ERASE");
     const int top = std::max(0, std::min(fileSel - 8, fileCount - 16));
     for (int r = 0; r < 16 && top + r < fileCount; ++r) {
         char s[24]; std::snprintf(s, sizeof s, "%-19.19s", tr_ ? tr_->songName(top + r) : "");

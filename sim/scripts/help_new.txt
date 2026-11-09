@@ -1,0 +1,21 @@
+# 0.4.0: left aligned help with bold names, and the song list (bank).
+wait 200
+tap HELP
+screenshot ../build/sim/h1.png
+tap RIGHT
+tap RIGHT
+tap RIGHT
+screenshot ../build/sim/h4.png
+tap RIGHT
+tap RIGHT
+tap RIGHT
+tap RIGHT
+tap RIGHT
+screenshot ../build/sim/h9.png
+tap DELETE
+press F8
+wait 100
+screenshot ../build/sim/h-f8.png
+tap RIGHT
+screenshot ../build/sim/h-f8b.png
+release F8

@@ -98,8 +98,7 @@ void Ui::update(uint32_t nowMs) {
     if (splashSet_ && int32_t(nowMs - splashUntil_) < 0) {
         const uint32_t el = nowMs - splashStart_;
         if (chime_ == 0 && el >= kSplashLand) { app_->bootChime(0); chime_ = 1; }
-        if (chime_ == 1 && el >= kSplashLand + 85) { app_->bootChime(1); chime_ = 2; }
-        if (chime_ == 2 && el >= kSplashLand + 1700) { app_->bootChime(2); chime_ = 3; }
+        if (chime_ == 1 && el >= kSplashLand + 1700) { app_->bootChime(2); chime_ = 3; }
         if (nowMs - lastFrame_ >= 33 || frames_ == 0) {
             lastFrame_ = nowMs;
             blank_.lcd().setLook(app_->look());

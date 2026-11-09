@@ -33,7 +33,6 @@ void Player::start(int row, int loopCh, int loopPhrase, bool withSong) {
     if (loopCh >= 0) { if (withSong) seq_.startOverdub(row, loopCh, loopPhrase); else seq_.startLoop(loopCh, loopPhrase); } else seq_.start(row);
     tickNo_ = -1;
     running_ = true;
-    hpPole_ = 0.9995f;
     hpInit_ = false;
     now_ = 0;
     next360_ = 0;
@@ -737,23 +736,11 @@ void Player::powerLive() {
     nr50_ = 0x77;
     rngState_ = 0x0052;
     tickNo_ = -1;
-    hpPole_ = 0.9995f;
     hpInit_ = false;
     now_ = 0;
     next360_ = 0;
     tickAcc_ = 896 - tempo_;
     live_ = true;
-}
-
-// The Game Boy's boot sound: two pulse notes, about 1048 Hz then 2080 Hz (frequency registers 0x783 and 0x7C1), the second one decaying.
-void Player::bootChime(int stage) {
-    if (!running_ && !live_) powerLive();
-    hpPole_ = 0.99f;
-    apu_.write(0xFF11, 0x80);
-    apu_.write(0xFF12, stage ? 0xF3 : 0xF0);
-    const int f = stage ? 0x7C1 : 0x783;
-    apu_.write(0xFF13, uint8_t(f & 0xFF));
-    apu_.write(0xFF14, uint8_t(0x80 | (f >> 8)));
 }
 
 void Player::previewOn(int ch, int note, int instrIdx) {

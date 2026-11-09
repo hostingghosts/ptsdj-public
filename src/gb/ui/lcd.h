@@ -27,6 +27,7 @@ public:
     // Tile text: (col,row) in 8 px cells. inv = light glyph on a dark cell. Returns the column after the text.
     int text(int col, int row, const char* s, bool inv = false);
     void glyph(int col, int row, char c, bool inv = false);
+    int boldText(int col, int row, const char* s);        // text with every dark pixel drawn twice, one pixel apart
     void glyphAt(int x, int y, char c, bool inv = false, uint8_t fg = 3, uint8_t bg = 0);   // pixel position, any shades
     void hex2(int col, int row, unsigned v, bool inv = false);
     // Upload and draw (call prepare() before the display list starts, draw() inside it).

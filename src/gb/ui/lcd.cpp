@@ -48,6 +48,17 @@ int Lcd::text(int col, int row, const char* s, bool inv) {
     return col;
 }
 
+int Lcd::boldText(int col, int row, const char* s) {
+    for (; *s; ++s, ++col) {
+        glyph(col, row, *s);
+        const uint8_t* g = glyphOf(*s);
+        for (int j = 0; j < 8; ++j)
+            for (int i = 0; i < 8; ++i)
+                if ((g[j] >> (7 - i)) & 1) px(col * 8 + i + 1, row * 8 + j, 3);
+    }
+    return col;
+}
+
 void Lcd::hex2(int col, int row, unsigned v, bool inv) {
     char b[3] = {"0123456789ABCDEF"[(v >> 4) & 15], "0123456789ABCDEF"[v & 15], 0};
     text(col, row, b, inv);

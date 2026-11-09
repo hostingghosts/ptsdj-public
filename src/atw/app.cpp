@@ -1,4 +1,6 @@
 #include "atw/app.h"
+#include "gb/bank.h"
+#include "atw/chime_pcm.h"
 
 #include <algorithm>
 #include "gb/upgrade.h"
@@ -44,12 +46,13 @@ void App::pump() {
     if (dual.live() && !liveWas_) flushRing();           // a pad starts a note: drop the queued silence so it sounds at once
     liveWas_ = dual.live();
     for (int pass = 0; pass < 16; ++pass) {
-        const bool run = dual.running() || dual.live();
+        const bool run = chimeOn_ || dual.running() || dual.live();
         const uint32_t level = ringHead_.load(std::memory_order_relaxed) - ringTail_.load(std::memory_order_acquire);
         if (level + kChunk > (run ? kRunTarget : kIdleTarget)) break;
         const uint32_t c0 = p_.cycleCounter ? p_.cycleCounter() : 0;
-        if (run) dual.render(buf, int(kChunk), int(rate)); else std::memset(buf, 0, sizeof buf);
-        if (p_.cycleCounter && run) { const uint32_t c = p_.cycleCounter() - c0; if (c > peakC_) peakC_ = c; }
+        if (chimeOn_) renderChime(buf, int(kChunk), rate);
+        else if (run) dual.render(buf, int(kChunk), int(rate)); else std::memset(buf, 0, sizeof buf);
+        if (p_.cycleCounter && run && !chimeOn_) { const uint32_t c = p_.cycleCounter() - c0; if (c > peakC_) peakC_ = c; }
         const uint32_t head = ringHead_.load(std::memory_order_relaxed);
         for (uint32_t i = 0; i < kChunk; ++i) {
             const uint32_t k = ((head + i) & (kRingFrames - 1)) * 2;
@@ -81,6 +84,42 @@ bool App::init(const Platform& p) {
 // of the ~59 KB the device has free, which is not safe.)
 uint8_t* App::fileBuf() const { return p_.bigMem && p_.bigMemSize >= kScratchOffset + kScratchBytes ? p_.bigMem + kScratchOffset : nullptr; }
 
+// A card file as a BankIO: reads and writes at byte offsets (the card may return short counts).
+namespace {
+struct CardIO final : gb::BankIO {
+    ot::IStorage* st;
+    ot::IStorage::Handle h;
+    CardIO(ot::IStorage* s, const char* path, ot::IStorage::OpenMode m) : st(s), h(s ? s->open(path, m) : -1) {}
+    ~CardIO() override { if (h >= 0) st->close(h); }
+    bool ok() const { return h >= 0; }
+    bool read(uint32_t off, void* dst, uint32_t n) override {
+        if (h < 0 || !st->seek(h, off)) return false;
+        uint8_t* p = static_cast<uint8_t*>(dst);
+        while (n) { const int32_t r = st->read(h, p, n); if (r <= 0) return false; p += r; n -= uint32_t(r); }
+        return true;
+    }
+    bool write(uint32_t off, const void* src, uint32_t n) override {
+        if (h < 0 || !st->seek(h, off)) return false;
+        const uint8_t* p = static_cast<const uint8_t*>(src);
+        while (n) { const int32_t r = st->write(h, p, n); if (r <= 0) return false; p += r; n -= uint32_t(r); }
+        return true;
+    }
+};
+}  // namespace
+
+bool App::installSong(size_t n, int console, const char* nm) {
+    uint8_t* buf = fileBuf();
+    dual.stop();
+    gb::Song& fresh = *new (buf + kFileBytes) gb::Song;
+    if (!gb::loadLsdsng(fresh, buf, n)) return false;
+    if (!gb::upgradeSong(fresh)) return false;       // songs saved by older LSDJ versions
+    std::memcpy((console ? songB : song).mem(), fresh.mem(), gb::kMemSize);
+    char name[9] = {};
+    for (int i = 0; i < 8 && nm[i] && nm[i] != '.'; ++i) name[i] = nm[i];
+    (console ? lsdjB : lsdj).setName(strncasecmp(name, "AUTOLOAD", 8) == 0 ? "" : name);
+    return true;
+}
+
 bool App::loadSong(const char* path, int console) {
     if (!p_.storage || !fileBuf()) return false;
     const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kRead);
@@ -89,17 +128,50 @@ bool App::loadSong(const char* path, int console) {
     const int32_t n = p_.storage->read(h, buf, kFileBytes);
     p_.storage->close(h);
     if (n <= 0) return false;
-    dual.stop();
-    gb::Song& fresh = *new (buf + kFileBytes) gb::Song;
-    if (!gb::loadLsdsng(fresh, buf, size_t(n))) return false;
-    if (!gb::upgradeSong(fresh)) return false;       // songs saved by older LSDJ versions
-    std::memcpy((console ? songB : song).mem(), fresh.mem(), gb::kMemSize);
     const char* stem = std::strrchr(path, '/');
-    stem = stem ? stem + 1 : path;
-    char nm[9] = {};
-    for (int i = 0; i < 8 && stem[i] && stem[i] != '.'; ++i) nm[i] = stem[i];
-    (console ? lsdjB : lsdj).setName(strncasecmp(nm, "AUTOLOAD", 8) == 0 ? "" : nm);
-    return true;
+    return installSong(size_t(n), console, stem ? stem + 1 : path);
+}
+
+// The name a song is filed under in the bank: the project name, or SONGA / SONGB for an unnamed one.
+static void bankName(const gb::Lsdj& l, int console, char* out) {
+    const char* nm = l.name();
+    if (!nm[0]) nm = console ? "SONGB" : "SONGA";
+    std::snprintf(out, 9, "%.8s", nm);
+}
+
+bool App::saveToBank(int console) {
+    error_ = nullptr;
+    if (!p_.storage || !fileBuf()) return false;
+    p_.storage->mkdir("GB");
+    p_.storage->mkdir(kSaveDir);
+    const bool had = p_.storage->exists(bankPath(console));
+    CardIO io(p_.storage, bankPath(console), ot::IStorage::kReadWrite);
+    if (!io.ok()) return false;
+    gb::Bank bank;
+    if (!(had && bank.load(io))) {
+        if (!gb::Bank::format(io) || !bank.load(io)) return false;     // a new bank, or a file that was not an LSDJ save
+    }
+    char name[9];
+    bankName(console ? lsdjB : lsdj, console, name);
+    int slot = bank.find(name);
+    if (slot < 0) slot = bank.freeSlot();
+    if (slot < 0) { error_ = "BANK FULL: 32 SONGS"; return false; }
+    uint8_t* buf = fileBuf();
+    const gb::Song& sg = console ? songB : song;
+    const size_t n = gb::saveLsdsng(sg, name, 1, buf);
+    const int old = bank.used(slot) ? bank.blocksOf(slot) : 0;
+    if (!bank.store(io, slot, buf, n)) { error_ = int((n - 9) / 512) > bank.freeBlocks() + old ? "BANK FULL: NO SPACE" : nullptr; return false; }
+    return gb::Bank::writeWorking(io, sg);
+}
+
+bool App::loadFromBank(int slot, int console) {
+    if (!p_.storage || !fileBuf() || !p_.storage->exists(bankPath(console))) return false;
+    CardIO io(p_.storage, bankPath(console), ot::IStorage::kRead);
+    gb::Bank bank;
+    if (!io.ok() || !bank.load(io) || !bank.used(slot)) return false;
+    uint8_t* buf = fileBuf();
+    const size_t n = bank.fetch(io, slot, buf, kFileBytes);
+    return n && installSong(n, console, bank.name[slot]);
 }
 
 bool App::saveSong(const char* path, const char* name, int console) {
@@ -240,20 +312,32 @@ void App::LinkedTransport::tempoChanged(int console) {
     (console ? app->player : app->playerB).setTempo(t);
 }
 
-int App::LinkedTransport::listSongs() {
+int App::LinkedTransport::listSongs(int console) {
     app->songCount_ = 0;
-    if (!app->platform().storage) return 0;
-    app->platform().storage->listDir(kSongDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
+    ot::IStorage* st = app->platform().storage;
+    if (!st) return 0;
+    if (st->exists(app->bankPath(console))) {
+        CardIO io(st, app->bankPath(console), ot::IStorage::kRead);
+        gb::Bank bank;
+        if (io.ok() && bank.load(io))
+            for (int s = 0; s < gb::kBankSlots && app->songCount_ < kMaxSongs; ++s)
+                if (bank.used(s)) {
+                    std::snprintf(app->songNames_[app->songCount_], sizeof app->songNames_[0], "%.8s", bank.name[s]);
+                    app->songSlot_[app->songCount_++] = uint8_t(s);
+                }
+    }
+    const int files = app->songCount_;
+    st->listDir(kSongDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* a = static_cast<App*>(ctx);
         const size_t n = std::strlen(e.name);
-        if (e.isDir || n < 8 || n > 23 + 7 || strcasecmp(e.name + n - 7, ".lsdsng") != 0 || a->songCount_ >= kMaxSongs) return a->songCount_ < kMaxSongs;
-        std::snprintf(a->songNames_[a->songCount_], sizeof a->songNames_[0], "%.*s", int(std::min<size_t>(n - 7, 23)), e.name);
-        ++a->songCount_;
+        if (e.isDir || n < 8 || n > 22 + 7 || strcasecmp(e.name + n - 7, ".lsdsng") != 0 || a->songCount_ >= kMaxSongs) return a->songCount_ < kMaxSongs;
+        std::snprintf(a->songNames_[a->songCount_], sizeof a->songNames_[0], "+%.*s", int(std::min<size_t>(n - 7, 22)), e.name);
+        a->songSlot_[a->songCount_++] = 0xFF;
         return true;
     }, app);
-    // names in order (insertion sort: the list is short)
-    for (int i = 1; i < app->songCount_; ++i)
-        for (int j = i; j > 0 && strcasecmp(app->songNames_[j - 1], app->songNames_[j]) > 0; --j) {
+    // loose files in name order (insertion sort: the list is short); the bank keeps its slot order
+    for (int i = files + 1; i < app->songCount_; ++i)
+        for (int j = i; j > files && strcasecmp(app->songNames_[j - 1], app->songNames_[j]) > 0; --j) {
             char tmp[24]; std::memcpy(tmp, app->songNames_[j], 24); std::memcpy(app->songNames_[j], app->songNames_[j - 1], 24); std::memcpy(app->songNames_[j - 1], tmp, 24);
         }
     return app->songCount_;
@@ -261,9 +345,20 @@ int App::LinkedTransport::listSongs() {
 
 bool App::LinkedTransport::loadSongFile(int i, int console) {
     if (i < 0 || i >= app->songCount_) return false;
+    if (app->songSlot_[i] != 0xFF) return app->loadFromBank(app->songSlot_[i], console);
     char path[64];
-    std::snprintf(path, sizeof path, "%s/%s.lsdsng", kSongDir, app->songNames_[i]);
+    std::snprintf(path, sizeof path, "%s/%s.lsdsng", kSongDir, app->songNames_[i] + 1);
     return app->loadSong(path, console);
+}
+
+bool App::LinkedTransport::deleteSongFile(int i, int console) {
+    ot::IStorage* st = app->platform().storage;
+    if (!st || i < 0 || i >= app->songCount_ || app->songSlot_[i] == 0xFF) return false;
+    CardIO io(st, app->bankPath(console), ot::IStorage::kReadWrite);
+    gb::Bank bank;
+    if (!io.ok() || !bank.load(io)) return false;
+    bank.remove(app->songSlot_[i]);
+    return bank.save(io);
 }
 
 bool App::LinkedTransport::action(Action a, int slot) {
@@ -340,12 +435,8 @@ void App::projectFileName(int console, char* out, size_t n, const char* fallback
 }
 
 bool App::saveProject(int console) {
-    char base[16], path[64];
-    projectFileName(console, base, sizeof base, console ? "SONGB" : "SONGA");
-    if (p_.storage) p_.storage->mkdir(kSongDir);
     progress("SAVING SONG", 30);
-    std::snprintf(path, sizeof path, "%s/%s.lsdsng", kSongDir, base);
-    const bool ok = saveSong(path, base, console);
+    const bool ok = saveToBank(console);
     progress("", 0);
     return ok;
 }
@@ -362,56 +453,75 @@ void App::progress(const char* label, int pct) {
     ui.update(now + 20);
 }
 
+// The power-on sound is a recording (assets/boot_chime.wav, see tools/make_chime.py), played back at the output rate.
 void App::bootChime(int stage) {
-    if (stage >= 2) { player.stop(); return; }
-    player.bootChime(stage);
-    flushRing();
+    if (stage == 0 && p_.audio) { chimePos_ = 0; chimeOn_ = true; flushRing(); }
+    else if (stage >= 2) chimeOn_ = false;
 }
 
-// Both songs as LSDJ files for two real Game Boys: Snn_A / Snn_B as .lsdsng (for the file manager) and as .sav (the song as working memory).
+void App::renderChime(int16_t* out, int n, uint32_t rate) {
+    const uint32_t step = rate ? uint32_t((uint64_t(kChimeRate) << 16) / rate) : 0;
+    for (int i = 0; i < n; ++i) {
+        const uint32_t idx = chimePos_ >> 16, frac = chimePos_ & 0xFFFF;
+        int v = 0;
+        if (chimeOn_ && idx + 1 < uint32_t(kChimeLen)) {
+            v = (kChimePcm[idx] * int32_t(65536 - frac) + kChimePcm[idx + 1] * int32_t(frac)) >> 16;
+            v = v * kChimeGain / 16;
+            chimePos_ += step;
+        } else chimeOn_ = false;
+        out[2 * i] = out[2 * i + 1] = int16_t(v);
+    }
+}
+
+// Copies a card file through the scratch buffer.
+static bool copyFile(ot::IStorage* st, uint8_t* buf, uint32_t cap, const char* from, const char* to) {
+    const ot::IStorage::Handle in = st->open(from, ot::IStorage::kRead);
+    if (in < 0) return false;
+    const ot::IStorage::Handle out = st->open(to, ot::IStorage::kWrite);
+    if (out < 0) { st->close(in); return false; }
+    bool ok = true;
+    for (;;) {
+        int32_t n = st->read(in, buf, cap);
+        if (n < 0) { ok = false; break; }
+        if (n == 0) break;
+        ok = st->write(out, buf, uint32_t(n)) == n;
+        if (!ok) break;
+    }
+    st->close(in);
+    st->close(out);
+    return ok;
+}
+
+// The songs for two real Game Boys: each selected song goes into its bank (GB/Saves/A.srm, B.srm), the bank is copied to GB/Export/LSDJ_A.srm / LSDJ_B.srm
+// (or `name`_A / _B) for the cartridge's save slot, and the song also goes out as a single .lsdsng for LSDJ's file manager.
 bool App::exportFiles(const char* name, int which) {
     if (!p_.storage || !fileBuf()) return false;
+    p_.storage->mkdir("GB");
     p_.storage->mkdir(kExportDir);
-    char base[2][16];
+    char base[2][16], bank[2][16];
     projectFileName(0, base[0], sizeof base[0], "SONGA");
     projectFileName(1, base[1], sizeof base[1], "SONGB");
     if (name) { std::snprintf(base[0], sizeof base[0], "%s_A", name); std::snprintf(base[1], sizeof base[1], "%s_B", name); }
     else if (which == 2 && std::strcmp(base[0], base[1]) == 0) { std::strncat(base[0], "_A", 3); std::strncat(base[1], "_B", 3); }
+    std::snprintf(bank[0], sizeof bank[0], "%s_A", name ? name : "LSDJ");
+    std::snprintf(bank[1], sizeof bank[1], "%s_B", name ? name : "LSDJ");
     bool ok = true;
     int step = 0;
-    const int steps = (which == 2 ? 4 : 2);
+    const int steps = (which == 2 ? 6 : 3);
     for (int c = 0; c < 2; ++c) {
         if (which != 2 && which != c) continue;
         char path[80], sn[16];
         progress("EXPORT LSDJ", step++ * 100 / steps);
+        if (!saveToBank(c)) { ok = false; continue; }
+        progress("EXPORT LSDJ", step++ * 100 / steps);
+        std::snprintf(path, sizeof path, "%s/%s.srm", kExportDir, bank[c]);
+        ok = copyFile(p_.storage, fileBuf(), kFileBytes, bankPath(c), path) && ok;
+        progress("EXPORT LSDJ", step++ * 100 / steps);
         std::snprintf(path, sizeof path, "%s/%s.lsdsng", kExportDir, base[c]);
         std::snprintf(sn, sizeof sn, "%.8s", base[c]);
         ok = saveSong(path, sn, c) && ok;
-        progress("EXPORT LSDJ", step++ * 100 / steps);
-        std::snprintf(path, sizeof path, "%s/%s.sav", kExportDir, base[c]);
-        ok = saveSav(path, c) && ok;
     }
     progress("", 0);
-    return ok;
-}
-
-// A 128 KB .sav with the song as working memory and an empty file table, written in pieces (the scratch buffer is 64 KB).
-bool App::saveSav(const char* path, int console) {
-    if (!p_.storage || !fileBuf()) return false;
-    uint8_t* buf = fileBuf();
-    const gb::Song& sg = console ? songB : song;
-    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
-    if (h < 0) return false;
-    bool ok = true;
-    auto put = [&](const uint8_t* d, uint32_t n) { ok = ok && p_.storage->write(h, d, n) == int32_t(n); };
-    put(sg.mem(), gb::kMemSize);                                   // 0x0000-0x7FFF: the song
-    std::memset(buf, 0, 0x140);                                    // 0x8000: names and versions, then the markers
-    buf[0x13E] = 'j'; buf[0x13F] = 'k';
-    std::memset(buf + 0x140, 0xFF, 4096 - 0x140);
-    put(buf, 4096);
-    std::memset(buf, 0xFF, 4096);
-    for (uint32_t done = 4096; done < gb::kSavSize - gb::kMemSize; done += 4096) put(buf, 4096);
-    p_.storage->close(h);
     return ok;
 }
 

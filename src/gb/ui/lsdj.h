@@ -24,9 +24,13 @@ struct Transport {
     virtual bool running() const = 0;
     enum Action { kSavePair, kLoadPair, kExportWav, kExportFiles, kSaveSong };
     virtual bool action(Action a, int slot) = 0;      // kSaveSong: slot = the console; kExportFiles: 0 = A, 1 = B, 2 = A + B; the others use the project names
-    virtual int listSongs() = 0;                      // reads GB/Songs: how many .lsdsng files
-    virtual const char* songName(int i) = 0;          // file name without the extension
+    // The songs this console can load: first the 32 slots of its bank file (GB/Saves/A.srm or B.srm), then loose .lsdsng files in GB/Songs
+    // (shown with a leading "+", they are filed into the bank by the next save).
+    virtual int listSongs(int console) = 0;
+    virtual const char* songName(int i) = 0;          // slot name, or "+" and the file name
     virtual bool loadSongFile(int i, int console) = 0;               // session actions from the Project screen; false = failed
+    virtual bool deleteSongFile(int i, int console) = 0;             // removes a bank slot (not a loose file); false = failed
+    virtual const char* errorText() { return nullptr; }              // why the last action failed, if it knows (e.g. "BANK FULL")
     // The virtual link cable: 0 off, 1 master, 2 slave. The slave follows the master's tempo.
     virtual int syncMode(int console) = 0;
     virtual void setSyncMode(int console, int mode) = 0;
@@ -72,6 +76,7 @@ public:
     void popupTurn(int d);
     int popupPage() const { return popupPage_; }
     int popupPages() const;
+    int helpPages() const;                       // pages of the Help screen
     static bool docsFit();                       // every help line fits the pop-up (23 characters)
     void copyKey(bool paste);                // Copy copies the selected cells (or the one under the cursor), Shift + Copy pastes them
     void draw(Lcd& l) const;
@@ -110,7 +115,6 @@ public:
     int helpPage = 0;
     int libSel = 0, libCount = 0;               // Library screen: row 0 saves the current instrument, rows 1.. are the files
     const char* status() const { return status_; }   // result of the last Project action, shown on the Project screen
-    static constexpr int kHelpPages = 7;
     int exportSel = 2;                           // Project: EXPORT LSDJ writes A (0), B (1) or both (2)
     // Name entry (instrument names: 5 characters, the project name: 8), the keyboard that pops up over the page.
     bool nameEditing() const { return nameOpen_; }
