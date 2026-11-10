@@ -754,11 +754,10 @@ void Lsdj::openName(int target) {
     std::memset(nameBuf_, 0, sizeof nameBuf_);
     if (target == 1) std::strncpy(nameBuf_, name_, 8);
     else if (target == 6) {}                                              // a new song starts with no name at all
-    else if (target == 3) std::strncpy(nameBuf_, smpName_, 3);
+    else if (target == 3) {}                                             // a sample name starts empty: three letters fill it, so there would be no room to type
     else if (target == 4 || target == 5) {
         const uint8_t* kb = kitBuf();
         if (kb && target == 4 && KitBank::hasSamples(kb)) KitBank::kitName(kb, nameBuf_);
-        else if (kb && target == 5) KitBank::name(kb, kitRow - 2, nameBuf_);
     }
     else { char tmp[6]; instrName(instr, tmp); std::strncpy(nameBuf_, tmp, 5); }
     for (int i = int(std::strlen(nameBuf_)) - 1; i >= 0 && nameBuf_[i] == ' '; --i) nameBuf_[i] = 0;
@@ -778,11 +777,11 @@ void Lsdj::nameCommit() {
         nameOpen_ = false;
         return;
     }
-    else if (nameTarget_ == 3) { for (int k = 0; k < 3; ++k) smpName_[k] = k < n ? nameBuf_[k] : '-'; }
+    else if (nameTarget_ == 3) { if (n > 0) for (int k = 0; k < 3; ++k) smpName_[k] = k < n ? nameBuf_[k] : '-'; }     // nothing typed keeps the old name
     else if ((nameTarget_ == 4 || nameTarget_ == 5) && tr_) {         // the kit's own name, or one of its samples
         uint8_t* kb = kitBuf();
         if (kb && nameTarget_ == 4) KitBank::setKitName(kb, nameBuf_);
-        else if (kb) KitBank::setName(kb, kitRow - 2, nameBuf_);
+        else if (kb && n > 0) KitBank::setName(kb, kitRow - 2, nameBuf_);
         status_ = kb && tr_->kitSave(console_, kitSlot) ? "SAVED" : "SAVE FAILED";
     }
     else if (nameTarget_ == 2 && n > 0 && tr_) {                      // library: save the current instrument under this name
@@ -1619,7 +1618,7 @@ const Entry kLoaderTxt[] = {
 const Entry kEditorTxt[] = {
     {"", "Cut a sample, name it and add it to a kit."},
     {"START, END", "Where the sound begins and ends. The jog wheel, or Insert + < >, moves it a little. Insert + UP/DOWN moves it a lot."},
-    {"NAME", "Press Insert to type 3 letters."},
+    {"NAME", "Press Insert, then pick 3 new letters with Insert. The keyboard starts empty. Start ends it. BKSP closes it and keeps the old name."},
     {"KIT", "The kit number to add to: 15 to 32."},
     {"SAMPLES", "Turn the jog wheel to step through the kit's samples and change one."},
     {"DELETE", "Throws the sample away. A new sample is dropped at once. A sample from the kit asks first, then is erased from the kit and gives its space back."},

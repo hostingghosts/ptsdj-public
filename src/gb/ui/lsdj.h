@@ -153,6 +153,7 @@ public:
     void openFirmware();
     void openRecorder();
     void poll();                                 // once per frame: a finished recording turns into a sample
+    bool recMonOn_ = false;
     bool recMon = true;   // Recorder: hear the input
     int recRow = 0, recInput = 0, recTrig = 2;   // Recorder: the cursor row, the input (0 line, 1 mic low, 2 mic high), the trigger level (0 now, 1 low, 2 medium, 3 high)
     int fwSel = 0, fwCount = 0;                 // Firmware window: the update images in /Firmware

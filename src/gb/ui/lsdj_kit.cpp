@@ -298,7 +298,8 @@ void Lsdj::recToggle() {
 // Called every frame: a finished recording becomes the sample in the editor.
 void Lsdj::poll() {
     if (!tr_) return;
-    tr_->recMonitor(scr_ == Scr::Recorder && recMon);                  // the input is only heard while this page is open
+    const bool mon = scr_ == Scr::Recorder && recMon;                  // the input is only heard while this page is open
+    if (mon != recMonOn_) { recMonOn_ = mon; tr_->recMonitor(mon); }     // (the other console's page must not switch it off)
     if (scr_ != Scr::Recorder || tr_->recState() != 3) return;
     bool cut = false;
     const int n = tr_->recConvert(&cut);

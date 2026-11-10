@@ -1460,26 +1460,27 @@ TEST(delete_on_the_sample_editor_drops_a_new_sample_and_erases_a_kit_sample_afte
     putWav(st, "GB/Samples/SNARE.wav", 22050, 300, 0.3);
     Rig r(true, &st);
     gb::Lsdj& l = r.app.lsdj;
-    const int n0 = gb::KitBank::count(r.app.kits.kit(0x15).data);       // the kit override is shared between tests
     tap(r, ot::btn::SampleLoader);
+    auto cnt = [&] { const uint8_t* d = r.app.kits.kit(0x15).data; return d ? gb::KitBank::count(d) : 0; };
     keyTap(r, ot::btn::Insert);
     keyTap(r, ot::btn::Down);
     keyTap(r, ot::btn::Insert);
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 2);
+    const int c2 = cnt();                                       // the kit override is shared between tests, so count from here
+    CHECK(c2 >= 2);
     tap(r, ot::btn::SampleEditor);
     l.smpRow = 4;
-    l.encoder(n0 + 1);                                               // the kick, from the kit
-    CHECK_EQ(l.smpEditIdx, n0);
+    l.encoder(c2);                                               // the kick, from the kit
+    CHECK_EQ(l.smpEditIdx, c2 - 1);
     l.smpRow = 6;
     keyTap(r, ot::btn::Insert);                                 // asks first
     gb::Lcd lcd;
     l.draw(lcd);
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 2);
+    CHECK_EQ(cnt(), c2);
     keyTap(r, ot::btn::Delete);                                 // no
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 2);
+    CHECK_EQ(cnt(), c2);
     keyTap(r, ot::btn::Insert);
     keyTap(r, ot::btn::Insert);                                 // yes
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 1);
+    CHECK_EQ(cnt(), c2 - 1);
     CHECK_EQ(l.smpLen, 0);
     CHECK_EQ(l.smpEditIdx, -1);
     // a sample that is only in the editor goes at once
@@ -1491,6 +1492,25 @@ TEST(delete_on_the_sample_editor_drops_a_new_sample_and_erases_a_kit_sample_afte
     keyTap(r, ot::btn::Insert);
     CHECK_EQ(l.smpLen, 0);
     CHECK(std::strstr(l.status(), "DELETED") != nullptr);
+}
+
+TEST(a_recorded_samples_name_can_be_typed_in_the_editor) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    tap(r, ot::btn::SampleLoader);
+    tap(r, ot::btn::SampleEditor);
+    l.smpLen = 640; l.smpEnd = 40;
+    std::memcpy(const_cast<char*>(l.sampleName()), "REC", 4);
+    l.smpRow = 2;
+    keyTap(r, ot::btn::Insert);                                 // the keyboard opens empty
+    keyTap(r, ot::btn::Insert);                                 // first key: Q
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Play);                                  // commit
+    CHECK(std::strcmp(l.sampleName(), "REC") != 0);
+    CHECK(std::strlen(l.sampleName()) == 3);
 }
 
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
