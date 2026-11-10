@@ -100,9 +100,11 @@ int App::LinkedTransport::recConvert(bool* cut) {
 }
 
 void App::fill(int16_t* out, uint32_t frames) {
+    const int16_t* monitorIn = nullptr;
     {
         const int rs = recState_.load(std::memory_order_relaxed);
-        if ((rs == kRecArmed || rs == kRecRunning) && p_.lineIn) { if (const int16_t* blk = p_.lineIn(p_.inputCtx)) recFeed(blk, frames); }
+        const bool mon = recMonitor_.load(std::memory_order_relaxed);
+        if ((mon || rs == kRecArmed || rs == kRecRunning) && p_.lineIn) { if (const int16_t* blk = p_.lineIn(p_.inputCtx)) { recFeed(blk, frames); monitorIn = mon ? blk : nullptr; } }
     }
     uint32_t tail = ringTail_.load(std::memory_order_relaxed);
     const uint32_t head = ringHead_.load(std::memory_order_acquire);
@@ -122,6 +124,12 @@ void App::fill(int16_t* out, uint32_t frames) {
         if (dual.running()) ringLate_.fetch_add(1, std::memory_order_relaxed);
     }
     ringTail_.store(tail + n, std::memory_order_release);
+    if (monitorIn) {                                                                // the recorder page: the input is heard, mixed in with whatever plays
+        for (uint32_t i = 0; i < frames && i < 256; ++i) {
+            const int m = (int(monitorIn[2 * i]) + int(monitorIn[2 * i + 1])) / 2;
+            for (int c = 0; c < 2; ++c) { const int v = out[2 * i + c] + m; out[2 * i + c] = int16_t(v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
+        }
+    }
 }
 
 void App::pump() {

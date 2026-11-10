@@ -61,6 +61,7 @@ struct Transport {
     virtual void recStop(bool keep) { (void)keep; }
     virtual int recState() { return 0; }                                             // 0 idle, 1 waiting for sound, 2 recording, 3 done
     virtual float recSeconds() { return 0; }
+    virtual void recMonitor(bool on) { (void)on; }                                   // play the input through the output (the recorder page)
     virtual int recPeak() { return 0; }                                              // loudest input since the last call, 0-100
     virtual int recConvert(bool* cut) { (void)cut; return 0; }                       // the recording as a kit sample in sampleBuf(): bytes, 0 if nothing was heard
     virtual int listSamples() { return 0; }                                           // GB/Samples/*.wav
@@ -152,6 +153,7 @@ public:
     void openFirmware();
     void openRecorder();
     void poll();                                 // once per frame: a finished recording turns into a sample
+    bool recMon = true;   // Recorder: hear the input
     int recRow = 0, recInput = 0, recTrig = 2;   // Recorder: the cursor row, the input (0 line, 1 mic low, 2 mic high), the trigger level (0 now, 1 low, 2 medium, 3 high)
     int fwSel = 0, fwCount = 0;                 // Firmware window: the update images in /Firmware
     int smpSel = 0, smpCount = 0;               // Loader: the WAV list
@@ -282,6 +284,8 @@ private:
     bool sampleLoad(bool toEditor);
     void kitAdd();
     void kitErase();
+    void sampleDiscard();
+    void kitDeleteEdited();
     void loaderAdd();
     void kitReplace();
     void editorSelectSample(int idx);

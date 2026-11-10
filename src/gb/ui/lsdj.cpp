@@ -111,6 +111,7 @@ void Lsdj::key(Key k, bool down) {
             else if (r == 9) cleanInstruments();
             else if (r == 11) kitErase();
             else if (r == 13) kitReplace();
+            else if (r == 14) kitDeleteEdited();
             else if (r == 12) {                          // the firmware loader: hands over to the bootloader, which restarts the Tracker
                 status_ = "FLASHING...";
                 if (tr_ && tr_->flashFirmware(fwSel)) status_ = "FLASHING...";
@@ -421,7 +422,7 @@ void Lsdj::move(Key k) {
         case Scr::Library: libSel = clampi(libSel + dy + dx * 13, 0, libCount); break;                     // Left / Right turn a page of 13
         case Scr::Loader: case Scr::Editor: case Scr::Kit: kitMove(k); break;
         case Scr::Firmware: fwSel = clampi(fwSel + dy, 0, fwCount ? fwCount - 1 : 0); break;
-        case Scr::Recorder: recRow = clampi(recRow + dy, 0, 2); break;
+        case Scr::Recorder: recRow = clampi(recRow + dy, 0, 3); break;
         case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
         case Scr::Wave:
             waveCol = clampi(waveCol + dx, 0, 31);
@@ -455,7 +456,7 @@ void Lsdj::press(Key) {
             }
             break;
         case Scr::Loader: case Scr::Editor: case Scr::Kit: kitPress(); break;
-        case Scr::Recorder: if (recRow == 2) recToggle(); break;
+        case Scr::Recorder: if (recRow == 3) recToggle(); else if (recRow == 2) recMon = !recMon; break;
         case Scr::Firmware:
             if (tr_ && fwCount) { std::snprintf(statusBuf_, sizeof statusBuf_, "FLASH IT? INSERT=YES"); status_ = statusBuf_; confirm_ = 12; }
             break;
@@ -472,6 +473,7 @@ void Lsdj::editKey(Key k) {
         const int dir = (k == Key::Right || k == Key::Up) ? 1 : -1;
         if (recRow == 0) { recInput = clampi(recInput + dir, 0, 2); if (tr_ && tr_->recAvailable()) tr_->recInput(recInput == 0 ? 0 : recInput == 1 ? 2 : 3); }
         else if (recRow == 1) recTrig = clampi(recTrig + dir, 0, 3);
+        else if (recRow == 2) recMon = dir > 0;
         return;
     }
     if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) { kitEdit(k); return; }
@@ -1620,6 +1622,7 @@ const Entry kEditorTxt[] = {
     {"NAME", "Press Insert to type 3 letters."},
     {"KIT", "The kit number to add to: 15 to 32."},
     {"SAMPLES", "Turn the jog wheel to step through the kit's samples and change one."},
+    {"DELETE", "Throws the sample away. A new sample is dropped at once. A sample from the kit asks first, then is erased from the kit and gives its space back."},
     {"ADD TO KIT", "A new sample: press Insert. The kit is saved at once. The status line says which note plays it."},
     {"REPLACE SAMPLE", "A sample from the kit: press Insert. It asks first, because the change is for good and can't be undone."},
     {"PLAY", "Hears the cut sound."},
@@ -1644,6 +1647,7 @@ const Entry kRecorderTxt[] = {
     {"", "Records a sound from the line or mic input and turns it into a kit sample."},
     {"INPUT", "LINE for a cable from another device. MIC LOW or MIC HIGH for the microphone. The jog wheel changes it."},
     {"TRIGGER", "When recording starts. AT ONCE starts when you press Insert. LOW, MEDIUM and HIGH wait until the sound passes that loudness."},
+    {"MONITOR", "ON lets you hear the input in the Tracker's output, so you can set the level. Turn it OFF with a microphone, or the speakers will squeal."},
     {"START / STOP", "Insert or Play. It records up to 2.8 seconds, or until you stop it."},
     {"LEVEL", "How loud the input is now. Keep it out of the very top."},
     {"AFTER", "The Sample Editor opens with the sound. Cut it and add it to a kit."},

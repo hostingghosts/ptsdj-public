@@ -35,7 +35,7 @@ void Lsdj::openLoader() {
 void Lsdj::openEditor() {
     if (!tr_) return;
     kitSelect(kitSlot);
-    smpRow = std::min(smpRow, 5);
+    smpRow = std::min(smpRow, 6);
     if (kitBuf() && smpEditIdx >= KitBank::count(kitBuf())) smpEditIdx = -1;
     status_ = "";
     scr_ = Scr::Editor;
@@ -91,7 +91,7 @@ void Lsdj::kitAudition() {
 void Lsdj::kitMove(Key k) {
     const int dy = k == Key::Down ? 1 : k == Key::Up ? -1 : 0;
     if (scr_ == Scr::Loader) smpSel = clampi(smpSel + dy, 0, std::max(0, smpCount - 1));
-    else if (scr_ == Scr::Editor) smpRow = clampi(smpRow + dy, 0, 5);
+    else if (scr_ == Scr::Editor) smpRow = clampi(smpRow + dy, 0, 6);
     else kitRow = clampi(kitRow + dy, 0, 16);
 }
 
@@ -113,6 +113,7 @@ void Lsdj::kitPress() {
     if (scr_ == Scr::Editor) {
         if (smpRow == 2) openName(3);
         else if (smpRow == 5) { if (smpEditIdx >= 0 && smpLen) confirm_ = 13; else kitAdd(); }     // changing a sample of the kit asks first
+        else if (smpRow == 6) { if (smpEditIdx >= 0) confirm_ = 14; else sampleDiscard(); }        // a sample in the kit is erased for good, so that asks
         return;
     }
     if (kitRow == 1) { if (kitEditable()) openName(4); else status_ = "ROM KIT: NO RENAME"; }
@@ -233,6 +234,29 @@ void Lsdj::loaderRemove() {
     status_ = "NOT IN THE KIT";
 }
 
+// DELETE on the Sample Editor, for a sample that is not in a kit yet: it is dropped from the editor and takes no space anywhere.
+void Lsdj::sampleDiscard() {
+    smpLen = 0;
+    smpLoaded_ = -1;
+    smpStart = smpEnd = 0;
+    smpEditIdx = -1;
+    smpSrc_[0] = 0;
+    std::memcpy(smpName_, "---", 4);
+    smpRow = 0;
+    status_ = "SAMPLE DELETED";
+}
+
+// DELETE on a sample of the kit (after the question): out of the kit, which gets its space back, and out of the editor.
+void Lsdj::kitDeleteEdited() {
+    uint8_t* kb = kitBuf();
+    const int i = smpEditIdx;
+    if (!kb || !kitEditable() || i < 0 || !KitBank::remove(kb, i)) { status_ = "NOTHING TO DELETE"; return; }
+    tr_->removeKitSource(console_, i);
+    const bool ok = tr_->kitSave(console_, kitSlot);
+    sampleDiscard();
+    status_ = ok ? "DELETED FROM THE KIT" : (tr_->errorText() ? tr_->errorText() : "SAVE FAILED");
+}
+
 void Lsdj::kitErase() {
     uint8_t* kb = kitBuf();
     const int i = kitRow - 2;
@@ -273,8 +297,9 @@ void Lsdj::recToggle() {
 
 // Called every frame: a finished recording becomes the sample in the editor.
 void Lsdj::poll() {
-    if (scr_ != Scr::Recorder || !tr_) return;
-    if (tr_->recState() != 3) return;
+    if (!tr_) return;
+    tr_->recMonitor(scr_ == Scr::Recorder && recMon);                  // the input is only heard while this page is open
+    if (scr_ != Scr::Recorder || tr_->recState() != 3) return;
     bool cut = false;
     const int n = tr_->recConvert(&cut);
     if (n <= 0) { status_ = "NOTHING HEARD"; return; }
@@ -309,7 +334,8 @@ void Lsdj::drawRecorder(Lcd& l) const {
     l.text(0, 3, b, recRow == 0);
     std::snprintf(b, sizeof b, "TRIGGER %s", tr[recTrig & 3]);
     l.text(0, 4, b, recRow == 1);
-    l.text(0, 5, st == 1 || st == 2 ? "STOP" : "START", recRow == 2);
+    l.text(0, 5, recMon ? "MONITOR ON" : "MONITOR OFF", recRow == 2);
+    l.text(0, 6, st == 1 || st == 2 ? "STOP" : "START", recRow == 3);
     // the level meter: the loudest input lately, falling back
     if (tr_) { const int v = tr_->recPeak(); recLevel_ = std::max(v, recLevel_ - 6); }
     l.text(0, 8, "LEVEL");
@@ -384,7 +410,18 @@ void Lsdj::drawEditor(Lcd& l) const {
     }
     if (smpEditIdx < 0) l.text(0, 15, "ADD TO KIT", smpRow == 5);
     else { std::snprintf(b, sizeof b, "REPLACE SAMPLE %X", unsigned(smpEditIdx + 1)); l.text(0, 15, b, smpRow == 5); }
+    if (smpEditIdx < 0) l.text(0, 16, "DELETE THIS SAMPLE", smpRow == 6);
+    else { std::snprintf(b, sizeof b, "DELETE SAMPLE %X FROM KIT", unsigned(smpEditIdx + 1)); l.text(0, 16, b, smpRow == 6); }
     l.text(0, 17, status_[0] ? status_ : "PLAY=HEAR  JOG=CHANGE");
+    if (confirm_ == 14) {                                              // the question before a sample is erased from the kit
+        l.rect(8, 40, 184, 72, 3);
+        l.rect(10, 42, 180, 68, 0);
+        std::snprintf(b, sizeof b, "DELETE SAMPLE %X", unsigned(smpEditIdx + 1));
+        l.text(2, 6, b);
+        l.text(2, 7, "FROM THE KIT FOR GOOD?");
+        l.text(2, 9, "THIS CAN'T BE UNDONE.");
+        l.text(2, 11, "INSERT=YES  BKSP=NO");
+    }
     if (confirm_ == 13) {                                              // the question before a sample of the kit is changed for good
         l.rect(8, 40, 184, 72, 3);
         l.rect(10, 42, 180, 68, 0);

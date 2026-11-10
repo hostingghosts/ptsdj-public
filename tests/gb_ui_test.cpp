@@ -1434,6 +1434,65 @@ TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_af
     CHECK_EQ(gb::KitBank::length(kit, 1), snareLen);            // the next one is untouched
 }
 
+TEST(the_recorder_page_plays_the_input_through_the_output_only_while_it_is_open) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    gLineAmp = 8000;
+    int16_t out[2 * 128];
+    auto peak = [&] { int m = 0; for (int b = 0; b < 8; ++b) { r.loop(20); r.app.fill(out, 128); for (int i = 0; i < 256; ++i) m = std::max(m, std::abs(int(out[i]))); } return m; };
+    CHECK_EQ(peak(), 0);                                        // not on the page: the input is not heard
+    tap(r, ot::btn::SampleRecorder);
+    CHECK(peak() > 4000);                                       // heard, and the meter moves
+    l.recRow = 2;
+    keyTap(r, ot::btn::Insert);                                 // MONITOR OFF
+    CHECK(!l.recMon);
+    CHECK_EQ(peak(), 0);
+    keyTap(r, ot::btn::Insert);
+    CHECK(peak() > 4000);
+    keyTap(r, ot::btn::Delete);                                 // leaves the page
+    CHECK_EQ(peak(), 0);
+    gLineAmp = 0;
+}
+
+TEST(delete_on_the_sample_editor_drops_a_new_sample_and_erases_a_kit_sample_after_asking) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    putWav(st, "GB/Samples/SNARE.wav", 22050, 300, 0.3);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    const int n0 = gb::KitBank::count(r.app.kits.kit(0x15).data);       // the kit override is shared between tests
+    tap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Down);
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 2);
+    tap(r, ot::btn::SampleEditor);
+    l.smpRow = 4;
+    l.encoder(n0 + 1);                                               // the kick, from the kit
+    CHECK_EQ(l.smpEditIdx, n0);
+    l.smpRow = 6;
+    keyTap(r, ot::btn::Insert);                                 // asks first
+    gb::Lcd lcd;
+    l.draw(lcd);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 2);
+    keyTap(r, ot::btn::Delete);                                 // no
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 2);
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Insert);                                 // yes
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), n0 + 1);
+    CHECK_EQ(l.smpLen, 0);
+    CHECK_EQ(l.smpEditIdx, -1);
+    // a sample that is only in the editor goes at once
+    tap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Insert);
+    tap(r, ot::btn::SampleEditor);
+    l.smpLen = 640; l.smpEnd = 40;
+    l.smpRow = 6;
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(l.smpLen, 0);
+    CHECK(std::strstr(l.status(), "DELETED") != nullptr);
+}
+
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
     Rig r;
     gb::Lsdj& l = r.app.lsdj;
@@ -1830,7 +1889,7 @@ TEST(the_recorder_waits_for_sound_records_it_and_opens_it_in_the_editor) {
     l.encoder(-1);
     CHECK_EQ(gInputSel, 0);
     l.recTrig = 1;                                              // LOW
-    l.recRow = 2;
+    l.recRow = 3;
     keyTap(r, ot::btn::Insert);                                 // START: waiting for sound
     int16_t out[2 * 512];
     for (int b = 0; b < 20; ++b) { r.loop(2); r.app.fill(out, 128); }
@@ -1848,7 +1907,7 @@ TEST(the_recorder_waits_for_sound_records_it_and_opens_it_in_the_editor) {
     // a long take stops by itself when the buffer is full and the sample is cut to what a kit holds
     tap(r, ot::btn::SampleRecorder);
     l.recTrig = 0;                                              // AT ONCE
-    l.recRow = 2;
+    l.recRow = 3;
     keyTap(r, ot::btn::Insert);
     for (int b = 0; b < 1200; ++b) { r.app.fill(out, 128); }    // about 3.5 seconds
     CHECK_EQ(r.app.recStateNow(), int(3));
@@ -1857,7 +1916,7 @@ TEST(the_recorder_waits_for_sound_records_it_and_opens_it_in_the_editor) {
     CHECK(l.smpLen > 14000 && l.smpLen <= gb::kKitCapacity);
     // Delete while recording throws it away
     tap(r, ot::btn::SampleRecorder);
-    l.recRow = 2;
+    l.recRow = 3;
     keyTap(r, ot::btn::Insert);
     for (int b = 0; b < 10; ++b) r.app.fill(out, 128);
     keyTap(r, ot::btn::Delete);

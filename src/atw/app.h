@@ -183,6 +183,7 @@ private:
     int16_t* recBuf() const { return p_.bigMem && p_.bigMemSize >= kRecOffset + kRecMax * 2 ? reinterpret_cast<int16_t*>(p_.bigMem + kRecOffset) : nullptr; }
     std::atomic<int> recState_{0};
     std::atomic<uint32_t> recLen_{0};
+    std::atomic<bool> recMonitor_{false};                                // the input is played through the output
     std::atomic<int> recPeak_{0};                                        // loudest block since it was last read, 0-100
     int recThreshold_ = 0;                                               // 0-32767: the input has to pass this to start
     void recFeed(const int16_t* blk, uint32_t frames);
@@ -234,6 +235,7 @@ private:
         void recStop(bool keep) override { app->recStop(keep); }
         int recState() override { return app->recState_.load(std::memory_order_acquire); }
         float recSeconds() override { return float(app->recLen_.load(std::memory_order_acquire)) / float(app->platform().sampleRateMilliHz / 1000); }
+        void recMonitor(bool on) override { app->recMonitor_.store(on && recAvailable(), std::memory_order_relaxed); }
         int recPeak() override { return app->recPeak_.exchange(0, std::memory_order_relaxed); }
         int recConvert(bool* cut) override;
         int listSamples() override;
