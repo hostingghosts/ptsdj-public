@@ -39,4 +39,5 @@ Checks, in order (stop at the first failure and report what the screen showed):
 30. Library (Shift + Instr): no `._` files listed. Play previews the highlighted sound; the pads play it; Delete leaves and nothing in the song changed; Insert puts it in.
 31. Output level: the same song should be clearly louder than before. Tell me if anything distorts on loud passages.
 32. The noise hi-hat with the K command plus two pulse sounds and a kit: no chugging or slow-down any more. If it still chugs, tell me what the Project page's technical line says (hold Shift): `P` is the worst callback in thousands of cycles.
+33. EverDrive: `PTSDJ_A.gb` must pass the cartridge test and boot like the original ROM. If it does not, send me what the screen says; the ROM differs from the stock one only in the kit banks and header bytes 0x14E-0x14F.
 20. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.

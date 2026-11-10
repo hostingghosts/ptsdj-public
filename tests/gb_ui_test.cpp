@@ -1354,6 +1354,11 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     CHECK_EQ(int(a.size()), 1 << 20);
     CHECK_EQ(int(a[34 * 0x4000]), 0x60);
     CHECK_EQ(int(b[34 * 0x4000]), 0xFF);
+    for (const auto* rom : {&a, &b}) {                          // the header's global checksum matches what is in the file, as a real ROM's does
+        uint32_t sum = 0;
+        for (size_t i = 0; i < rom->size(); ++i) if (i != 0x14E && i != 0x14F) sum += (*rom)[i];
+        CHECK_EQ(int((*rom)[0x14E] << 8 | (*rom)[0x14F]), int(sum & 0xFFFF));
+    }
     // Delete on the loader takes KICK out again (the check mark goes), the second sample moves up
     tap(r, ot::btn::SampleLoader);
     l.smpSel = 0;

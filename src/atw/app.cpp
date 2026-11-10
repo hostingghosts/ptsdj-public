@@ -787,23 +787,42 @@ bool App::exportFiles(const char* name, int which) {
 bool App::exportRom(const char* path, int console) {
     uint8_t* base = p_.bigMem && p_.bigMemSize >= kKitOffset + kMaxKitFiles * gb::kKitBankSize ? p_.bigMem + kKitOffset : nullptr;
     if (!p_.storage || !base || !p_.bigMem || romGot_ < (1u << 19)) return false;
-    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
-    if (h < 0) return false;
-    bool ok = true;
-    romSkipped_ = 0xFF;
     const uint32_t banks = romGot_ / uint32_t(gb::kKitBankSize);
     const gb::RomKits& set = console ? kitsB : kits;
-    for (uint32_t b = 0; b < banks && ok; ++b) {
+    romSkipped_ = 0xFF;
+    // Which bytes bank b has in the new ROM: the console's own kit for that slot if the bank is a kit or empty, else the ROM's own.
+    auto pick = [&](uint32_t b, bool note) -> const uint8_t* {
         const uint8_t* src = p_.bigMem + size_t(b) * gb::kKitBankSize;
         const int idx = int(b) - 8;                            // kit n is bank 8 + n
         const uint8_t* kit = idx >= 0 && idx < 64 ? set.override_(idx) : nullptr;
-        if (kit && kit[0] == 0x60 && kit[1] == 0x40) {         // the console's own kit for this slot, if the bank is a kit or empty
+        if (kit && kit[0] == 0x60 && kit[1] == 0x40) {
             bool free = src[0] == 0x60 && src[1] == 0x40;
             if (!free) { free = true; for (size_t k = 0; k < gb::kKitBankSize && free; ++k) free = src[k] == 0xFF; }
-            if (free) src = kit;
-            else if (romSkipped_ == 0xFF) romSkipped_ = uint8_t(idx);   // the stock ROM keeps program code in the banks of kits 13-17: never overwritten
+            if (free) return kit;
+            if (note && romSkipped_ == 0xFF) romSkipped_ = uint8_t(idx);   // the stock ROM keeps program code in the banks of kits 13-17: never overwritten
         }
-        ok = p_.storage->write(h, src, uint32_t(gb::kKitBankSize)) == int32_t(gb::kKitBankSize);
+        return src;
+    };
+    // The cartridge header's global checksum (0x14E-0x14F) is the sum of every other byte of the ROM. A real LSDJ ROM has it right and the cartridge test
+    // looks at it, so it has to be worked out again for the new kits.
+    uint32_t sum = 0;
+    for (uint32_t b = 0; b < banks; ++b) {
+        const uint8_t* src = pick(b, true);
+        for (size_t k = 0; k < gb::kKitBankSize; ++k) sum += src[k];
+    }
+    const uint8_t* first = pick(0, false);
+    sum -= first[0x14E];
+    sum -= first[0x14F];
+    const uint8_t cks[2] = {uint8_t(sum >> 8), uint8_t(sum)};
+    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
+    if (h < 0) return false;
+    bool ok = true;
+    for (uint32_t b = 0; b < banks && ok; ++b) {
+        const uint8_t* src = pick(b, false);
+        if (b == 0) {                                          // bank 0 with its two checksum bytes replaced
+            ok = p_.storage->write(h, src, 0x14E) == 0x14E && p_.storage->write(h, cks, 2) == 2 &&
+                 p_.storage->write(h, src + 0x150, uint32_t(gb::kKitBankSize - 0x150)) == int32_t(gb::kKitBankSize - 0x150);
+        } else ok = p_.storage->write(h, src, uint32_t(gb::kKitBankSize)) == int32_t(gb::kKitBankSize);
     }
     p_.storage->close(h);
     return ok;
