@@ -316,7 +316,7 @@ TEST(project_screen_saves_names_and_exports) {
     CHECK(st.files["GB/Export/SONG.wav"].size() > 44u);
     tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT LSDJ
     CHECK(std::strcmp(r.app.lsdj.status(), "EXPORT DONE") == 0);
-    CHECK(st.files.count("GB/Export/SONGA.lsdsng") == 1 && st.files.count("GB/Export/LSDJ_B.srm") == 1);
+    CHECK(st.files.count("GB/Export/SONGA.lsdsng") == 1 && st.files.count("GB/Export/PTSDJ_B.srm") == 1);
 }
 
 namespace {
@@ -1715,4 +1715,23 @@ TEST(the_library_hides_unloadable_files_and_play_previews_a_sound_without_touchi
     l.libSel = 2;
     keyTap(r, ot::btn::Insert);
     CHECK_EQ(int(r.app.song.instrument(l.instr)[1]), 0xF0);
+}
+
+TEST(every_export_writes_the_rom_with_the_save_of_the_same_name_even_without_kits) {
+    MemStorage st;
+    std::vector<uint8_t> rom(1u << 20);
+    for (size_t i = 0; i < rom.size(); ++i) rom[i] = uint8_t(i * 7 + i / 0x4000);
+    st.files["GB/LSDJ.GB"] = rom;
+    Rig r(true, &st);
+    r.app.loadKits();
+    oneNote(r.app.song, 0, 25, 3);
+    CHECK(r.app.exportFiles(nullptr, 0));
+    CHECK_EQ(int(st.files.count("GB/Export/PTSDJ_A.srm")), 1);
+    CHECK_EQ(int(st.files.count("GB/Export/PTSDJ_A.gb")), 1);   // the pair, named alike
+    const auto& out = st.files["GB/Export/PTSDJ_A.gb"];
+    CHECK_EQ(int(out.size()), int(rom.size()));
+    int differ = 0;
+    for (size_t i = 0; i < rom.size(); ++i) differ += out[i] != rom[i];
+    CHECK(differ <= 2);                                         // no kits: only the two checksum bytes can change
+    CHECK_EQ(int(st.files.count("GB/Export/PTSDJ_B.gb")), 0);
 }

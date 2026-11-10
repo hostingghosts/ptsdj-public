@@ -80,7 +80,7 @@ public:
     bool saveLinked(const char* base);
     // Renders both songs once from their first rows until every channel has come round again (or `maxSeconds`); writes a 16-bit stereo WAV.
     bool exportWav(const char* path, int rate = 44100, int maxSeconds = 600);
-    bool exportFiles(const char* name = nullptr, int which = 2);   // song A (0), B (1) or both (2): saves into the banks, then copies each bank to GB/Export/LSDJ_A.srm / LSDJ_B.srm (or `name`_A / _B) and writes the song as .lsdsng
+    bool exportFiles(const char* name = nullptr, int which = 2);   // song A (0), B (1) or both (2): saves into the banks, then copies each bank to GB/Export/PTSDJ_A.srm / PTSDJ_B.srm (or `name`_A / _B) and writes the song as .lsdsng
     bool saveProject(int console);             // saveToBank
     void progress(const char* label, int pct); // a long action reports here: the bar is drawn at once, over whatever is on screen
     void bootChime(int stage);                 // 0 starts the power-on recording, 2 cuts it (the splash)

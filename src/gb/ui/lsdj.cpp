@@ -1348,10 +1348,10 @@ const Entry kSavingTxt[] = {
     {"AT START", "Each Game Boy opens with the song you saved last. If it never saved one, it opens empty."},
     {"SHIFT + BKSP", "In the song list, erases the song under the cursor."},
     {"EXPORT WAV", "Makes an audio file."},
-    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as LSDJ_A.SRM or LSDJ_B.SRM."},
-    {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. If you have your own kits, EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's kits in. Use these ROMs on the Game Boys."},
+    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as PTSDJ_A.SRM or PTSDJ_B.SRM."},
+    {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's own kits in. Each one goes with the save file of the same name, PTSDJ_A.SRM."},
     {"KIT SLOTS", "Use slot 1A to 37 for your own kits. Slots 13 to 17 hold program code in the ROM and are never replaced."},
-    {"ON A GAME BOY", "Give the copy the same name as your LSDJ ROM, like LSDJ.SRM."},
+    {"ON A GAME BOY", "Put PTSDJ_A.GB and PTSDJ_A.SRM together on the cartridge or emulator. The save file has to have the same name as the ROM."},
 };
 const Entry kSamplesTxt[] = {
     {"", "Drum kits are sets of up to 15 short sounds. The WAV track plays them with a KIT instrument."},

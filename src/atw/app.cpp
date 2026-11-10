@@ -734,8 +734,8 @@ static bool copyFile(ot::IStorage* st, uint8_t* buf, uint32_t cap, const char* f
     return ok;
 }
 
-// The songs for two real Game Boys: each selected song goes into its bank (GB/Saves/A.srm, B.srm), the bank is copied to GB/Export/LSDJ_A.srm / LSDJ_B.srm
-// (or `name`_A / _B) for the cartridge's save slot, and the song also goes out as a single .lsdsng for LSDJ's file manager.
+// The songs for two real Game Boys: each selected song goes into its bank (GB/Saves/A.srm, B.srm), the bank is copied to GB/Export/PTSDJ_A.srm / PTSDJ_B.srm
+// (or `name`_A / _B), named like the ROM it goes with (PTSDJ_A.gb), for the cartridge's save, and the song also goes out as a single .lsdsng for LSDJ's file manager.
 bool App::exportFiles(const char* name, int which) {
     if (!p_.storage || !fileBuf()) return false;
     p_.storage->mkdir("GB");
@@ -745,8 +745,8 @@ bool App::exportFiles(const char* name, int which) {
     projectFileName(1, base[1], sizeof base[1], "SONGB");
     if (name) { std::snprintf(base[0], sizeof base[0], "%s_A", name); std::snprintf(base[1], sizeof base[1], "%s_B", name); }
     else if (which == 2 && std::strcmp(base[0], base[1]) == 0) { std::strncat(base[0], "_A", 3); std::strncat(base[1], "_B", 3); }
-    std::snprintf(bank[0], sizeof bank[0], "%s_A", name ? name : "LSDJ");
-    std::snprintf(bank[1], sizeof bank[1], "%s_B", name ? name : "LSDJ");
+    std::snprintf(bank[0], sizeof bank[0], "%s_A", name ? name : "PTSDJ");
+    std::snprintf(bank[1], sizeof bank[1], "%s_B", name ? name : "PTSDJ");
     bool ok = true;
     int step = 0;
     done_ = nullptr;
@@ -766,9 +766,7 @@ bool App::exportFiles(const char* name, int which) {
     }
     // Kits are not in a song: they are banks of the LSDJ ROM. Each console gets a copy of the card's ROM with its kits put in (PTSDJ_A.gb, PTSDJ_B.gb), so the
     // Game Boy plays the same drums as the Tracker.
-    bool anyKits = false;
-    for (int i = 0; i < kitFiles_; ++i) anyKits = anyKits || kitFile_[i].console != 3;
-    if (anyKits && romGot_ >= (1u << 19)) {
+    if (romGot_ >= (1u << 19)) {                                   // the ROM goes with every export, so PTSDJ_A.gb always has its PTSDJ_A.srm
         for (int c = 0; c < 2; ++c) {
             if (which != 2 && which != c) continue;
             progress("EXPORT LSDJ", step * 100 / steps);
