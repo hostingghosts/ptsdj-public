@@ -90,3 +90,35 @@ TEST(wave_channel_follows_ram_and_volume_code) {
     a.write(0xFF1C, 0x40);                      // 50 %
     CHECK_EQ(a.channelLevel(2), 7);
 }
+
+TEST(skipping_the_silent_noise_register_gives_exactly_the_same_sound_as_stepping_it) {
+    Apu lazy, exact;
+    exact.setLazyNoise(false);
+    uint32_t rng = 12345;
+    auto rnd = [&rng](uint32_t n) { rng = rng * 1664525u + 1013904223u; return (rng >> 8) % n; };
+    auto both = [&](uint16_t a, uint8_t v) { lazy.write(a, v); exact.write(a, v); };
+    powerOn(lazy);
+    powerOn(exact);
+    int checked = 0;
+    for (int i = 0; i < 6000; ++i) {
+        switch (rnd(8)) {
+            case 0: both(0xFF21, uint8_t(rnd(16) << 4 | (rnd(3) == 0 ? 8 : 0) | rnd(8))); break;       // envelope: volume, direction, pace (many go silent)
+            case 1: both(0xFF21, uint8_t(rnd(2) ? 0x00 : 0x09)); break;                                  // the kill sequence's writes
+            case 2: both(0xFF22, uint8_t(rnd(14) << 4 | (rnd(2) ? 8 : 0) | rnd(8))); break;            // pitch, long or short register
+            case 3: both(0xFF23, uint8_t(0x80 | (rnd(3) == 0 ? 0x40 : 0))); break;                      // trigger
+            case 4: both(0xFF20, uint8_t(rnd(64))); break;
+            case 5: both(0xFF25, uint8_t(rnd(256))); break;
+            default: break;
+        }
+        const uint32_t cycles = rnd(5) == 0 ? rnd(300000) + 1 : rnd(2000) + 1;
+        lazy.advance(cycles);
+        exact.advance(cycles);
+        float l0, r0, l1, r1;
+        lazy.takeAverage(cycles, l0, r0);
+        exact.takeAverage(cycles, l1, r1);
+        CHECK(l0 == l1 && r0 == r1);
+        CHECK_EQ(lazy.channelLevel(3), exact.channelLevel(3));
+        ++checked;
+    }
+    CHECK_EQ(checked, 6000);
+}

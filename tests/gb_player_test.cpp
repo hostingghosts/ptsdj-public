@@ -1,4 +1,5 @@
 // Player rules measured against LSDJ 9.4.2 (see docs/LSDJ_FORMAT.md): the random generator, B gate and Z.
+#include "gb/dual.h"
 #include "gb/player.h"
 #include "test.h"
 
@@ -226,4 +227,18 @@ TEST(table_slide_row_glides_from_the_old_pitch_without_wrapping) {
     }
     CHECK_EQ(jumps, 0);
     CHECK(minF < 400);
+}
+
+TEST(the_output_is_louder_and_rounds_off_peaks_instead_of_clipping_them) {
+    CHECK(std::abs(int(Dual::finish(1000)) - 1600) <= 2);                  // quiet material: 1.6 times louder
+    CHECK(std::abs(int(Dual::finish(-1000)) + 1600) <= 2);
+    int prev = -1;
+    for (int x = 0; x <= 60000; x += 100) {                                 // a rising input never gives a falling output, and never passes full scale
+        const int y = Dual::finish(x);
+        CHECK(y >= prev);
+        CHECK(y <= 32767);
+        prev = y;
+    }
+    CHECK(Dual::finish(60000) > Dual::finish(30000));                       // still rising at the top: no flat clipping
+    CHECK_EQ(int(Dual::finish(0)), 0);
 }

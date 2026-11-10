@@ -237,6 +237,10 @@ private:
     int curInstr() const;
     int previewChannel(int instrIdx) const;
     void recordNote(int ch, int note);
+    void libPreviewKey();                    // Play in the library: the sound goes into the preview memory and sounds
+    void libStopPreview();
+    bool libPreview_ = false;                // the library's preview sound is loaded (pads play it)
+    int libTable_ = -1, libCh_ = 0;          // a table slot borrowed for the preview, and the channel it sounds on
     void fixInstr(int i);                    // an all-zero instrument becomes the pulse default
     // sample kit screens (lsdj_kit.cpp)
     void drawLoader(Lcd& l) const;

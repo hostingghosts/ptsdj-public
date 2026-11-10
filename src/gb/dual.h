@@ -30,6 +30,9 @@ public:
     // True once both consoles' channels have all come round to the top of the song again (the end of one pass).
     bool looped() const { return (!a_.running() || a_.songLooped()) && (!b_.running() || b_.songLooped()); }
     Player& player(int i) { return i ? b_ : a_; }
+    // The last step of the mix: the output is 1.6 times louder than the chips' own level, and anything that would pass 60 % of full scale is rounded off
+    // smoothly (a soft knee) instead of being cut flat, so loud passages do not distort. `mixed` is the sum of both consoles at 0.7 each.
+    static int16_t finish(int mixed);
     bool live() const { return a_.live() || b_.live(); }      // previewed notes sounding without a song
 
 private:

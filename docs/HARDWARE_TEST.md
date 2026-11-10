@@ -36,4 +36,7 @@ Checks, in order (stop at the first failure and report what the screen showed):
 27. NEW SONG: Load Song list, first entry (and the NEW SONG row on the Project page): name it, the song empties. Quit and restart: each console opens the song it saved last. The Project page's bottom line shows only while Shift is held.
 28. Sample Loader: Insert adds a WAV to kit 1A and a check mark appears; Delete removes it. Sample Editor: SAMPLES row + jog wheel steps through the kit; REPLACE SAMPLE asks before it replaces. Kicks should sound smoother than before; tell me if they are still harsh.
 29. Copy `presets/instruments` (or the zip) to `GB/Instruments`; the library (Shift + Instr) lists them, Left/Right turn a page.
+30. Library (Shift + Instr): no `._` files listed. Play previews the highlighted sound; the pads play it; Delete leaves and nothing in the song changed; Insert puts it in.
+31. Output level: the same song should be clearly louder than before. Tell me if anything distorts on loud passages.
+32. The noise hi-hat with the K command plus two pulse sounds and a kit: no chugging or slow-down any more. If it still chugs, tell me what the Project page's technical line says (hold Shift): `P` is the worst callback in thousands of cycles.
 20. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.

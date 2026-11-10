@@ -54,6 +54,7 @@ private:
         bool envUp = false, narrow = false, envActive = false;
         uint16_t length = 0, lfsr = 0x7FFF;
         int32_t timer = 0;
+        int64_t lazy = 0;                 // cycles the shift register was not stepped for while the channel was silent (see syncNoise)
     };
 
     void trigger1();
@@ -73,6 +74,8 @@ private:
     int waveOut() const;
     int noiseOut() const;
     void recompute();                              // cached mix after any state change
+    bool noiseSilent() const { return n_.enabled && n_.vol == 0 && (!n_.envUp || !n_.envActive || n_.envPace == 0); }   // volume 0 and nothing can raise it by itself
+    void syncNoise();                              // catches the shift register up with the cycles skipped while silent
 
     Pulse p1_, p2_;
     Wave w_;
@@ -83,6 +86,12 @@ private:
     uint8_t fsStep_ = 0;
     int mixL_ = 0, mixR_ = 0;
     int64_t accL_ = 0, accR_ = 0;
+    bool lazyNoise_ = true;
+
+public:
+    // A killed hi-hat leaves the noise channel enabled at volume 0, its shift register still running at up to 500,000 steps a second. Nothing it does is
+    // heard, so those steps are skipped and caught up (exactly, by a jump) only when a register write or a trigger needs the state. Off = step by step.
+    void setLazyNoise(bool on) { syncNoise(); lazyNoise_ = on; }
 };
 
 }  // namespace gb

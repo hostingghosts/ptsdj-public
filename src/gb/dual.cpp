@@ -1,6 +1,7 @@
 #include "gb/dual.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace gb {
 
@@ -48,6 +49,14 @@ void Dual::stop() {
     b_.stop();
 }
 
+int16_t Dual::finish(int mixed) {
+    constexpr float kGain = 1.6f, kKnee = 0.6f;
+    float y = float(mixed) * (kGain / 32768.f);
+    const float a = std::fabs(y);
+    if (a > kKnee) y = std::copysign(kKnee + (1.f - kKnee) * std::tanh((a - kKnee) / (1.f - kKnee)), y);
+    return int16_t(std::clamp(y * 32767.f, -32767.f, 32767.f));
+}
+
 void Dual::render(int16_t* out, int n, int rate) {
     int16_t ta[2 * 512], tb[2 * 512];
     while (n > 0) {
@@ -55,7 +64,7 @@ void Dual::render(int16_t* out, int n, int rate) {
         const int k = std::min(n, 512);
         a_.render(ta, k, rate);
         b_.render(tb, k, rate);
-        for (int i = 0; i < 2 * k; ++i) out[i] = int16_t(std::clamp((int(ta[i]) * vol_[0] + int(tb[i]) * vol_[1]) * 7 / 150, -32767, 32767));
+        for (int i = 0; i < 2 * k; ++i) out[i] = finish((int(ta[i]) * vol_[0] + int(tb[i]) * vol_[1]) * 7 / 150);
         out += 2 * k;
         n -= k;
     }

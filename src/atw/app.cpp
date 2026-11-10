@@ -244,7 +244,7 @@ int App::scanKitDir(const char* dir, int console) {
             App* a = k->a;
             const size_t n = std::strlen(e.name);
             auto hex = [](char ch) { return ch >= '0' && ch <= '9' ? ch - '0' : ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 : ch >= 'A' && ch <= 'F' ? ch - 'A' + 10 : -1; };
-            if (e.isDir || n < 6 || n > 36 || strcasecmp(e.name + n - 4, ".kit") != 0 || e.size != gb::kKitBankSize) return true;
+            if (e.isDir || e.name[0] == '.' || n < 6 || n > 36 || strcasecmp(e.name + n - 4, ".kit") != 0 || e.size != gb::kKitBankSize) return true;
             const int hi = hex(e.name[0]), lo = hex(e.name[1]);
             if (hi < 0 || lo < 0 || hi * 16 + lo > 63 || a->kitFiles_ >= kMaxKitFiles) return a->kitFiles_ < kMaxKitFiles;
             KitFile& f = a->kitFile_[a->kitFiles_++];
@@ -410,7 +410,7 @@ int App::LinkedTransport::listFirmware() {
     a->platform().storage->listDir("Firmware", [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* x = static_cast<App*>(ctx);
         const size_t n = std::strlen(e.name);
-        bool ok = !e.isDir && n < sizeof x->fwNames_[0];
+        bool ok = !e.isDir && e.name[0] != '.' && n < sizeof x->fwNames_[0];
         if (ok) {
             if (x->p_.isUpdateImageName) ok = x->p_.isUpdateImageName(e.name);                      // the device's own rule
             else ok = n >= 15 && ((!std::strncmp(e.name, "PolyendTrac", 11) && !strcasecmp(e.name + n - 4, ".ptf")) || (!std::strncmp(e.name, "mt", 2) && !strcasecmp(e.name + n - 4, ".hex")));
@@ -448,7 +448,7 @@ int App::LinkedTransport::listSamples() {
     a->platform().storage->listDir(kSampleDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* x = static_cast<App*>(ctx);
         const size_t n = std::strlen(e.name);
-        if (e.isDir || n < 5 || n > 27 || strcasecmp(e.name + n - 4, ".wav") != 0 || x->sampleCount_ >= kMaxSamples) return x->sampleCount_ < kMaxSamples;
+        if (e.isDir || e.name[0] == '.' || n < 5 || n > 27 || strcasecmp(e.name + n - 4, ".wav") != 0 || x->sampleCount_ >= kMaxSamples) return x->sampleCount_ < kMaxSamples;
         std::snprintf(x->sampleNames_[x->sampleCount_++], sizeof x->sampleNames_[0], "%s", e.name);
         return true;
     }, a);
@@ -570,7 +570,7 @@ int App::LinkedTransport::listSongs(int console) {
     st->listDir(kSongDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* a = static_cast<App*>(ctx);
         const size_t n = std::strlen(e.name);
-        if (e.isDir || n < 8 || n > 22 + 7 || strcasecmp(e.name + n - 7, ".lsdsng") != 0 || a->songCount_ >= kMaxSongs) return a->songCount_ < kMaxSongs;
+        if (e.isDir || e.name[0] == '.' || n < 8 || n > 22 + 7 || strcasecmp(e.name + n - 7, ".lsdsng") != 0 || a->songCount_ >= kMaxSongs) return a->songCount_ < kMaxSongs;
         std::snprintf(a->songNames_[a->songCount_], sizeof a->songNames_[0], "+%.*s", int(std::min<size_t>(n - 7, 22)), e.name);
         a->songSlot_[a->songCount_++] = 0xFF;
         return true;
@@ -629,7 +629,7 @@ int App::LinkedTransport::listInstruments() {
     app->platform().storage->listDir(kInstDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* a = static_cast<App*>(ctx);
         const size_t n = std::strlen(e.name);
-        if (e.isDir || n < 5 || n > 23 + 4 || strcasecmp(e.name + n - 4, ".gbi") != 0 || a->instCount_ >= kMaxInst) return a->instCount_ < kMaxInst;
+        if (e.isDir || e.name[0] == '.' || e.size < 26 || e.size > 26 + 96 || n < 5 || n > 23 + 4 || strcasecmp(e.name + n - 4, ".gbi") != 0 || a->instCount_ >= kMaxInst) return a->instCount_ < kMaxInst;
         std::snprintf(a->instNames()[a->instCount_], 24, "%.*s", int(std::min<size_t>(n - 4, 23)), e.name);
         ++a->instCount_;
         return true;

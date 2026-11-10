@@ -1665,3 +1665,49 @@ TEST(a_new_songs_empty_instruments_sound_the_first_time_they_are_used_and_a_type
         CHECK(peak > 300);                                      // heard, not a click
     }
 }
+
+TEST(the_library_hides_unloadable_files_and_play_previews_a_sound_without_touching_the_song) {
+    MemStorage st;
+    auto gbi = [](bool table) {
+        std::vector<uint8_t> v(table ? 26 + 96 : 26, 0);
+        v[0] = 'G'; v[1] = 'B'; v[2] = 'I'; v[3] = '1';
+        v[4] = table ? 1 : 0;
+        const uint8_t in[16] = {0x00, 0xF0, 0x00, 0x00, 0xFF, 0x00, uint8_t(table ? 0x20 : 0), 0x03, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0};
+        std::memcpy(v.data() + 10, in, 16);
+        if (table) v[26 + 16 + 0] = 12;                          // a table row with a transpose
+        return v;
+    };
+    st.files["GB/Instruments/LEAD.gbi"] = gbi(true);
+    st.files["GB/Instruments/PLAIN.gbi"] = gbi(false);
+    st.files["GB/Instruments/._LEAD.gbi"] = std::vector<uint8_t>(4096, 0);     // a macOS resource fork: not an instrument
+    st.files["GB/Instruments/SHORT.gbi"] = std::vector<uint8_t>(5, 0);        // too small to be one
+    st.dirs.insert("GB/Instruments");
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    l.openLibrary();
+    CHECK_EQ(l.libCount, 2);                                    // LEAD and PLAIN only
+    uint8_t before[16];
+    std::memcpy(before, r.app.song.instrument(l.instr), 16);
+    uint8_t tableBefore[96];
+    std::memcpy(tableBefore, r.app.song.mem() + gb::off::kTblEnv, 16);
+    l.libSel = 1;                                               // LEAD (its table is borrowed for the preview)
+    keyTap(r, ot::btn::Play);
+    r.loop(40);
+    CHECK(r.app.player.voiceOn(0));                             // it sounds
+    CHECK(std::memcmp(before, r.app.song.instrument(l.instr), 16) == 0);       // the song's instrument is untouched
+    padEvent(r, ot::InputEvent::kPadDown, 24);
+    r.loop(10);
+    CHECK(r.app.player.voiceOn(0));                             // the pads play the previewed sound
+    padEvent(r, ot::InputEvent::kPadUp, 24);
+    keyTap(r, ot::btn::Delete);                                 // leaving the library ends the preview and gives the table slot back
+    r.loop(10);
+    CHECK(l.screen() == gb::Scr::Instr);
+    bool clean = true;
+    for (int t = 0; t < 32 && clean; ++t) for (int c = 0; c < 16; ++c) if (r.app.song.at(uint16_t(gb::off::kTblTrans + t * 16 + c))) clean = false;
+    CHECK(clean);
+    // Insert puts it into the song
+    l.openLibrary();
+    l.libSel = 2;
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(int(r.app.song.instrument(l.instr)[1]), 0xF0);
+}

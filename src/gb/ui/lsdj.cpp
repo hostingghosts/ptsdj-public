@@ -152,7 +152,7 @@ void Lsdj::key(Key k, bool down) {
             }
         }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::File) scr_ = Scr::Project;
-        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Library) scr_ = Scr::Instr;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Library) { libStopPreview(); scr_ = Scr::Instr; }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Kit && kitRow >= 2) { confirm_ = 11; status_ = "ERASE SAMPLE? INSERT=YES"; }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Loader) loaderRemove();
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Editor) scr_ = Scr::Instr;
@@ -185,7 +185,8 @@ void Lsdj::key(Key k, bool down) {
                 p_.previewOn(2, 25, Player::kScratch);
                 auditionHeld_ = true;
             }
-        } else if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) kitAudition();    // the sample pages: Play hears the sample
+        } else if (scr_ == Scr::Library) libPreviewKey();                                           // the library: Play previews the sound, nothing is put in the song
+        else if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) kitAudition();    // the sample pages: Play hears the sample
         else if (!sel_ && scr_ == Scr::Chain) { if (tr_) tr_->startSolo(console_, songCh, 0, chain); else p_.start(0, songCh, 0, false, chain); }   // Play on the Chain page: just this chain, looping
         else if (!sel_ && scr_ == Scr::Phrase) { if (tr_) tr_->startSolo(console_, songCh, phrase, -1); else p_.start(0, songCh, phrase); }          // on the Phrase page: just this phrase
         else if (!sel_ && scr_ == Scr::Table) tableAudition();                                                                                       // on the Table page: the table, on a note
@@ -250,7 +251,8 @@ int Lsdj::curInstr() const {
 // The instrument decides the channel it can sound on: pulse on PU1/PU2 (the cursor channel when that is one of them), wave and kit on WAV, noise on NOI.
 int Lsdj::previewChannel(int ins) const {
     if (scr_ == Scr::Wave || scr_ == Scr::Synth) return 2;
-    switch (s_.instrument(ins & 63)[0] & 3) {
+    const uint8_t type = ins == Player::kScratch ? p_.scratchInstr()[0] : s_.instrument(ins & 63)[0];
+    switch (type & 3) {
         case 0: return songCh < 2 ? songCh : 0;
         case 1: case 2: return 2;
         default: return 3;
@@ -277,6 +279,15 @@ void Lsdj::recordNote(int ch, int note) {
 
 void Lsdj::padDown(int pad) {
     if (pad < 0 || pad >= 48 || nameOpen_ || scr_ == Scr::Help) return;
+    if (scr_ == Scr::Library) {                        // the library: the pads play the sound in the preview memory
+        if (!libPreview_) return;
+        const int pch = previewChannel(Player::kScratch);
+        const bool kitSound = (p_.scratchInstr()[0] & 3) == 2;
+        const int pnote = kitSound ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, 127);
+        padCh_[pad] = int8_t(pch);
+        p_.previewOn(pch, pnote, Player::kScratch);
+        return;
+    }
     if (scr_ == Scr::Kit) {                            // the kit page: pad n hears sample n of the kit on screen
         const uint8_t* kb = kitBuf();
         const int i = pad % 15;
@@ -366,7 +377,7 @@ void Lsdj::navigate(Key k) {
         case Scr::Instr: col = 3; break; case Scr::Table: col = 4; break; case Scr::Groove: row = 2; col = 2; break;
         case Scr::File: scr_ = Scr::Project; return;                  // the song list is a sub-page of Project
         case Scr::Help: return;
-        case Scr::Library: scr_ = Scr::Instr; return;
+        case Scr::Library: libStopPreview(); scr_ = Scr::Instr; return;
         case Scr::Loader: case Scr::Editor: case Scr::Kit: case Scr::Firmware: scr_ = Scr::Instr; return;
     }
     static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
@@ -431,6 +442,7 @@ void Lsdj::press(Key) {
         case Scr::Library:
             if (libSel == 0) openName(2);
             else if (tr_) {
+                libStopPreview();
                 uint8_t blob[128];
                 const int n = tr_->loadInstrumentFile(libSel - 1, blob, sizeof blob);
                 status_ = n > 0 && unpackInstrument(blob, n) ? "LOADED" : "LOAD FAILED";
@@ -833,6 +845,50 @@ bool Lsdj::unpackInstrument(const uint8_t* in, int n) {
     return true;
 }
 
+// Play in the library: the selected sound (and its table, in a table slot nobody uses) goes into the preview memory and a note sounds. Nothing in the
+// song changes. The pads play the same sound until another is picked or the page is left.
+void Lsdj::libPreviewKey() {
+    if (!tr_) return;
+    if (libSel < 1) { status_ = "PICK A SOUND TO PREVIEW"; return; }
+    uint8_t blob[128];
+    const int n = tr_->loadInstrumentFile(libSel - 1, blob, sizeof blob);
+    if (n < 26 || blob[0] != 'G' || blob[1] != 'B' || blob[2] != 'I' || blob[3] != '1') { status_ = "CAN'T LOAD THAT FILE"; return; }
+    libStopPreview();
+    uint8_t* sc = p_.scratchInstr();
+    std::memcpy(sc, blob + 10, 16);
+    if (sc[6] & 0x20) {
+        int slot = -1;
+        if ((blob[4] & 1) && n >= 26 + 96) {
+            static const uint16_t o[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
+            bool used[kTables] = {};
+            for (int i = 0; i < kInstruments; ++i) if (s_.instrument(i)[6] & 0x20) used[s_.instrument(i)[6] & 0x1F] = true;
+            for (int t2 = 0; t2 < kTables && slot < 0; ++t2) {
+                if (used[t2]) continue;
+                bool empty = true;
+                for (int c = 0; c < 6 && empty; ++c) for (int r = 0; r < 16; ++r) if (s_.at(uint16_t(o[c] + t2 * 16 + r))) { empty = false; break; }
+                if (empty) slot = t2;
+            }
+            if (slot >= 0) for (int c = 0; c < 6; ++c) std::memcpy(s_.mem() + o[c] + slot * 16, blob + 26 + c * 16, 16);
+        }
+        libTable_ = slot;
+        sc[6] = slot >= 0 ? uint8_t(0x20 | slot) : uint8_t(sc[6] & ~0x3F);
+    }
+    libPreview_ = true;
+    libCh_ = previewChannel(Player::kScratch);
+    p_.previewOn(libCh_, (sc[0] & 3) == 2 ? 1 : 25, Player::kScratch);
+    status_ = "PREVIEW. PADS PLAY IT";
+}
+
+void Lsdj::libStopPreview() {
+    if (libPreview_) p_.previewOff(libCh_);
+    if (libTable_ >= 0) {                                                  // the borrowed table slot was empty: it is empty again
+        static const uint16_t o[6] = {off::kTblEnv, off::kTblTrans, off::kTblCmd1, off::kTblVal1, off::kTblCmd2, off::kTblVal2};
+        for (int c = 0; c < 6; ++c) std::memset(s_.mem() + o[c] + libTable_ * 16, 0, 16);
+    }
+    libTable_ = -1;
+    libPreview_ = false;
+}
+
 void Lsdj::drawLibrary(Lcd& l) const {
     l.text(0, 0, "INSTRUMENT LIBRARY");
     char b[28];
@@ -846,7 +902,7 @@ void Lsdj::drawLibrary(Lcd& l) const {
         std::snprintf(b, sizeof b, "%-24.24s", tr_ ? tr_->instrumentFile(top + r) : "");
         l.text(0, 4 + r, b, libSel == top + r + 1);
     }
-    l.text(0, 17, status_[0] ? status_ : "INSERT=PICK  BKSP=BACK");
+    l.text(0, 17, status_[0] ? status_ : "PLAY=HEAR INSERT=USE");
 }
 
 // ---- selection and clipboard --------------------------------------------------------------------------------------------------
@@ -1453,7 +1509,9 @@ const Entry kFileTxt[] = {
 const Entry kLibraryTxt[] = {
     {"", "The library keeps your sounds on the card. Open it with Shift + the Instr key."},
     {"TOP ROW", "Saves the sound on screen. Press Insert, type a name, then press Play."},
-    {"OTHER ROWS", "Load a file into the sound on screen. The presets are here too."},
+    {"OTHER ROWS", "The files. The presets are here too."},
+    {"PLAY", "Previews the file. It goes into a temporary memory, so nothing in your song changes. The pads play it too."},
+    {"INSERT", "Puts the file into the sound on screen. This changes your song."},
     {"LEFT / RIGHT", "Turn a page of 13."},
     {"BKSP", "Go back."},
 };

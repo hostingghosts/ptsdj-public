@@ -1,5 +1,7 @@
 #include "gb/apu.h"
 
+#include <cstring>
+
 #include <algorithm>
 
 namespace gb {
@@ -36,6 +38,44 @@ int Apu::waveOut() const {
     return s >> sh[w_.volCode];
 }
 int Apu::noiseOut() const { return (n_.enabled && n_.dac && !(n_.lfsr & 1)) ? n_.vol : 0; }
+
+namespace {
+// The noise shift register is linear over GF(2): one step (long or short mode) is a matrix, and n steps are that matrix to the n-th power.
+uint16_t lfsrStep(uint16_t s, bool narrow) {
+    const uint16_t x = uint16_t((s ^ (s >> 1)) & 1);
+    uint16_t ns = uint16_t((s >> 1) | (x << 14));
+    if (narrow) ns = uint16_t((ns & ~0x40) | (x << 6));
+    return ns;
+}
+uint16_t apply(const uint16_t* col, uint16_t s) {
+    uint16_t r = 0;
+    for (int j = 0; j < 15; ++j) if (s & (1u << j)) r ^= col[j];
+    return r;
+}
+uint16_t lfsrJump(uint16_t s, bool narrow, uint64_t n) {
+    uint16_t m[15];
+    for (int j = 0; j < 15; ++j) m[j] = lfsrStep(uint16_t(1u << j), narrow);
+    while (n) {
+        if (n & 1) s = apply(m, s);
+        n >>= 1;
+        if (!n) break;
+        uint16_t sq[15];
+        for (int j = 0; j < 15; ++j) sq[j] = apply(m, m[j]);
+        std::memcpy(m, sq, sizeof m);
+    }
+    return s;
+}
+}  // namespace
+
+void Apu::syncNoise() {
+    if (n_.lazy <= 0) return;
+    const int64_t total = n_.lazy, p = noisePeriod();
+    n_.lazy = 0;
+    if (total < n_.timer) { n_.timer -= int32_t(total); return; }
+    const int64_t steps = 1 + (total - n_.timer) / p;
+    n_.lfsr = lfsrJump(n_.lfsr, n_.narrow, uint64_t(steps));
+    n_.timer = int32_t(p - (total - n_.timer) % p);
+}
 
 Apu::ChState Apu::state(int ch) const {
     switch (ch) {
@@ -145,6 +185,7 @@ void Apu::trigger3() {
     w_.pos = 0;
 }
 void Apu::trigger4() {
+    n_.lazy = 0;                                                   // the register is reset below: nothing to catch up
     n_.enabled = n_.dac;
     if (n_.length == 0) n_.length = 64;
     n_.timer = noisePeriod();
@@ -223,11 +264,12 @@ void Apu::write(uint16_t a, uint8_t v) {
             break;
         case 0xFF20: n_.length = 64 - (v & 63); break;
         case 0xFF21:
+            syncNoise();
             if (n_.enabled) zombie(n_.vol, n_.envActive, nr2raw(n_.envInit, n_.envUp, n_.envPace), v);
             n_.envInit = v >> 4; n_.envUp = (v & 8) != 0; n_.envPace = v & 7; n_.dac = (v & 0xF8) != 0;
             if (!n_.dac) n_.enabled = false;
             break;
-        case 0xFF22: n_.shift = v >> 4; n_.narrow = (v & 8) != 0; n_.div = v & 7; break;
+        case 0xFF22: syncNoise(); n_.shift = v >> 4; n_.narrow = (v & 8) != 0; n_.div = v & 7; break;
         case 0xFF23:
             n_.lenEn = (v & 0x40) != 0;
             if (v & 0x80) trigger4();
@@ -281,7 +323,8 @@ void Apu::advance(uint32_t cycles) {
         if (p1_.enabled) step = std::min(step, p1_.timer);
         if (p2_.enabled) step = std::min(step, p2_.timer);
         if (w_.enabled) step = std::min(step, w_.timer);
-        if (n_.enabled) step = std::min(step, n_.timer);
+        const bool lazy = lazyNoise_ && noiseSilent();
+        if (n_.enabled && !lazy) step = std::min(step, n_.timer);
         if (step < 1) step = 1;
         accL_ += int64_t(mixL_) * step;
         accR_ += int64_t(mixR_) * step;
@@ -291,12 +334,12 @@ void Apu::advance(uint32_t cycles) {
         if (p1_.enabled && (p1_.timer -= step) <= 0) { p1_.timer += pulsePeriod(p1_); p1_.step = (p1_.step + 1) & 7; changed = true; }
         if (p2_.enabled && (p2_.timer -= step) <= 0) { p2_.timer += pulsePeriod(p2_); p2_.step = (p2_.step + 1) & 7; changed = true; }
         if (w_.enabled && (w_.timer -= step) <= 0) { w_.timer += wavePeriod(); w_.pos = (w_.pos + 1) & 31; changed = true; }
-        if (n_.enabled && (n_.timer -= step) <= 0) {
+        if (lazy) n_.lazy += step;
+        else if (n_.enabled && (n_.timer -= step) <= 0) {
             n_.timer += noisePeriod();
-            const uint16_t x = uint16_t((n_.lfsr ^ (n_.lfsr >> 1)) & 1);
-            n_.lfsr = uint16_t((n_.lfsr >> 1) | (x << 14));
-            if (n_.narrow) n_.lfsr = uint16_t((n_.lfsr & ~0x40) | (x << 6));
-            changed = true;
+            const int before = noiseOut();
+            n_.lfsr = lfsrStep(n_.lfsr, n_.narrow);
+            if (noiseOut() != before) changed = true;                   // the mix only changes when the output does
         }
         if (fsTimer_ <= 0) { fsTimer_ += 8192; frameStep(); changed = true; }
         if (changed) recompute();
