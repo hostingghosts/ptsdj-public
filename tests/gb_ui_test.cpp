@@ -1347,7 +1347,7 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     l.smpRow = 1;                                               // END: the jog wheel trims it
     l.encoder(-3);
     CHECK_EQ(l.smpEnd, len - 3);
-    l.smpRow = 5;                                               // ADD TO KIT
+    l.smpRow = 6;                                               // ADD TO KIT
     keyTap(r, ot::btn::Insert);
     CHECK(std::strstr(l.status(), "ADDED") != nullptr);
     CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), 2);
@@ -1418,7 +1418,7 @@ TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_af
     const int end = l.smpEnd;
     l.encoder(-10);
     CHECK_EQ(l.smpEnd, end - 10);
-    l.smpRow = 5;                                               // REPLACE: asks first, nothing changes yet
+    l.smpRow = 6;                                               // REPLACE: asks first, nothing changes yet
     keyTap(r, ot::btn::Insert);
     gb::Lcd lcd;
     l.draw(lcd);
@@ -1471,7 +1471,7 @@ TEST(delete_on_the_sample_editor_drops_a_new_sample_and_erases_a_kit_sample_afte
     l.smpRow = 4;
     l.encoder(c2);                                               // the kick, from the kit
     CHECK_EQ(l.smpEditIdx, c2 - 1);
-    l.smpRow = 6;
+    l.smpRow = 7;
     keyTap(r, ot::btn::Insert);                                 // asks first
     gb::Lcd lcd;
     l.draw(lcd);
@@ -1488,7 +1488,7 @@ TEST(delete_on_the_sample_editor_drops_a_new_sample_and_erases_a_kit_sample_afte
     keyTap(r, ot::btn::Insert);
     tap(r, ot::btn::SampleEditor);
     l.smpLen = 640; l.smpEnd = 40;
-    l.smpRow = 6;
+    l.smpRow = 7;
     keyTap(r, ot::btn::Insert);
     CHECK_EQ(l.smpLen, 0);
     CHECK(std::strstr(l.status(), "DELETED") != nullptr);
@@ -1537,6 +1537,41 @@ TEST(shift_insert_on_a_sample_of_your_kit_renames_it_from_the_kit_page) {
     gb::KitBank::name(r.app.kits.kit(0x15).data, idx, nm);
     CHECK(std::strcmp(nm, "KIC") != 0);
     CHECK_EQ(int(std::strlen(nm)), 3);
+}
+
+TEST(the_editors_level_row_turns_a_sample_down_as_it_is_added_so_layers_have_room) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    putWav(st, "GB/Samples/SNARE.wav", 22050, 300, 0.3);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    auto cnt = [&] { const uint8_t* d = r.app.kits.kit(0x15).data; return d ? gb::KitBank::count(d) : 0; };
+    auto loud = [&](int i) {
+    // (the loudest deviation from the centre 8 in a stored sample)
+        const uint8_t* d = r.app.kits.kit(0x15).data;
+        const uint8_t* s = gb::KitBank::data(d, i);
+        int m = 0;
+        for (int k = 0; k < gb::KitBank::length(d, i); ++k) m = std::max(m, std::max(std::abs((s[k] >> 4) - 8), std::abs((s[k] & 15) - 8)));
+        return m;
+    };
+    tap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Insert);                                 // KICK at full level
+    const int full = loud(cnt() - 1);
+    CHECK(full >= 6);
+    keyTap(r, ot::btn::Down);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Insert);                                 // Shift + Insert: SNARE into the editor
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    CHECK(l.screen() == gb::Scr::Editor);
+    CHECK_EQ(l.smpLevel, 0);
+    l.smpRow = 5;                                               // LEVEL: right is louder, left quieter
+    l.encoder(-2);
+    CHECK_EQ(l.smpLevel, 2);                                    // 50%
+    l.smpRow = 6;
+    keyTap(r, ot::btn::Insert);                                 // ADD TO KIT
+    const int snare = loud(cnt() - 1);
+    CHECK(snare <= (full + 1) / 2 + 1);
+    CHECK_EQ(l.smpLevel, 0);                                    // the next one starts at full level again
 }
 
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {

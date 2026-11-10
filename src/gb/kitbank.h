@@ -32,9 +32,10 @@ struct KitBank {
     static int used(const uint8_t* b);                               // bytes of data in use (padding at the end of the bank is free)
     static int freeBytes(const uint8_t* b) { return kKitCapacity - used(b); }
     // Appends a sample of `n` bytes of packed nibbles (padded to whole chunks plus a silent chunk). False if the kit is full (15 samples or no room).
-    static bool add(uint8_t* b, const char* nm, const uint8_t* bytes, int n);
+    static bool add(uint8_t* b, const char* nm, const uint8_t* bytes, int n, int levelPct = 100);   // levelPct < 100 turns the sound down (toward the centre 8) as it is stored
     // Swaps sample i for new data and a new name (padded as add does); the samples after it move. False if the kit has no room for the difference.
-    static bool replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, int n);
+    static bool replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, int n, int levelPct = 100);
+    static void copyLevel(uint8_t* dst, const uint8_t* src, int n, int levelPct);   // packed nibbles, scaled around the centre 8
     static bool remove(uint8_t* b, int i);                           // the samples after it move up
     static int dataEnd(const uint8_t* b);                            // where the last chunk with sound ends
     static int entries(const uint8_t* b);                            // offset table entries in use

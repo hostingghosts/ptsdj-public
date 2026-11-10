@@ -35,7 +35,7 @@ void Lsdj::openLoader() {
 void Lsdj::openEditor() {
     if (!tr_) return;
     kitSelect(kitSlot);
-    smpRow = std::min(smpRow, 6);
+    smpRow = std::min(smpRow, 7);
     if (kitBuf() && smpEditIdx >= KitBank::count(kitBuf())) smpEditIdx = -1;
     status_ = "";
     scr_ = Scr::Editor;
@@ -91,7 +91,7 @@ void Lsdj::kitAudition() {
 void Lsdj::kitMove(Key k) {
     const int dy = k == Key::Down ? 1 : k == Key::Up ? -1 : 0;
     if (scr_ == Scr::Loader) smpSel = clampi(smpSel + dy, 0, std::max(0, smpCount - 1));
-    else if (scr_ == Scr::Editor) smpRow = clampi(smpRow + dy, 0, 6);
+    else if (scr_ == Scr::Editor) smpRow = clampi(smpRow + dy, 0, 7);
     else kitRow = clampi(kitRow + dy, 0, 16);
 }
 
@@ -104,6 +104,7 @@ void Lsdj::kitEdit(Key k) {
         else if (smpRow == 1) smpEnd = clampi(smpEnd + d, std::min(chunks, smpStart + 2), chunks);
         else if (smpRow == 3) { kitSelect(kitSlot + sgn * (big ? 8 : 1)); smpEditIdx = -1; }
         else if (smpRow == 4) editorSelectSample(smpEditIdx + sgn);                  // the kit's samples, one by one
+        else if (smpRow == 5) smpLevel = clampi(smpLevel - sgn, 0, 3);               // right = louder
     } else if (scr_ == Scr::Loader || (scr_ == Scr::Kit && kitRow == 0)) kitSelect(kitSlot + sgn * (big ? 8 : 1));
 }
 
@@ -112,8 +113,8 @@ void Lsdj::kitPress() {
     if (scr_ == Scr::Loader) { loaderAdd(); return; }
     if (scr_ == Scr::Editor) {
         if (smpRow == 2) openName(3);
-        else if (smpRow == 5) { if (smpEditIdx >= 0 && smpLen) confirm_ = 13; else kitAdd(); }     // changing a sample of the kit asks first
-        else if (smpRow == 6) { if (smpEditIdx >= 0) confirm_ = 14; else sampleDiscard(); }        // a sample in the kit is erased for good, so that asks
+        else if (smpRow == 6) { if (smpEditIdx >= 0 && smpLen) confirm_ = 13; else kitAdd(); }     // changing a sample of the kit asks first
+        else if (smpRow == 7) { if (smpEditIdx >= 0) confirm_ = 14; else sampleDiscard(); }        // a sample in the kit is erased for good, so that asks
         return;
     }
     if (kitRow == 1) { if (kitEditable()) openName(4); else status_ = "ROM KIT: NO RENAME"; }
@@ -170,7 +171,8 @@ void Lsdj::kitReplace() {
     const int n = (smpEnd - smpStart) * 16;
     if (!kb || !sb || smpEditIdx < 0 || smpEditIdx >= KitBank::count(kb) || !kitEditable()) { status_ = "NOTHING TO REPLACE"; return; }
     if (n < 32) { status_ = "SAMPLE TOO SHORT"; return; }
-    if (!KitBank::replace(kb, smpEditIdx, smpName_, sb + smpStart * 16, n)) { status_ = "NO ROOM FOR THAT"; return; }
+    if (!KitBank::replace(kb, smpEditIdx, smpName_, sb + smpStart * 16, n, levelPct())) { status_ = "NO ROOM FOR THAT"; return; }
+    smpLevel = 0;                                                     // the next one starts at full level again
     if (tr_->kitSave(console_, kitSlot)) {
         std::snprintf(statusBuf_, sizeof statusBuf_, "REPLACED SAMPLE %X", unsigned(smpEditIdx + 1));
         status_ = statusBuf_;
@@ -193,7 +195,8 @@ void Lsdj::kitAdd() {
     const int n = (smpEnd - smpStart) * 16;
     if (n < 32) { status_ = "SAMPLE TOO SHORT"; return; }
     if (KitBank::count(kb) >= kKitMaxSamples) { status_ = "KIT HAS 15 SAMPLES"; return; }
-    if (!KitBank::add(kb, smpName_, sb + smpStart * 16, n)) { status_ = "NO ROOM LEFT IN KIT"; return; }
+    if (!KitBank::add(kb, smpName_, sb + smpStart * 16, n, levelPct())) { status_ = "NO ROOM LEFT IN KIT"; return; }
+    smpLevel = 0;
     char kn[9];
     KitBank::kitName(kb, kn);
     if (kn[0] == ' ') { std::snprintf(kn, sizeof kn, "KIT%02X", unsigned(kitSlot)); KitBank::setKitName(kb, kn); }
@@ -396,23 +399,24 @@ void Lsdj::drawEditor(Lcd& l) const {
     }
     char b[40];
     std::snprintf(b, sizeof b, "START %3d.%02dS", secHundredths(smpStart * 16) / 100, secHundredths(smpStart * 16) % 100);
-    l.text(0, 10, b, smpRow == 0);
+    l.text(0, 9, b, smpRow == 0);
     std::snprintf(b, sizeof b, "END   %3d.%02dS", secHundredths(smpEnd * 16) / 100, secHundredths(smpEnd * 16) % 100);
-    l.text(0, 11, b, smpRow == 1);
+    l.text(0, 10, b, smpRow == 1);
     std::snprintf(b, sizeof b, "NAME  %s", smpName_);
-    l.text(0, 12, b, smpRow == 2);
+    l.text(0, 11, b, smpRow == 2);
     const uint8_t* kb = kitBuf();
     std::snprintf(b, sizeof b, "KIT   %02X %s", unsigned(kitSlot), kitEditable() ? "" : "(ROM KIT)");
-    l.text(0, 13, b, smpRow == 3);
+    l.text(0, 12, b, smpRow == 3);
     if (kb && kitEditable()) {
         if (smpEditIdx < 0) std::snprintf(b, sizeof b, "%d/15 SAMPLES %d.%dS FREE", KitBank::count(kb), secHundredths(KitBank::freeBytes(kb)) / 100, secHundredths(KitBank::freeBytes(kb)) / 10 % 10);
         else std::snprintf(b, sizeof b, "SAMPLE %X OF %d  %d.%dS FREE", unsigned(smpEditIdx + 1), KitBank::count(kb), secHundredths(KitBank::freeBytes(kb)) / 100, secHundredths(KitBank::freeBytes(kb)) / 10 % 10);
-        l.text(0, 14, b, smpRow == 4);
+        l.text(0, 13, b, smpRow == 4);
     }
-    if (smpEditIdx < 0) l.text(0, 15, "ADD TO KIT", smpRow == 5);
-    else { std::snprintf(b, sizeof b, "REPLACE SAMPLE %X", unsigned(smpEditIdx + 1)); l.text(0, 15, b, smpRow == 5); }
-    if (smpEditIdx < 0) l.text(0, 16, "DELETE THIS SAMPLE", smpRow == 6);
-    else { std::snprintf(b, sizeof b, "DELETE SAMPLE %X FROM KIT", unsigned(smpEditIdx + 1)); l.text(0, 16, b, smpRow == 6); }
+    { static const char* const lv[4] = {"100%", "75%", "50%", "25%"}; std::snprintf(b, sizeof b, "LEVEL %s", lv[smpLevel & 3]); l.text(0, 14, b, smpRow == 5); }
+    if (smpEditIdx < 0) l.text(0, 15, "ADD TO KIT", smpRow == 6);
+    else { std::snprintf(b, sizeof b, "REPLACE SAMPLE %X", unsigned(smpEditIdx + 1)); l.text(0, 15, b, smpRow == 6); }
+    if (smpEditIdx < 0) l.text(0, 16, "DELETE THIS SAMPLE", smpRow == 7);
+    else { std::snprintf(b, sizeof b, "DELETE SAMPLE %X FROM KIT", unsigned(smpEditIdx + 1)); l.text(0, 16, b, smpRow == 7); }
     l.text(0, 17, status_[0] ? status_ : "PLAY=HEAR  JOG=CHANGE");
     if (confirm_ == 14) {                                              // the question before a sample is erased from the kit
         l.rect(8, 40, 184, 72, 3);

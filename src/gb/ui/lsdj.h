@@ -159,6 +159,7 @@ public:
     int fwSel = 0, fwCount = 0;                 // Firmware window: the update images in /Firmware
     int smpSel = 0, smpCount = 0;               // Loader: the WAV list
     int smpLen = 0, smpStart = 0, smpEnd = 0, smpRow = 0;   // Editor: bytes in the prepared sample, trim in chunks of 16 bytes, cursor row
+    int smpLevel = 0;                           // Editor: how loud the sample is stored (0 100%, 1 75%, 2 50%, 3 25%)
     int smpEditIdx = -1;                        // Editor: -1 a new sample, else the kit's sample being changed (ADD TO KIT replaces it)
     int kitSlot = 0x15, kitRow = 0;             // Kit: the kit number 00-32 and the cursor row (0 number, 1 name, 2.. the samples)
     const char* sampleName() const { return smpName_; }
@@ -283,6 +284,7 @@ private:
     bool kitEditable() const;
     uint8_t* kitBuf() const;
     bool sampleLoad(bool toEditor);
+    int levelPct() const { static const int p[4] = {100, 75, 50, 25}; return scr_ == Scr::Editor ? p[smpLevel & 3] : 100; }
     void kitAdd();
     void kitErase();
     void sampleDiscard();

@@ -237,3 +237,15 @@ TEST(times_are_shown_from_whole_hundredths_because_the_devices_printf_has_no_flo
     CHECK_EQ(secHundredths(5730), 100);                 // 5730 bytes = 11460 samples = one second
     CHECK_EQ(secHundredths(kKitCapacity), 284);
 }
+
+TEST(a_lower_level_scales_a_sample_around_the_centre_as_it_is_stored) {
+    uint8_t src[4] = {0x0F, 0x88, 0x7A, 0xF0}, dst[4];
+    KitBank::copyLevel(dst, src, 4, 100);
+    CHECK(std::memcmp(src, dst, 4) == 0);
+    KitBank::copyLevel(dst, src, 4, 50);
+    CHECK_EQ(int(dst[0]), 0x4B);                        // 0 -> 4, 15 -> 11
+    CHECK_EQ(int(dst[1]), 0x88);                        // silence stays silence
+    CHECK_EQ(int(dst[3]), 0xB4);
+    // two such samples layered (x + y - 8) no longer clip
+    for (int v = 0; v < 16; ++v) { const int h = 8 + (v - 8) * 50 / 100; CHECK(h + h - 8 >= 0 && h + h - 8 <= 15); }
+}

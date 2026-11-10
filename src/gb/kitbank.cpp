@@ -96,13 +96,20 @@ int KitBank::used(const uint8_t* b) {
     return end + 16 <= kKitBytes ? end + 16 : kKitBytes;             // plus the silent chunk that ends it (the last chunk of a sample is not played)
 }
 
-bool KitBank::add(uint8_t* b, const char* nm, const uint8_t* bytes, int n) {
+// LSDJ adds two layered samples nibble by nibble (x + y - 8, clipped), so loud samples distort together; a lower level leaves room for the second one.
+void KitBank::copyLevel(uint8_t* dst, const uint8_t* src, int n, int pct) {
+    if (pct >= 100) { std::memcpy(dst, src, size_t(n)); return; }
+    auto f = [&](int v) { const int d = v - 8; const int s = d * pct / 100; return std::min(15, std::max(0, 8 + s)); };   // truncated toward the centre, so two 50% samples never add past the top
+    for (int i = 0; i < n; ++i) dst[i] = uint8_t(f(src[i] >> 4) << 4 | f(src[i] & 15));
+}
+
+bool KitBank::add(uint8_t* b, const char* nm, const uint8_t* bytes, int n, int levelPct) {
     const int c = count(b);
     if (c >= kKitMaxSamples || n <= 0) return false;
     const int size = paddedSize(n);
     const int start = c ? used(b) : kKitHeader;
     if (start + size > kKitBytes) return false;
-    std::memcpy(b + start, bytes, size_t(n));
+    copyLevel(b + start, bytes, n, levelPct);
     std::memset(b + start + n, 0x88, size_t(size - n));
     setOffset(b, c, start);
     setName(b, c, nm);
@@ -110,7 +117,7 @@ bool KitBank::add(uint8_t* b, const char* nm, const uint8_t* bytes, int n) {
     return true;
 }
 
-bool KitBank::replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, int n) {
+bool KitBank::replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, int n, int levelPct) {
     const int c = count(b);
     if (i < 0 || i >= c || n <= 0) return false;
     const int u = used(b);
@@ -118,7 +125,7 @@ bool KitBank::replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, i
     const int size = paddedSize(n), delta = size - (to - from);
     if (u + delta > kKitBytes) return false;
     std::memmove(b + to + delta, b + to, size_t(u - to));
-    std::memcpy(b + from, bytes, size_t(n));
+    copyLevel(b + from, bytes, n, levelPct);
     std::memset(b + from + n, 0x88, size_t(size - n));
     if (delta < 0) std::memset(b + u + delta, 0x88, size_t(-delta));            // the end of the kit is silence again
     for (int k = i + 1; k < c; ++k) setOffset(b, k, offsetOf(b, k) + delta);
