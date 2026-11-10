@@ -1,3 +1,4 @@
+#include "gb/kitbank.h"
 #include "gb/ui/lsdj.h"
 
 #include <algorithm>
@@ -38,7 +39,7 @@ const Field kPulse[] = {{"ENVELOPE", 5, 1, 0xFF, 0, 0, nullptr}, {"WAVE", 6, 7, 
 const Field kWave[] = {{"VOLUME", 5, 1, 0xFF, 0, 0, nullptr}, {"SYNTH", 6, 2, 0x0F, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
                        {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"P+L+VIB", 10, 5, 0xFF, 0, 0, nullptr}, {"TUNING", 11, 8, 3, 0, 1, kTune},
                        {"AUTOMATE", 16, 9, 0x80, 7, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
-const Field kKit[] = {{"KIT 1", 5, 1, 0xFF, 0, 0, nullptr}, {"KIT 2", 6, 2, 0xFF, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
+const Field kKit[] = {{"KIT 1", 5, 9, 0x7F, 0, 0, nullptr}, {"KIT 2", 6, 2, 0x7F, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
                       {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"P+L+VIB", 10, 5, 0xFF, 0, 0, nullptr}, {"TUNING", 11, 8, 3, 0, 1, kTune},
                       {"AUTOMATE", 16, 9, 0x80, 7, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
 const Field kNoise[] = {{"ENVELOPE", 5, 1, 0xFF, 0, 0, nullptr}, {"SHAPE", 6, 2, 0xFF, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
@@ -90,6 +91,12 @@ void Lsdj::key(Key k, bool down) {
             confirm_ = -1;
             if (r == 8) cleanSong();
             else if (r == 9) cleanInstruments();
+            else if (r == 11) kitErase();
+            else if (r == 12) {                          // the firmware loader: hands over to the bootloader, which restarts the Tracker
+                status_ = "FLASHING...";
+                if (tr_ && tr_->flashFirmware(fwSel)) status_ = "FLASHING...";
+                else status_ = tr_ && tr_->errorText() ? tr_->errorText() : "CAN'T FLASH THAT";
+            }
             else {                                       // 10: erase the song under the cursor from the bank
                 status_ = tr_ && tr_->deleteSongFile(fileSel, console_) ? "ERASED" : "CAN'T ERASE";
                 fileCount = tr_ ? tr_->listSongs(console_) : 0;
@@ -125,6 +132,9 @@ void Lsdj::key(Key k, bool down) {
         }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::File) scr_ = Scr::Project;
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Library) scr_ = Scr::Instr;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Kit && kitRow >= 2) { confirm_ = 11; status_ = "ERASE SAMPLE? INSERT=YES"; }
+        else if (b_ && !bUsed_ && !sel_ && (scr_ == Scr::Loader || scr_ == Scr::Editor)) scr_ = Scr::Instr;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Firmware) scr_ = Scr::Project;
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Wave) {          // a lone B tap copies the wave
             for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
             hasClip_ = true;
@@ -152,7 +162,8 @@ void Lsdj::key(Key k, bool down) {
                 p_.previewOn(2, 25, Player::kScratch);
                 auditionHeld_ = true;
             }
-        } else if (tr_) tr_->start(console_, startRow());
+        } else if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) kitAudition();    // the sample pages: Play hears the sample
+        else if (tr_) tr_->start(console_, startRow());
         else p_.start(startRow());
         return;
     }
@@ -216,6 +227,12 @@ void Lsdj::recordNote(int ch, int note) {
 
 void Lsdj::padDown(int pad) {
     if (pad < 0 || pad >= 48 || nameOpen_ || scr_ == Scr::Help) return;
+    if (scr_ == Scr::Kit) {                            // the kit page: pad n hears sample n of the kit on screen
+        const uint8_t* kb = kitBuf();
+        const int i = pad % 15;
+        if (kb && i < KitBank::count(kb)) p_.auditionData(KitBank::data(kb, i), KitBank::length(kb, i));
+        return;
+    }
     int ins = curInstr();
     int note;
     const bool scratch = scr_ == Scr::Wave || scr_ == Scr::Synth;
@@ -297,6 +314,7 @@ void Lsdj::navigate(Key k) {
         case Scr::File: scr_ = Scr::Project; return;                  // the song list is a sub-page of Project
         case Scr::Help: return;
         case Scr::Library: scr_ = Scr::Instr; return;
+        case Scr::Loader: case Scr::Editor: case Scr::Kit: case Scr::Firmware: scr_ = Scr::Instr; return;
     }
     static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
     if (row == 1) {
@@ -323,14 +341,16 @@ void Lsdj::move(Key k) {
         case Scr::Chain: chainCol = clampi(chainCol + dx, 0, 1); chainPos = clampi(chainPos + dy, 0, 15); break;
         case Scr::Phrase: phraseCol = clampi(phraseCol + dx, 0, 3); step = clampi(step + dy, 0, 15); break;
         case Scr::Instr:
-            instrRow = clampi(instrRow + dy, -1, instrRows() - 1);
-            if (instrRow < 0 && dx) { instr = clampi(instr + dx, 0, kInstruments - 1); instrRow = -1; }   // the number at the top: Left / Right scroll through the instruments
+            instrRow = clampi(instrRow + dy, -2, instrRows() - 1);                    // -2 the LIBRARY row, -1 the number at the top
+            if (instrRow == -1 && dx) instr = clampi(instr + dx, 0, kInstruments - 1);   // the number: Left / Right scroll through the instruments
             break;
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
         case Scr::Groove: grooveStep = clampi(grooveStep + dy, 0, 15); break;
         case Scr::Project: projRow = clampi(projRow + dy, 0, 13); break;
         case Scr::File: fileSel = clampi(fileSel + dy, 0, fileCount ? fileCount - 1 : 0); break;
         case Scr::Library: libSel = clampi(libSel + dy, 0, libCount); break;
+        case Scr::Loader: case Scr::Editor: case Scr::Kit: kitMove(k); break;
+        case Scr::Firmware: fwSel = clampi(fwSel + dy, 0, fwCount ? fwCount - 1 : 0); break;
         case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
         case Scr::Wave:
             waveCol = clampi(waveCol + dx, 0, 31);
@@ -353,7 +373,7 @@ void Lsdj::press(Key) {
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
         case Scr::Project: projectAct(); break;
-        case Scr::Instr: if (instrRow == 0) openName(0); break;
+        case Scr::Instr: if (instrRow == 0) openName(0); else if (instrRow == -2) openLibrary(); break;
         case Scr::Library:
             if (libSel == 0) openName(2);
             else if (tr_) {
@@ -361,6 +381,10 @@ void Lsdj::press(Key) {
                 const int n = tr_->loadInstrumentFile(libSel - 1, blob, sizeof blob);
                 status_ = n > 0 && unpackInstrument(blob, n) ? "LOADED" : "LOAD FAILED";
             }
+            break;
+        case Scr::Loader: case Scr::Editor: case Scr::Kit: kitPress(); break;
+        case Scr::Firmware:
+            if (tr_ && fwCount) { std::snprintf(statusBuf_, sizeof statusBuf_, "FLASH IT? INSERT=YES"); status_ = statusBuf_; confirm_ = 12; }
             break;
         case Scr::File:
             if (tr_ && fileCount) { status_ = tr_->loadSongFile(fileSel, console_) ? "LOADED" : "LOAD FAILED"; scr_ = Scr::Project; }
@@ -370,6 +394,7 @@ void Lsdj::press(Key) {
 }
 
 void Lsdj::editKey(Key k) {
+    if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) { kitEdit(k); return; }
     if (scr_ == Scr::Synth) { synthEdit(k); return; }
     if (scr_ == Scr::Wave) { waveEdit(k); return; }
     const int big = (k == Key::Up || k == Key::Down), sgn = (k == Key::Right || k == Key::Up) ? 1 : -1;
@@ -403,7 +428,8 @@ void Lsdj::editKey(Key k) {
             break;
         }
         case Scr::Instr: {
-            if (instrRow < 0) { instr = clampi(instr + d, 0, kInstruments - 1); instrRow = -1; break; }   // the number at the top
+            if (instrRow == -1) { instr = clampi(instr + d, 0, kInstruments - 1); break; }   // the number at the top
+            if (instrRow < 0) break;
             uint8_t* in = s_.instrument(instr);
             if (instrRow == 0) break;
             if (instrRow == 1) { in[0] = uint8_t((in[0] + sgn) & 3); s_.markInstrument(instr); break; }
@@ -614,10 +640,16 @@ int rowWidth(int cy) { return cy < 3 ? 10 : cy == 3 ? 6 : 9; }   // the last row
 
 void Lsdj::openName(int target) {
     nameTarget_ = target;
-    nameMax_ = target ? 8 : 5;
+    nameMax_ = target == 3 || target == 5 ? 3 : target ? 8 : 5;
     nameCx_ = nameCy_ = 0;
     std::memset(nameBuf_, 0, sizeof nameBuf_);
     if (target == 1) std::strncpy(nameBuf_, name_, 8);
+    else if (target == 3) std::strncpy(nameBuf_, smpName_, 3);
+    else if (target == 4 || target == 5) {
+        const uint8_t* kb = kitBuf();
+        if (kb && target == 4 && KitBank::hasSamples(kb)) KitBank::kitName(kb, nameBuf_);
+        else if (kb && target == 5) KitBank::name(kb, kitRow - 2, nameBuf_);
+    }
     else { char tmp[6]; instrName(instr, tmp); std::strncpy(nameBuf_, tmp, 5); }
     for (int i = int(std::strlen(nameBuf_)) - 1; i >= 0 && nameBuf_[i] == ' '; --i) nameBuf_[i] = 0;
     if (target == 2 && !nameBuf_[0]) std::snprintf(nameBuf_, sizeof nameBuf_, "INST%02X", instr);
@@ -631,7 +663,14 @@ void Lsdj::nameCommit() {
         for (int k = 0; k < 5; ++k) s_.at(uint16_t(off::kInstrNames + instr * 5 + k)) = k < n ? uint8_t(nameBuf_[k]) : 0;
         s_.markInstrument(instr);
     } else if (nameTarget_ == 1) setName(nameBuf_);
-    else if (n > 0 && tr_) {                                          // library: save the current instrument under this name
+    else if (nameTarget_ == 3) { for (int k = 0; k < 3; ++k) smpName_[k] = k < n ? nameBuf_[k] : '-'; }
+    else if ((nameTarget_ == 4 || nameTarget_ == 5) && tr_) {         // the kit's own name, or one of its samples
+        uint8_t* kb = kitBuf();
+        if (kb && nameTarget_ == 4) KitBank::setKitName(kb, nameBuf_);
+        else if (kb) KitBank::setName(kb, kitRow - 2, nameBuf_);
+        status_ = kb && tr_->kitSave(console_, kitSlot) ? "SAVED" : "SAVE FAILED";
+    }
+    else if (nameTarget_ == 2 && n > 0 && tr_) {                      // library: save the current instrument under this name
         uint8_t blob[128];
         const int len = packInstrument(blob);
         status_ = tr_->saveInstrumentFile(nameBuf_, blob, len) ? "SAVED" : "SAVE FAILED";
@@ -915,8 +954,12 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Synth: drawSynth(l); break;
         case Scr::Help: drawHelp(l); return;
         case Scr::Library: drawLibrary(l); break;
+        case Scr::Loader: drawLoader(l); break;
+        case Scr::Editor: drawEditor(l); break;
+        case Scr::Kit: drawKit(l); break;
+        case Scr::Firmware: drawFirmware(l); break;
     }
-    if (scr_ != Scr::File && scr_ != Scr::Library) drawPanel(l, scr_ != Scr::Wave);
+    if (!fullPage()) drawPanel(l, scr_ != Scr::Wave);
     if (msg_[0] && scr_ != Scr::Wave) ptext(l, kPc, 4, msg_, true);
     else if (selOn_) ptext(l, kPc, 4, "SEL", true);
     if (recMode_ && scr_ == Scr::Phrase) {
@@ -927,7 +970,7 @@ void Lsdj::draw(Lcd& l) const {
         ptext(l, kPc, 10, p_.running() ? "REC" : "ARM", p_.running());
         ptext(l, kPc, 11, ii); ptext(l, kPc, 12, ty[in[0] & 3]); ptext(l, kPc, 13, nm);
     }
-    if (padOct_ != 0 && scr_ != Scr::File && scr_ != Scr::Library) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); ptext(l, kPc, 9, o); }
+    if (padOct_ != 0 && !fullPage()) { char o[8]; std::snprintf(o, sizeof o, "O%+d", padOct_); ptext(l, kPc, 9, o); }
     if (banner_[0]) { l.rect(0, 136, 200, 8, 0); l.text(0, 17, banner_); }
     if (prompt_) {
         l.rect(32, 32, 120, 56, 3);
@@ -1120,6 +1163,9 @@ const Entry kMovingTxt[] = {
     {"CONFIG KEY", "Project page."},
     {"PERFORMANCE KEY", "Groove page."},
     {"FILE KEY", "The song list."},
+    {"SAMPLE LOADER KEY", "Pick a WAV file to turn into a drum sample."},
+    {"SAMPLE EDITOR KEY", "Cut a sample and add it to a kit."},
+    {"SAMPLE PLAYBACK KEY", "The kit page: hear and edit the samples."},
     {"SHIFT + ARROWS", "Move between the pages."},
 };
 const Entry kEditingTxt[] = {
@@ -1146,7 +1192,7 @@ const Entry kNamesTxt[] = {
     {"< KEY", "Erases a letter."},
     {"PLAY", "OK."},
     {"BKSP", "No."},
-    {"SAMPLE LOADER KEY", "Saves a sound to the card, or loads one from it."},
+    {"LIBRARY", "On the Instr page, move up above the number to LIBRARY and press Insert. It saves a sound to the card, or loads one from it."},
 };
 const Entry kTwoSongsTxt[] = {
     {"SYNC", "On the Project page. MASTER sets the tempo. SLAVE follows it. Play starts both."},
@@ -1164,12 +1210,33 @@ const Entry kSavingTxt[] = {
     {"SHIFT + BKSP", "In the song list, erases the song under the cursor."},
     {"EXPORT WAV", "Makes an audio file."},
     {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as LSDJ_A.SRM or LSDJ_B.SRM."},
-    {"KITS", "Drum kits live in the LSDJ ROM, not in the song. If you added kits in GB/Kits, EXPORT LSDJ also writes LSDJ_KITS.GB: your ROM with those kits in. Use it on the Game Boy."},
+    {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. If you have your own kits, EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's kits in. Use these ROMs on the Game Boys."},
     {"KIT SLOTS", "Use slot 1A to 37 for your own kits. Slots 13 to 17 hold program code in the ROM and are never replaced."},
     {"ON A GAME BOY", "Give the copy the same name as your LSDJ ROM, like LSDJ.SRM."},
 };
+const Entry kSamplesTxt[] = {
+    {"", "Drum kits are sets of up to 15 short sounds. The WAV track plays them with a KIT instrument."},
+    {"KIT NUMBERS", "Kits 00 to 12, 18 and 19 are in the ROM. Make your own in 1A to 37. Each Game Boy has its own kits."},
+    {"STEP 1", "Put WAV files in the GB/Samples folder on the SD card."},
+    {"STEP 2", "Press the SAMPLE LOADER key. Pick a file and press Insert. It is changed to Game Boy sound quality."},
+    {"STEP 3", "The SAMPLE EDITOR opens. Set START and END to cut the sound. Pick a NAME and a KIT number. Then choose ADD TO KIT."},
+    {"STEP 4", "On the Instr page, make a KIT sound and set KIT 1 to your kit number. In a phrase, note 1 plays sample 1, note 2 plays sample 2, and so on."},
+    {"SAMPLE PLAYBACK KEY", "Shows the samples in a kit. Play or a pad hears one. Change the kit number at the top."},
+    {"SIZE", "A kit holds about 2.8 seconds of sound in all."},
+    {"SAVING", "Every change to a kit is saved to the SD card at once."},
+};
+const Entry kFirmwareTxt[] = {
+    {"", "To load another firmware, put its .PTF file in the Firmware folder on the SD card."},
+    {"SHIFT + F8", "On the Project page, hold Shift. The ? over F8 turns into FIRMWARE. Press F8."},
+    {"UP / DOWN", "Pick a file."},
+    {"INSERT", "Asks if you are sure. Press Insert again to flash it. Any other key says no."},
+    {"BKSP", "Go back."},
+    {"", "The Tracker restarts when it is done. To go back to the stock firmware, pick its file."},
+    {"OT_RESTORE.TXT", "This still works. Put a file name in it and restart."},
+};
 const Section kHelpDocs[] = {sec("WELCOME", kWelcomeTxt), sec("MOVING AROUND", kMovingTxt), sec("EDITING", kEditingTxt), sec("PLAYING", kPlayingTxt),
-                             sec("NAMES, LIBRARY", kNamesTxt), sec("TWO SONGS", kTwoSongsTxt), sec("SAVING", kSavingTxt)};
+                             sec("NAMES, LIBRARY", kNamesTxt), sec("TWO SONGS", kTwoSongsTxt), sec("SAVING", kSavingTxt), sec("SAMPLES AND KITS", kSamplesTxt),
+                             sec("LOAD FIRMWARE", kFirmwareTxt)};
 
 // ---- the F8 pop-ups ------------------------------------------------------------------------------------------------------
 
@@ -1224,7 +1291,8 @@ const Entry kInstrTxt[] = {
     {"TABLE", "A list of extra steps for this sound."},
     {"OUTPUT", "Left, right or both speakers."},
     {"LENGTH", "How long a note lasts."},
-    {"SAMPLE LOADER KEY", "Saves and loads sounds."},
+    {"LIBRARY", "Move up above the number and press Insert. It saves and loads sounds on the card."},
+    {"KIT 1 AND KIT 2", "On a KIT sound: the kit numbers. The note is the sample number: note 1 plays sample 1 of KIT 1."},
 };
 const Entry kTableTxt[] = {
     {"", "A table is a tiny pattern that plays by itself with a sound."},
@@ -1259,7 +1327,8 @@ const Entry kProjectTxt[] = {
     {"SAVE SONG", "Puts the song in this Game Boy's save file on the SD card."},
     {"LOAD SONG", "Lists the songs in that file."},
     {"EXPORT WAV", "Makes an audio file."},
-    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. Copies the save files to GB/Export."},
+    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. Copies the save files to GB/Export. With your own kits it also writes PTSDJ_A.GB and PTSDJ_B.GB."},
+    {"SHIFT + F8", "Hold Shift here: F8 says FIRMWARE. Press it to load another firmware."},
 };
 const Entry kSynthTxt[] = {
     {"", "Synths make the shapes the WAV track plays."},
@@ -1289,7 +1358,7 @@ const Entry kFileTxt[] = {
     {"BKSP", "Go back."},
 };
 const Entry kLibraryTxt[] = {
-    {"", "The library keeps your sounds on the card."},
+    {"", "The library keeps your sounds on the card. Open it from LIBRARY at the top of the Instr page."},
     {"TOP ROW", "Saves the sound on screen. Press Insert, type a name, then press Play."},
     {"OTHER ROWS", "Load a file into the sound on screen."},
     {"BKSP", "Go back."},
@@ -1340,6 +1409,42 @@ const Entry kCmdPZTxt[] = {
 };
 const Section kPhraseSheetDocs[] = {sec("PHRASE COLUMNS", kPhraseColsTxt), sec("COMMANDS A TO F", kCmdAFTxt), sec("COMMANDS G TO O", kCmdGOTxt), sec("COMMANDS P TO Z", kCmdPZTxt)};
 const Section kTableSheetDocs[] = {sec("TABLE COLUMNS", kTableColsTxt), sec("COMMANDS A TO F", kCmdAFTxt), sec("COMMANDS G TO O", kCmdGOTxt), sec("COMMANDS P TO Z", kCmdPZTxt)};
+const Entry kLoaderTxt[] = {
+    {"", "These are the WAV files in the GB/Samples folder on the SD card."},
+    {"UP / DOWN", "Choose a file."},
+    {"INSERT", "Loads it as a Game Boy sample and opens the Sample Editor."},
+    {"PLAY", "Hears the file as the Game Boy would play it."},
+    {"BKSP", "Go back."},
+    {"", "Long files are cut to what fits in a kit."},
+};
+const Entry kEditorTxt[] = {
+    {"", "Cut a sample, name it and add it to a kit."},
+    {"START, END", "Where the sound begins and ends. A + < > or the jog wheel moves it a little. A + UP/DOWN moves it a lot."},
+    {"NAME", "Press Insert to type 3 letters."},
+    {"KIT", "The kit number to add to: 1A to 37."},
+    {"ADD TO KIT", "Press Insert. The kit is saved at once. The status line says which note plays it."},
+    {"PLAY", "Hears the cut sound."},
+    {"BKSP", "Go back."},
+};
+const Entry kKitTxt[] = {
+    {"", "This page shows the samples in a kit."},
+    {"TOP NUMBER", "The kit. Left / Right or the jog wheel changes it. Kits 1A to 37 are yours."},
+    {"NAME", "Press Insert to name the kit."},
+    {"A SAMPLE", "Insert renames it. BKSP erases it: press Insert to say yes."},
+    {"PLAY OR A PAD", "Hears the sample. A pad plays the sample with the same number."},
+    {"ROM KITS", "You can hear them, but not change them."},
+    {"", "Every change is saved at once."},
+};
+const Entry kFirmwareWinTxt[] = {
+    {"", "The update files in the Firmware folder."},
+    {"UP / DOWN", "Pick a file."},
+    {"INSERT", "Asks first. Press Insert again to flash it."},
+    {"BKSP", "Go back."},
+};
+const Section kLoaderDocs[] = {sec("SAMPLE LOADER", kLoaderTxt)};
+const Section kEditorDocs[] = {sec("SAMPLE EDITOR", kEditorTxt)};
+const Section kKitDocs[] = {sec("KIT PAGE", kKitTxt)};
+const Section kFirmwareDocs[] = {sec("LOAD FIRMWARE", kFirmwareWinTxt)};
 const Section kSongDocs[] = {sec("SONG PAGE", kSongTxt)};
 const Section kChainDocs[] = {sec("CHAIN PAGE", kChainTxt)};
 const Section kPhraseDocs[] = {sec("PHRASE PAGE", kPhraseTxt)};
@@ -1369,6 +1474,10 @@ const Section* docsFor(Lsdj::Popup p, Scr s, int& n) {
         case Scr::Wave: return DOC_SET(kWaveDocs);
         case Scr::File: return DOC_SET(kFileDocs);
         case Scr::Library: return DOC_SET(kLibraryDocs);
+        case Scr::Loader: return DOC_SET(kLoaderDocs);
+        case Scr::Editor: return DOC_SET(kEditorDocs);
+        case Scr::Kit: return DOC_SET(kKitDocs);
+        case Scr::Firmware: return DOC_SET(kFirmwareDocs);
         default: return DOC_SET(kHelpDocs);
     }
 }
@@ -1429,7 +1538,7 @@ bool Lsdj::docsFit() {
     int n;
     bool ok = true;
     for (Popup p : {kPhraseSheet, kTableSheet}) { const Section* d = docsFor(p, Scr::Song, n); ok = ok && fits(d, n); }
-    for (Scr s : {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table, Scr::Groove, Scr::Project, Scr::Synth, Scr::Wave, Scr::File, Scr::Library, Scr::Help}) {
+    for (Scr s : {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table, Scr::Groove, Scr::Project, Scr::Synth, Scr::Wave, Scr::File, Scr::Library, Scr::Loader, Scr::Editor, Scr::Kit, Scr::Firmware, Scr::Help}) {
         const Section* d = docsFor(kPageHelp, s, n);
         ok = ok && fits(d, n);
     }
@@ -1621,7 +1730,8 @@ void Lsdj::drawProject(Lcd& l) const {
 
 void Lsdj::drawInstr(Lcd& l) const {
     l.text(0, 0, "INSTRUMENT");
-    { char t[4]; std::snprintf(t, sizeof t, "%02X", instr); l.text(11, 0, t, instrRow < 0); }
+    { char t[4]; std::snprintf(t, sizeof t, "%02X", instr); l.text(11, 0, t, instrRow == -1); }
+    l.text(0, 1, "LIBRARY", instrRow == -2);
     const uint8_t* in = s_.instrument(instr);
     char nm[6]; instrName(instr, nm);
     l.text(0, 2, "NAME"); l.rect(72, 16, 40, 8, 1); l.text(9, 2, nm, instrRow == 0);

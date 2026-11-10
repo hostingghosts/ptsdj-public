@@ -102,7 +102,7 @@ struct Machine {
     SdlAudio sdlAudio;
     ManualAudio manualAudio;
     std::unique_ptr<appns::App> app;
-    std::vector<uint8_t> bigMem = std::vector<uint8_t>(2u << 20);
+    std::vector<uint8_t> bigMem = std::vector<uint8_t>(4u << 20);
     static Machine* self;
 
     bool start(const Options& o, bool headless) {

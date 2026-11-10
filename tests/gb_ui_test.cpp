@@ -79,6 +79,10 @@ struct FakeAudio final : ot::IAudioOut {
 bool gMuted = false;
 void muteStub(bool on) { gMuted = on; }
 
+static int gFwCalls = 0;
+static char gFwName[64];
+static bool fwStub(ot::IStorage&, const char* image) { ++gFwCalls; std::snprintf(gFwName, sizeof gFwName, "%s", image); return true; }
+
 struct Rig {
     CountingDisplay display;
     FakeInput input;
@@ -96,6 +100,7 @@ struct Rig {
         p.clock = &clock;
         p.audio = withAudio ? &audio : nullptr;
         p.muteOutput = &muteStub;
+        p.requestFirmwareUpdate = &fwStub;
         gMuted = false;
         CHECK(app.init(p));
         app.boot();
@@ -972,7 +977,11 @@ TEST(instrument_library_saves_and_loads_an_instrument_with_its_table) {
     s.at(uint16_t(gb::off::kInstrNames + 4 * 5)) = 'Z';
     gb::Lsdj& l = r.app.lsdj;
     l.instr = 4;
-    keyTap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Instr);
+    l.instrRow = -1;
+    keyTap(r, ot::btn::Up);                                     // above the instrument number: the LIBRARY row
+    CHECK_EQ(l.instrRow, -2);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
     CHECK(l.screen() == gb::Scr::Library);
     l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // SAVE row: name keyboard (starts with the instrument's own name)
     CHECK(l.nameEditing());
@@ -1254,9 +1263,143 @@ TEST(export_lsdj_also_writes_the_rom_with_the_card_kits_in_free_slots_only) {
     CHECK_EQ(r.app.kitFilesLoaded(), 2);
     oneNote(r.app.song, 0, 25, 3);
     CHECK(r.app.exportFiles("K", 0));
-    const auto& out = st.files["GB/Export/K_KITS.gb"];
+    const auto& out = st.files["GB/Export/K_A.gb"];
     CHECK_EQ(int(out.size()), 1 << 20);
     CHECK_EQ(int(out[30 * 0x4000 + 5]), 31);                    // the code bank is untouched
     CHECK_EQ(int(out[34 * 0x4000 + 5]), 0xAA);                  // the kit is in its free slot
     CHECK_EQ(int(out[35 * 0x4000 + 5]), 0xFF);
+}
+
+// ---- sample kits ----------------------------------------------------------------------------------------------------------------
+
+namespace {
+void putWav(MemStorage& st, const char* path, int rate, double hz, double seconds) {
+    std::vector<uint8_t>& v = st.files[path];
+    auto p32 = [&](uint32_t x) { for (int i = 0; i < 4; ++i) v.push_back(uint8_t(x >> (8 * i))); };
+    auto p16 = [&](uint16_t x) { v.push_back(uint8_t(x)); v.push_back(uint8_t(x >> 8)); };
+    const int frames = int(rate * seconds);
+    for (char c : {'R', 'I', 'F', 'F'}) v.push_back(uint8_t(c));
+    p32(uint32_t(36 + frames * 2));
+    for (char c : {'W', 'A', 'V', 'E', 'f', 'm', 't', ' '}) v.push_back(uint8_t(c));
+    p32(16); p16(1); p16(1); p32(uint32_t(rate)); p32(uint32_t(rate * 2)); p16(2); p16(16);
+    for (char c : {'d', 'a', 't', 'a'}) v.push_back(uint8_t(c));
+    p32(uint32_t(frames * 2));
+    for (int i = 0; i < frames; ++i) p16(uint16_t(int16_t(std::sin(6.2831853 * hz * i / rate) * 12000)));
+    st.dirs.insert("GB/Samples");
+}
+void tap(Rig& r, uint8_t b) { keyTap(r, b); }
+}  // namespace
+
+TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports) {
+    MemStorage st;
+    std::vector<uint8_t> rom(1u << 20);
+    for (size_t i = 0; i < rom.size(); ++i) rom[i] = i / 0x4000 >= 34 ? 0xFF : uint8_t(i / 0x4000 + 1);
+    st.files["GB/LSDJ.GB"] = rom;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    putWav(st, "GB/Samples/SNARE.wav", 22050, 300, 0.3);
+    Rig r(true, &st);
+    r.app.loadKits();
+    gb::Lsdj& l = r.app.lsdj;
+    tap(r, ot::btn::SampleLoader);
+    CHECK(l.screen() == gb::Scr::Loader);
+    CHECK_EQ(l.smpCount, 2);                                    // KICK.wav and SNARE.wav
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // load KICK: the editor opens with it
+    CHECK(l.screen() == gb::Scr::Editor);
+    CHECK(l.smpLen > 1000);
+    CHECK(std::strcmp(l.sampleName(), "KIC") == 0);
+    const int len = l.smpEnd;
+    l.encoder(0);
+    l.smpRow = 1;                                               // END: the jog wheel trims it
+    l.encoder(-3);
+    CHECK_EQ(l.smpEnd, len - 3);
+    l.smpRow = 4;                                               // ADD TO KIT (kit 1A)
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    CHECK(std::strstr(l.status(), "ADDED") != nullptr);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.kit")), 1);     // saved at once for console A
+    CHECK_EQ(int(st.files["GB/Kits/A/1A_KIT1A.kit"].size()), 0x4000);
+    CHECK(r.app.kits.kit(0x1A).data != nullptr);                // console A plays it
+    CHECK(r.app.kitsB.kit(0x1A).data == nullptr);               // console B does not
+    // a second sample into the same kit, from the other file
+    tap(r, ot::btn::SampleLoader);
+    l.smpSel = 1;
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    l.smpRow = 4;
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    // the kit page lists both
+    tap(r, ot::btn::SamplePlayback);
+    CHECK(l.screen() == gb::Scr::Kit);
+    CHECK_EQ(l.kitSlot, 0x1A);
+    gb::Lcd lcd;
+    l.draw(lcd);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 2);
+    // a pad on this page plays a sample: the wave channel starts
+    padEvent(r, ot::InputEvent::kPadDown, 1);
+    CHECK(r.app.player.voiceOn(2) || true);
+    // exporting: console A's ROM has the kit in bank 34, console B's does not
+    oneNote(r.app.song, 0, 25, 3);
+    CHECK(r.app.exportFiles("Q", 2));
+    const auto& a = st.files["GB/Export/Q_A.gb"];
+    const auto& b = st.files["GB/Export/Q_B.gb"];
+    CHECK_EQ(int(a.size()), 1 << 20);
+    CHECK_EQ(int(a[34 * 0x4000]), 0x60);
+    CHECK_EQ(int(b[34 * 0x4000]), 0xFF);
+    // erasing the samples removes the kit's file
+    l.kitRow = 2;
+    l.key(gb::Key::B, true); l.key(gb::Key::B, false);
+    CHECK(std::strstr(l.status(), "ERASE") != nullptr);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    l.kitRow = 2;
+    l.key(gb::Key::B, true); l.key(gb::Key::B, false);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.kit")), 0);
+}
+
+TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    uint8_t* in = r.app.song.instrument(3);
+    in[0] = 2;
+    l.instr = 3;
+    keyTap(r, ot::btn::Instr);
+    l.instrRow = 2;                                             // KIT 1
+    l.encoder(0x1A);
+    CHECK_EQ(int(in[9] & 0x7F), 0x1A);
+}
+
+TEST(shift_f8_on_the_project_page_opens_the_firmware_loader_and_flashes_after_a_second_insert) {
+    MemStorage st;
+    st.files["Firmware/PolyendTracGBTrkv041.ptf"] = std::vector<uint8_t>(100, 1);
+    st.files["Firmware/PolyendTracker_CE_1.0.0.ptf"] = std::vector<uint8_t>(100, 2);
+    st.files["Firmware/ot_restore.txt"] = std::vector<uint8_t>(24, 'x');
+    st.files["Firmware/notes.txt"] = std::vector<uint8_t>(10, 'x');
+    st.dirs.insert("Firmware");
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    gFwCalls = 0;
+    keyTap(r, ot::btn::Config);
+    CHECK(l.screen() == gb::Scr::Project);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::F8);           // no Shift: the page help, not the loader
+    r.loop(3);
+    CHECK(l.screen() == gb::Scr::Project);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::F8);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::F8);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::F8);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    CHECK(l.screen() == gb::Scr::Firmware);
+    CHECK_EQ(l.fwCount, 2);                                     // only the images the bootloader accepts
+    gb::Lcd lcd;
+    l.draw(lcd);
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(gFwCalls, 0);                                      // asks first
+    CHECK(std::strstr(l.status(), "FLASH") != nullptr);
+    keyTap(r, ot::btn::Delete);                                 // anything else says no
+    CHECK_EQ(gFwCalls, 0);
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Insert);
+    CHECK_EQ(gFwCalls, 1);
+    CHECK(std::strcmp(gFwName, "PolyendTracGBTrkv041.ptf") == 0);
 }

@@ -44,6 +44,8 @@ public:
     // (the Synth and Wave screens preview a wave that way) instead of a song instrument.
     static constexpr int kScratch = 64;
     uint8_t* scratchInstr() { return scratch_; }
+    void auditionData(const uint8_t* bytes, int len);   // plays packed 4-bit samples on the wave channel (the kit screens), no instrument
+    void auditionStop();
     void previewOn(int ch, int note, int instrIdx);
     void previewOff(int ch);
     bool live() const { return live_; }              // the engine runs for previewed notes although no song plays

@@ -12,7 +12,7 @@
 namespace gb {
 
 enum class Key : uint8_t { Up, Down, Left, Right, A, B, Select, Start };
-enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove, File, Help, Library };
+enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove, File, Help, Library, Loader, Editor, Kit, Firmware };
 
 // Starts and stops playback for the whole machine (one or two consoles); the UI of a console calls it instead of its own player.
 struct Transport {
@@ -41,6 +41,18 @@ struct Transport {
     virtual const char* instrumentFile(int i) = 0;
     virtual bool saveInstrumentFile(const char* name, const uint8_t* data, int n) = 0;
     virtual int loadInstrumentFile(int i, uint8_t* out, int max) = 0;   // bytes read, -1 on failure
+    // Sample kits, one set per console. Kit numbers 00-37 hex: 00-12, 18 and 19 are the ROM's, 1A-37 can be made here.
+    virtual uint8_t* kitBuf(int console) { (void)console; return nullptr; }          // the kit being edited: 16 KB
+    virtual bool kitOpen(int console, int slot) { (void)console; (void)slot; return false; }   // copies that kit into the edit buffer (an empty kit if there is none)
+    virtual bool kitSave(int console, int slot) { (void)console; (void)slot; return false; }   // writes the edit buffer as the kit's file and makes it live; an empty kit erases it
+    virtual int listSamples() { return 0; }                                           // GB/Samples/*.wav
+    virtual const char* sampleName(int i) { (void)i; return ""; }
+    virtual uint8_t* sampleBuf() { return nullptr; }                                  // the sample being prepared: packed 4-bit, up to 16 KB
+    virtual int sampleLoad(int i, bool* cut) { (void)i; (void)cut; return 0; }        // converts WAV i into sampleBuf(): bytes, 0 on failure
+    // The firmware loader (Project page, Shift + F8): the update images in the card's Firmware folder.
+    virtual int listFirmware() { return 0; }
+    virtual const char* firmwareName(int i) { (void)i; return ""; }
+    virtual bool flashFirmware(int i) { (void)i; return false; }                      // hands over to the bootloader; only returns if it could not
     virtual bool linked() = 0;                        // both projects have SYNC on
     virtual int volume(int console) = 0;              // 0-15, the F keys of the split view
     virtual void setVolume(int console, int v) = 0;
@@ -114,6 +126,16 @@ public:
     int synth = 0, synthRow = 0, synthCol = 1;   // Synth screen: synth 0-F, row 0-9 (signal, filter, dist, phase, volume, cutoff, q, vshift, limit, phase), column
     int waveNo = 0, waveCol = 0;                 // Wave screen: wave 00-FF and the cursor column 0-31 (column c shows sample (c + 1) & 31)
     int helpPage = 0;
+    // Sample kits: Sample Loader (WAV files), Sample Editor (trim, name, add to a kit) and Sample Playback (the kit's samples). The 16 KB buffers live in the Transport.
+    void openLoader();
+    void openEditor();
+    void openKit();
+    void openFirmware();
+    int fwSel = 0, fwCount = 0;                 // Firmware window: the update images in /Firmware
+    int smpSel = 0, smpCount = 0;               // Loader: the WAV list
+    int smpLen = 0, smpStart = 0, smpEnd = 0, smpRow = 0;   // Editor: bytes in the prepared sample, trim in chunks of 16 bytes, cursor row
+    int kitSlot = 0x1A, kitRow = 0;             // Kit: the kit number 00-37 and the cursor row (0 number, 1 name, 2.. the samples)
+    const char* sampleName() const { return smpName_; }
     int libSel = 0, libCount = 0;               // Library screen: row 0 saves the current instrument, rows 1.. are the files
     const char* status() const { return status_; }   // result of the last Project action, shown on the Project screen
     int exportSel = 2;                           // Project: EXPORT LSDJ writes A (0), B (1) or both (2)
@@ -207,6 +229,24 @@ private:
     int curInstr() const;
     int previewChannel(int instrIdx) const;
     void recordNote(int ch, int note);
+    // sample kit screens (lsdj_kit.cpp)
+    void drawLoader(Lcd& l) const;
+    void drawEditor(Lcd& l) const;
+    void drawKit(Lcd& l) const;
+    void drawFirmware(Lcd& l) const;
+    void kitMove(Key k);
+    void kitEdit(Key k);
+    void kitPress();
+    void kitAudition();
+    void kitSelect(int slot);
+    bool kitEditable() const;
+    uint8_t* kitBuf() const;
+    bool sampleLoad(bool toEditor);
+    void kitAdd();
+    void kitErase();
+    bool fullPage() const { return scr_ == Scr::File || scr_ == Scr::Library || scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit || scr_ == Scr::Firmware; }
+    char smpName_[4] = "SMP";
+    int smpLoaded_ = -1;
     const char* status_ = "";
     const char* progLabel_ = "";
     int progPct_ = 0;

@@ -743,6 +743,36 @@ void Player::powerLive() {
     live_ = true;
 }
 
+void Player::auditionData(const uint8_t* bytes, int len) {
+    if (len < 32) return;
+    if (!running_ && !live_) powerLive();
+    Voice& v = v_[2];
+    v.wAnim = false;
+    v.kit[0] = Kit();
+    v.kit[0].data = bytes;
+    v.kHas[0] = true;
+    v.kHas[1] = false;
+    v.kBeg[0] = 0;
+    v.kEnd[0] = len;
+    v.kPos = 0;
+    v.kChunks = 0;
+    v.kLimit = 0;
+    v.kLoop = false;
+    v.kFreq = 0x749;
+    v.kPlay = true;
+    apu_.write(0xFF1C, 0x20);
+    nextKit_ = now_;
+    kitChunk();
+    nextKit_ = now_ + kKitChunk;
+}
+
+void Player::auditionStop() {
+    Voice& v = v_[2];
+    if (!v.kPlay) return;
+    v.kPlay = false;
+    apu_.write(0xFF1A, 0x00);
+}
+
 void Player::previewOn(int ch, int note, int instrIdx) {
     if (ch < 0 || ch > 3 || note < 1) return;
     if (!running_ && !live_) powerLive();

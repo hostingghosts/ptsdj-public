@@ -26,6 +26,7 @@ class RomKits final : public KitSource {
 public:
     void setRom(const uint8_t* rom, size_t size) { rom_ = rom; size_ = size; }
     void setOverride(int index, const uint8_t* bank) { if (index >= 0 && index < 64) over_[index] = bank; }
+    const uint8_t* override_(int index) const { return index >= 0 && index < 64 ? over_[index] : nullptr; }
     Kit kit(int index) const override;
 private:
     const uint8_t* rom_ = nullptr;

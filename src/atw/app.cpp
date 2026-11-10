@@ -1,5 +1,7 @@
 #include "atw/app.h"
 #include "gb/bank.h"
+#include "gb/kitbank.h"
+#include "gb/wavconv.h"
 #include "atw/chime_pcm.h"
 
 #include <algorithm>
@@ -203,36 +205,65 @@ bool App::romStep() {
     romH_ = -1;
     if (romGot_ >= (1u << 19)) {
         kits.setRom(p_.bigMem, romGot_);
+        kitsB.setRom(p_.bigMem, romGot_);
         synthGen.setRom(p_.bigMem, romGot_);
         player.setKits(&kits);
-        playerB.setKits(&kits);
+        playerB.setKits(&kitsB);
     }
     return true;
 }
 
-// .kit files: GB/Kits/<hex index>*.kit, 16 KB each, replace that kit slot. The listing is taken first, then one file is read per step.
+// .kit files: <hex slot>*.kit, 16 KB each, replace that kit slot. Files in GB/Kits itself serve both consoles; GB/Kits/A and GB/Kits/B hold each console's
+// own kits (the ones made on the Tracker). The listing is taken first, then one file is read per step.
+struct KitScan { App* a; int console; };
+int App::scanKitDir(const char* dir, int console) {
+    KitScan ctx{this, console};
+    char dirPath[40];
+    std::snprintf(dirPath, sizeof dirPath, "%s", dir);
+    struct Local {
+        static bool each(const ot::IStorage::DirEntry& e, void* c) {
+            KitScan* k = static_cast<KitScan*>(c);
+            App* a = k->a;
+            const size_t n = std::strlen(e.name);
+            auto hex = [](char ch) { return ch >= '0' && ch <= '9' ? ch - '0' : ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 : ch >= 'A' && ch <= 'F' ? ch - 'A' + 10 : -1; };
+            if (e.isDir || n < 6 || n > 36 || strcasecmp(e.name + n - 4, ".kit") != 0 || e.size != gb::kKitBankSize) return true;
+            const int hi = hex(e.name[0]), lo = hex(e.name[1]);
+            if (hi < 0 || lo < 0 || hi * 16 + lo > 63 || a->kitFiles_ >= kMaxKitFiles) return a->kitFiles_ < kMaxKitFiles;
+            KitFile& f = a->kitFile_[a->kitFiles_++];
+            std::snprintf(f.path, sizeof f.path, "%s/%s", a->scanDir_, e.name);
+            f.idx = uint8_t(hi * 16 + lo);
+            f.console = uint8_t(k->console);
+            return true;
+        }
+    };
+    scanDir_ = dirPath;
+    const int before = kitFiles_;
+    p_.storage->listDir(dirPath, &Local::each, &ctx);
+    return kitFiles_ - before;
+}
+
 void App::scanKitFiles() {
     kitFiles_ = 0;
     if (!p_.storage) return;
-    p_.storage->listDir(kKitDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
-        App* a = static_cast<App*>(ctx);
-        const size_t n = std::strlen(e.name);
-        auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
-        if (e.isDir || n < 6 || n >= sizeof a->kitNames_[0] || strcasecmp(e.name + n - 4, ".kit") != 0 || e.size != gb::kKitBankSize) return true;
-        const int hi = hex(e.name[0]), lo = hex(e.name[1]);
-        if (hi < 0 || lo < 0 || hi * 16 + lo > 63 || a->kitFiles_ >= kMaxKitFiles) return a->kitFiles_ < kMaxKitFiles;
-        std::snprintf(a->kitNames_[a->kitFiles_], sizeof a->kitNames_[0], "%s", e.name);
-        a->kitIdx_[a->kitFiles_++] = uint8_t(hi * 16 + lo);
-        return true;
-    }, this);
+    scanKitDir(kKitDir, 2);
+    scanKitDir("GB/Kits/A", 0);
+    scanKitDir("GB/Kits/B", 1);
+}
+
+// A loaded kit file serves the consoles it is for.
+void App::applyKit(int i) {
+    uint8_t* base = p_.bigMem + kKitOffset;
+    const KitFile& f = kitFile_[i];
+    if (f.console == 0 || f.console == 2) kits.setOverride(f.idx, base + size_t(i) * gb::kKitBankSize);
+    if (f.console == 1 || f.console == 2) kitsB.setOverride(f.idx, base + size_t(i) * gb::kKitBankSize);
+    player.setKits(&kits);
+    playerB.setKits(&kitsB);
 }
 
 int App::kitFileStep(int i) {
     uint8_t* base = p_.bigMem && p_.bigMemSize >= kKitOffset + kMaxKitFiles * gb::kKitBankSize ? p_.bigMem + kKitOffset : nullptr;
     if (!base || i < 0 || i >= kitFiles_) return 0;
-    char path[64];
-    std::snprintf(path, sizeof path, "%s/%s", kKitDir, kitNames_[i]);
-    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kRead);
+    const ot::IStorage::Handle h = p_.storage->open(kitFile_[i].path, ot::IStorage::kRead);
     if (h < 0) return 0;
     uint8_t* dst = base + size_t(i) * gb::kKitBankSize;
     uint32_t got = 0;
@@ -242,12 +273,148 @@ int App::kitFileStep(int i) {
         got += uint32_t(n);
     }
     p_.storage->close(h);
-    if (got != gb::kKitBankSize || dst[0] != 0x60 || dst[1] != 0x40) return 0;   // not a kit bank (the offset table starts at 0x4060)
-    kits.setOverride(kitIdx_[i], dst);
-    player.setKits(&kits);
-    playerB.setKits(&kits);
+    if (got != gb::kKitBankSize || dst[0] != 0x60 || dst[1] != 0x40) { kitFile_[i].console = 3; return 0; }   // not a kit bank (the offset table starts at 0x4060)
+    applyKit(i);
     ++kitsLoaded_;
     return 1;
+}
+
+// The kit being edited: a copy of what the console plays for that slot (an empty kit when there is none).
+bool App::kitOpen(int console, int slot) {
+    uint8_t* w = workBuf(console);
+    if (!w || slot < 0 || slot > 63) return false;
+    const gb::Kit k = (console ? kitsB : kits).kit(slot);
+    if (k.data) { std::memcpy(w, k.data, gb::kKitBankSize); return true; }
+    gb::KitBank::clear(w);
+    return false;
+}
+
+// Writes the edit buffer as GB/Kits/<A|B>/<slot>_<kit name>.kit and makes it the kit the console plays. An empty kit erases the file.
+bool App::kitSave(int console, int slot) {
+    error_ = nullptr;
+    uint8_t* w = workBuf(console);
+    if (!w || !p_.storage || slot < gb::kKitFirstUserSlot || slot > gb::kKitLastUserSlot) { error_ = "KITS 1A TO 37 ONLY"; return false; }
+    int at = -1;
+    for (int i = 0; i < kitFiles_; ++i) if (kitFile_[i].console == console && kitFile_[i].idx == slot) at = i;
+    if (!gb::KitBank::hasSamples(w)) {                                   // an empty kit: forget the file
+        if (at >= 0) { p_.storage->remove(kitFile_[at].path); kitFile_[at].console = 3; (console ? kitsB : kits).setOverride(slot, nullptr); }
+        return true;
+    }
+    char nm[9], base[12] = {};
+    gb::KitBank::kitName(w, nm);
+    int n = 0;
+    for (int i = 0; i < 8 && nm[i]; ++i) if (nm[i] != ' ' || n) base[n++] = nm[i] == ' ' ? '_' : nm[i];
+    while (n > 0 && base[n - 1] == '_') base[--n] = 0;
+    if (!n) std::snprintf(base, sizeof base, "KIT");
+    const char* dir = console ? "GB/Kits/B" : "GB/Kits/A";
+    char path[60];
+    std::snprintf(path, sizeof path, "%s/%02X_%s.kit", dir, unsigned(slot), base);
+    p_.storage->mkdir("GB");
+    p_.storage->mkdir(kKitDir);
+    p_.storage->mkdir(dir);
+    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
+    if (h < 0) return false;
+    const bool ok = p_.storage->write(h, w, gb::kKitBankSize) == int32_t(gb::kKitBankSize);
+    p_.storage->close(h);
+    if (!ok) return false;
+    if (at >= 0 && std::strcmp(kitFile_[at].path, path) != 0) p_.storage->remove(kitFile_[at].path);   // renamed
+    if (at < 0) for (int i = 0; i < kitFiles_; ++i) if (kitFile_[i].console == 3) { at = i; break; }
+    if (at < 0) { if (kitFiles_ >= kMaxKitFiles) { error_ = "TOO MANY KIT FILES"; return false; } at = kitFiles_++; }
+    std::snprintf(kitFile_[at].path, sizeof kitFile_[at].path, "%s", path);
+    kitFile_[at].idx = uint8_t(slot);
+    kitFile_[at].console = uint8_t(console);
+    std::memcpy(p_.bigMem + kKitOffset + size_t(at) * gb::kKitBankSize, w, gb::kKitBankSize);
+    applyKit(at);
+    return true;
+}
+
+// ---- firmware images: Firmware/*.ptf, the files the update bootloader accepts ------------------------------------------------------
+
+int App::LinkedTransport::listFirmware() {
+    App* a = app;
+    a->fwCount_ = 0;
+    if (!a->platform().storage) return 0;
+    a->platform().storage->listDir("Firmware", [](const ot::IStorage::DirEntry& e, void* ctx) {
+        App* x = static_cast<App*>(ctx);
+        const size_t n = std::strlen(e.name);
+        bool ok = !e.isDir && n < sizeof x->fwNames_[0];
+        if (ok) {
+            if (x->p_.isUpdateImageName) ok = x->p_.isUpdateImageName(e.name);                      // the device's own rule
+            else ok = n >= 15 && ((!std::strncmp(e.name, "PolyendTrac", 11) && !strcasecmp(e.name + n - 4, ".ptf")) || (!std::strncmp(e.name, "mt", 2) && !strcasecmp(e.name + n - 4, ".hex")));
+        }
+        if (ok && x->fwCount_ < kMaxFirmware) std::snprintf(x->fwNames_[x->fwCount_++], sizeof x->fwNames_[0], "%s", e.name);
+        return x->fwCount_ < kMaxFirmware;
+    }, a);
+    for (int i = 1; i < a->fwCount_; ++i)
+        for (int j = i; j > 0 && strcasecmp(a->fwNames_[j - 1], a->fwNames_[j]) > 0; --j) {
+            char tmp[40]; std::memcpy(tmp, a->fwNames_[j], 40); std::memcpy(a->fwNames_[j], a->fwNames_[j - 1], 40); std::memcpy(a->fwNames_[j - 1], tmp, 40);
+        }
+    return a->fwCount_;
+}
+
+bool App::LinkedTransport::flashFirmware(int i) {
+    App* a = app;
+    a->error_ = nullptr;
+    if (i < 0 || i >= a->fwCount_ || !a->platform().storage) return false;
+    if (!a->platform().requestFirmwareUpdate) { a->error_ = "ONLY ON THE TRACKER"; return false; }
+    a->progress("FLASHING FIRMWARE", 50);
+    const bool ok = a->platform().requestFirmwareUpdate(*a->platform().storage, a->fwNames_[i]);   // does not return when it works
+    a->progress("", 0);
+    if (!ok) a->error_ = "THE UPDATE WAS REFUSED";
+    return ok;
+}
+
+// ---- WAV samples: GB/Samples/*.wav --------------------------------------------------------------------------------------------
+
+int App::LinkedTransport::listSamples() {
+    App* a = app;
+    a->sampleCount_ = 0;
+    if (!a->platform().storage) return 0;
+    a->platform().storage->mkdir("GB");
+    a->platform().storage->mkdir(kSampleDir);
+    a->platform().storage->listDir(kSampleDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
+        App* x = static_cast<App*>(ctx);
+        const size_t n = std::strlen(e.name);
+        if (e.isDir || n < 5 || n > 27 || strcasecmp(e.name + n - 4, ".wav") != 0 || x->sampleCount_ >= kMaxSamples) return x->sampleCount_ < kMaxSamples;
+        std::snprintf(x->sampleNames_[x->sampleCount_++], sizeof x->sampleNames_[0], "%s", e.name);
+        return true;
+    }, a);
+    for (int i = 1; i < a->sampleCount_; ++i)
+        for (int j = i; j > 0 && strcasecmp(a->sampleNames_[j - 1], a->sampleNames_[j]) > 0; --j) {
+            char tmp[28]; std::memcpy(tmp, a->sampleNames_[j], 28); std::memcpy(a->sampleNames_[j], a->sampleNames_[j - 1], 28); std::memcpy(a->sampleNames_[j - 1], tmp, 28);
+        }
+    return a->sampleCount_;
+}
+
+namespace {
+struct CardWav final : gb::WavReader {
+    ot::IStorage* st;
+    ot::IStorage::Handle h;
+    CardWav(ot::IStorage* s, const char* path) : st(s), h(s->open(path, ot::IStorage::kRead)) {}
+    ~CardWav() override { if (h >= 0) st->close(h); }
+    int read(uint32_t off, void* dst, int n) override {
+        if (h < 0 || !st->seek(h, off)) return 0;
+        int got = 0;
+        uint8_t* p = static_cast<uint8_t*>(dst);
+        while (got < n) { const int32_t r = st->read(h, p + got, uint32_t(n - got)); if (r <= 0) break; got += r; }
+        return got;
+    }
+};
+}  // namespace
+
+int App::LinkedTransport::sampleLoad(int i, bool* cut) {
+    App* a = app;
+    uint8_t* out = a->workBuf(2);
+    if (!a->platform().storage || !out || !a->fileBuf() || i < 0 || i >= a->sampleCount_) return 0;
+    char path[64];
+    std::snprintf(path, sizeof path, "%s/%s", kSampleDir, a->sampleNames_[i]);
+    CardWav f(a->platform().storage, path);
+    gb::WavInfo w;
+    if (f.h < 0 || !gb::wavOpen(f, w)) return 0;
+    bool c = false;
+    const int n = gb::wavToNibbles(f, w, reinterpret_cast<int16_t*>(a->fileBuf()), gb::kKitCapacity * 2 - 64, out, int(gb::kKitCapacity), c);
+    if (cut) *cut = c;
+    return n;
 }
 
 bool App::loadKits() {
@@ -523,21 +690,27 @@ bool App::exportFiles(const char* name, int which) {
         std::snprintf(sn, sizeof sn, "%.8s", base[c]);
         ok = saveSong(path, sn, c) && ok;
     }
-    // Kits are not in a song: they are banks of the LSDJ ROM. A ROM with the card's extra kits goes with the export so the Game Boy plays the same drums.
-    if (kitsLoaded_ > 0 && romGot_ >= (1u << 19)) {
-        progress("EXPORT LSDJ", step * 100 / steps);
-        char path[80];
-        std::snprintf(path, sizeof path, "%s/%s_KITS.gb", kExportDir, name ? name : "LSDJ");
-        if (exportRom(path)) {
-            if (romSkipped_ == 0xFF) done_ = "EXPORT DONE + ROM";
-            else { std::snprintf(doneBuf_, sizeof doneBuf_, "KIT %02X: USE 1A-37", romSkipped_); done_ = doneBuf_; }
-        } else ok = false;
+    // Kits are not in a song: they are banks of the LSDJ ROM. Each console gets a copy of the card's ROM with its kits put in (PTSDJ_A.gb, PTSDJ_B.gb), so the
+    // Game Boy plays the same drums as the Tracker.
+    bool anyKits = false;
+    for (int i = 0; i < kitFiles_; ++i) anyKits = anyKits || kitFile_[i].console != 3;
+    if (anyKits && romGot_ >= (1u << 19)) {
+        for (int c = 0; c < 2; ++c) {
+            if (which != 2 && which != c) continue;
+            progress("EXPORT LSDJ", step * 100 / steps);
+            char path[80];
+            std::snprintf(path, sizeof path, "%s/%s_%c.gb", kExportDir, name ? name : "PTSDJ", 'A' + c);
+            if (exportRom(path, c)) {
+                if (romSkipped_ == 0xFF) { if (!done_) done_ = "EXPORT DONE + ROM"; }
+                else { std::snprintf(doneBuf_, sizeof doneBuf_, "KIT %02X: USE 1A-37", romSkipped_); done_ = doneBuf_; }
+            } else ok = false;
+        }
     }
     progress("", 0);
     return ok;
 }
 
-bool App::exportRom(const char* path) {
+bool App::exportRom(const char* path, int console) {
     uint8_t* base = p_.bigMem && p_.bigMemSize >= kKitOffset + kMaxKitFiles * gb::kKitBankSize ? p_.bigMem + kKitOffset : nullptr;
     if (!p_.storage || !base || !p_.bigMem || romGot_ < (1u << 19)) return false;
     const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
@@ -545,15 +718,16 @@ bool App::exportRom(const char* path) {
     bool ok = true;
     romSkipped_ = 0xFF;
     const uint32_t banks = romGot_ / uint32_t(gb::kKitBankSize);
+    const gb::RomKits& set = console ? kitsB : kits;
     for (uint32_t b = 0; b < banks && ok; ++b) {
         const uint8_t* src = p_.bigMem + size_t(b) * gb::kKitBankSize;
-        for (int i = 0; i < kitFiles_; ++i) {             // a kit file loaded for slot n replaces bank 8 + n, if that bank is a kit or empty
-            const uint8_t* kit = base + size_t(i) * gb::kKitBankSize;
-            if (b != 8u + kitIdx_[i] || kit[0] != 0x60 || kit[1] != 0x40) continue;
+        const int idx = int(b) - 8;                            // kit n is bank 8 + n
+        const uint8_t* kit = idx >= 0 && idx < 64 ? set.override_(idx) : nullptr;
+        if (kit && kit[0] == 0x60 && kit[1] == 0x40) {         // the console's own kit for this slot, if the bank is a kit or empty
             bool free = src[0] == 0x60 && src[1] == 0x40;
             if (!free) { free = true; for (size_t k = 0; k < gb::kKitBankSize && free; ++k) free = src[k] == 0xFF; }
             if (free) src = kit;
-            else if (romSkipped_ == 0xFF) romSkipped_ = kitIdx_[i];   // the stock ROM keeps program code in the banks of kits 13-17: never overwritten
+            else if (romSkipped_ == 0xFF) romSkipped_ = uint8_t(idx);   // the stock ROM keeps program code in the banks of kits 13-17: never overwritten
         }
         ok = p_.storage->write(h, src, uint32_t(gb::kKitBankSize)) == int32_t(gb::kKitBankSize);
     }

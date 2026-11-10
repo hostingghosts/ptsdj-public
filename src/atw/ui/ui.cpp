@@ -190,7 +190,8 @@ void GbScreen::draw(ot::Gfx& g) {
         drawLens(g, play, look);
         g.color(0xFFFFFF);
         lcd_.draw(g.display(), kLcdX, kLcdY, 3);
-        g.text(750, 462, ui::kSmall, kLensLight, "?", ot::IDisplay::kOptCenterX);      // F8 explains the page
+        const bool fw = shift_ && lsdj_->screen() == gb::Scr::Project;
+        g.text(750, 462, ui::kSmall, fw ? 0xFFD84A : kLensLight, fw ? "FIRMWARE" : "?", ot::IDisplay::kOptCenterX);      // F8 explains the page; with Shift on the Project page it loads firmware
         if (lsdj_->popup() != gb::Lsdj::kNoPopup && lsdj_->popupPages() > 1) drawPageTab(g);
         return;
     }
@@ -265,6 +266,10 @@ bool GbScreen::button(uint8_t id, bool down) {
         return true;
     }
     if (id <= ot::btn::F8) {
+        if (id == 7 && !splitOn() && shift_ && lsdj_->screen() == Scr::Project) {      // Shift + F8 on the Project page: the firmware loader window
+            if (down) lsdj_->openFirmware();
+            return true;
+        }
         if (id == 7 && !splitOn()) {                       // F8 outside the side by side view: hold it for an explanation of the page
             if (down && lsdj_->screen() != Scr::Help) { lsdj_->showPopup(gb::Lsdj::kPageHelp); popupKey_ = id; }
             else if (!down && popupKey_ == id) closePopup();
@@ -300,7 +305,9 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::Copy: if (down) lsdj_->copyKey(shift_); break;
         case ot::btn::Help: if (down) lsdj_->openHelp(); break;
         case ot::btn::Master: if (down && lsdjA_->syncLinked()) split_ = !split_; break;
-        case ot::btn::SampleLoader: if (down) lsdj_->openLibrary(); break;
+        case ot::btn::SampleLoader: if (down) lsdj_->openLoader(); break;
+        case ot::btn::SampleEditor: if (down) lsdj_->openEditor(); break;
+        case ot::btn::SamplePlayback: if (down) lsdj_->openKit(); break;
         case ot::btn::Song: if (down) { if (shift_) swapConsole(); else lsdj_->jump(Scr::Song); } break;
         case ot::btn::Pattern: if (down) lsdj_->jump(Scr::Chain); break;
         case ot::btn::Note:                                                             // Shift + Note (held): the Phrase page's commands

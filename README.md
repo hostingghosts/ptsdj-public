@@ -28,17 +28,28 @@ Songs live in one bank file per Game Boy, like a real LSDJ cartridge: `GB/Saves/
 (same layout as a cartridge `.sav`; `.srm` is just the name emulators and flash carts give it). SAVE SONG files the song on screen under its project name (the
 same name replaces it, a new name takes the next free slot; "BANK FULL" if all 32 slots or the space are used). LOAD SONG lists that console's bank; loose
 `.lsdsng` files in `GB/Songs` follow with a `+` and are filed into the bank by the next save; Shift + Delete then Insert erases a bank song.
-EXPORT LSDJ saves the chosen song(s) into the bank(s) and copies each bank to `GB/Export/LSDJ_A.srm` / `LSDJ_B.srm` (plus the song as a single `.lsdsng`):
+EXPORT LSDJ saves the chosen song(s) into the bank(s) and copies each bank to `GB/Export/LSDJ_A.srm` / `LSDJ_B.srm` (plus the song as a single `.lsdsng`, and the ROMs with your kits, see below):
 rename the copy to your LSDJ ROM's name (`LSDJ.srm`) for the Game Boy, emulator or flash cart.
 Sample kits are not in a song, they are banks of the LSDJ ROM: a song that uses a kit your cartridge's ROM lacks (GUESSWHO uses kits 16 and 1D) plays noise on a real Game Boy.
-When kit files from `GB/Kits` are loaded, EXPORT LSDJ also writes `GB/Export/LSDJ_KITS.gb`: the ROM from the card with those kits put into their slots (kit n = bank 8 + n); use that ROM on the cartridge or emulator.
+When you have kits (made on the Tracker or `.kit` files in `GB/Kits`), EXPORT LSDJ also writes `GB/Export/PTSDJ_A.gb` and `PTSDJ_B.gb`: the ROM from the card with each console's kits put into their slots (kit n = bank 8 + n); use these ROMs on the cartridges or emulators.
 Only empty or kit banks are replaced: the stock ROM keeps program code where kits 13 to 17 would go, so use slots 1A to 37 for your own kits (name the file `1A_NAME.kit` and set the instrument's kit to 1A). A kit left alone shows as `KIT nn: USE 1A-37` after the export.
 The song list shows ` -TITLE` for a song in the bank and ` +TITLE` for a loose file.
 SYNC: with both projects on, Play on either console starts both; the slave follows the master's tempo (the master's tempo edit also goes into the slave's project).
 Master key (while linked) shows both consoles side by side. An A sits above F1 and a B above F8; hold either to raise a dock that names every F key. F1 / F8 pick
 the console the keys control, F2 / F7 held + jog = level A / B, F3-F6 mute (Shift: solo) the four tracks of the active console.
 Recording from the pads is placed by what you hear: the sequencer's lead over the speakers (the audio queue) is taken off the step position.
-Instrument library (Sample loader key): GB/Instruments/*.gbi. The first row saves the current instrument (name keyboard), the others load into it (its table too).
+Instrument library (`GB/Instruments/*.gbi`): on the Instr page move up above the instrument number to LIBRARY and press Insert. The first row saves the current instrument
+(name keyboard), the others load into it (its table too).
+Sample kits (per console): drum kits are banks of the LSDJ ROM, up to 15 samples and about 2.8 s of 4-bit sound at 11.46 kHz. Put WAV files (PCM 8/16/24 bit, any rate) in `GB/Samples`.
+Sample Loader key: pick a file, Insert converts it (resampled, normalised, 4 bits) and opens the Sample Editor; Play hears it. Sample Editor key: START and END trim it (A + Left/Right or
+the jog wheel; A + Up/Down moves 16 times as far), NAME (3 letters), KIT (1A to 37, the slots that are empty in a stock ROM), ADD TO KIT saves the kit at once. Sample Playback key: the
+kit page, kit number at the top (Left/Right or jog; ROM kits can be heard, not changed), kit NAME, the 15 samples (Insert renames, Delete then Insert erases, Play or a pad hears one).
+Kits are saved as `GB/Kits/A/<slot>_<name>.kit` and `GB/Kits/B/...` (LSDJ kit files); `.kit` files in `GB/Kits` itself serve both consoles. A KIT instrument's KIT 1 / KIT 2 on the Instr page
+pick the kits; note n plays sample n of KIT 1 (note 16 * m + n adds sample m of KIT 2). EXPORT LSDJ writes `GB/Export/PTSDJ_A.gb` and `PTSDJ_B.gb`: the card's ROM with that console's kits
+put into their slots (never over program code: kits 13 to 17 stay).
+Firmware loader: on the Project page hold Shift, the ? over F8 turns into FIRMWARE; press F8 for a window listing `Firmware/*.ptf` (what the bootloader accepts), Insert twice flashes it,
+Delete goes back. The `Firmware/ot_restore.txt` route still works.
+Sample Recorder (line / mic input) is not built yet.
 At power-on the PTSDJ block letters drop onto the display and the Game Boy chime plays (a recording of `assets/boot_chime.wav`, built into the firmware with
 `tools/make_chime.py`).
 Help pages (Help key, F8 pop-ups, the cheat sheets) are left aligned: the name of each key or function is bold, with a blank line between entries; the text is

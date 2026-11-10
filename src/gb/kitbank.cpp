@@ -1,0 +1,96 @@
+#include "gb/kitbank.h"
+
+#include <cstring>
+
+namespace gb {
+
+namespace {
+constexpr int kNames = 0x22, kKitName = 0x52;
+int offsetOf(const uint8_t* b, int i) { return (b[i * 2] | b[i * 2 + 1] << 8) - 0x4000; }
+void setOffset(uint8_t* b, int i, int off) { const int v = off ? off + 0x4000 : 0; b[i * 2] = uint8_t(v); b[i * 2 + 1] = uint8_t(v >> 8); }
+bool padding(const uint8_t* p) {                 // a chunk of nothing: silence (8), zeros or an erased flash
+    for (int k = 1; k < 16; ++k) if (p[k] != p[0]) return false;
+    return p[0] == 0x88 || p[0] == 0x00 || p[0] == 0xFF;
+}
+}  // namespace
+
+void KitBank::clear(uint8_t* b) {
+    std::memset(b, 0x88, kKitBytes);
+    std::memset(b, 0, kKitHeader);
+    for (int i = 0; i < kKitMaxSamples; ++i) { b[kNames + i * 3] = 0; b[kNames + i * 3 + 1] = '-'; b[kNames + i * 3 + 2] = '-'; }
+}
+
+int KitBank::count(const uint8_t* b) {
+    int n = 0;
+    while (n < kKitMaxSamples && (b[n * 2] | b[n * 2 + 1] << 8) != 0) ++n;
+    return n;
+}
+
+int KitBank::length(const uint8_t* b, int i) {
+    const int n = count(b);
+    if (i < 0 || i >= n) return 0;
+    const int end = i + 1 < n ? offsetOf(b, i + 1) : used(b);
+    return end - offsetOf(b, i);
+}
+
+const uint8_t* KitBank::data(const uint8_t* b, int i) { return i >= 0 && i < count(b) ? b + offsetOf(b, i) : nullptr; }
+
+void KitBank::name(const uint8_t* b, int i, char out[4]) {
+    for (int k = 0; k < 3; ++k) { const uint8_t c = b[kNames + i * 3 + k]; out[k] = c >= 32 && c < 127 ? char(c) : ' '; }
+    out[3] = 0;
+}
+
+void KitBank::setName(uint8_t* b, int i, const char* nm) {
+    bool end = !nm;
+    for (int k = 0; k < 3; ++k) { end = end || !nm[k]; b[kNames + i * 3 + k] = end ? ' ' : uint8_t(nm[k]); }
+}
+
+void KitBank::kitName(const uint8_t* b, char out[9]) {
+    for (int k = 0; k < 8; ++k) { const uint8_t c = b[kKitName + k]; out[k] = c >= 32 && c < 127 ? char(c) : ' '; }
+    out[8] = 0;
+}
+
+void KitBank::setKitName(uint8_t* b, const char* nm) {
+    bool end = !nm;
+    for (int k = 0; k < 8; ++k) { end = end || !nm[k]; b[kKitName + k] = end ? ' ' : uint8_t(nm[k]); }
+}
+
+int KitBank::used(const uint8_t* b) {
+    const int n = count(b);
+    if (!n) return kKitHeader;
+    int end = kKitBytes;
+    const int floor = offsetOf(b, n - 1) + 16;                       // the last sample keeps at least one chunk
+    while (end - 16 >= floor && padding(b + end - 16)) end -= 16;
+    return end + 16 <= kKitBytes ? end + 16 : kKitBytes;             // plus the silent chunk that ends it (the last chunk of a sample is not played)
+}
+
+bool KitBank::add(uint8_t* b, const char* nm, const uint8_t* bytes, int n) {
+    const int c = count(b);
+    if (c >= kKitMaxSamples || n <= 0) return false;
+    const int size = paddedSize(n);
+    const int start = c ? used(b) : kKitHeader;
+    if (start + size > kKitBytes) return false;
+    std::memcpy(b + start, bytes, size_t(n));
+    std::memset(b + start + n, 0x88, size_t(size - n));
+    setOffset(b, c, start);
+    setName(b, c, nm);
+    return true;
+}
+
+bool KitBank::remove(uint8_t* b, int i) {
+    const int c = count(b);
+    if (i < 0 || i >= c) return false;
+    const int u = used(b);
+    const int from = offsetOf(b, i), to = i + 1 < c ? offsetOf(b, i + 1) : u, len = to - from;
+    std::memmove(b + from, b + to, size_t(u - to));
+    std::memset(b + u - len, 0x88, size_t(len));
+    for (int k = i; k + 1 < c; ++k) {
+        setOffset(b, k, offsetOf(b, k + 1) - len);
+        std::memcpy(b + kNames + k * 3, b + kNames + (k + 1) * 3, 3);
+    }
+    setOffset(b, c - 1, 0);
+    b[kNames + (c - 1) * 3] = 0; b[kNames + (c - 1) * 3 + 1] = '-'; b[kNames + (c - 1) * 3 + 2] = '-';
+    return true;
+}
+
+}  // namespace gb
