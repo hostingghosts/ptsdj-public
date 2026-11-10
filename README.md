@@ -54,7 +54,7 @@ pick the kits; a kit note is two sample numbers: the low digit n plays sample n 
 put into their slots (only into empty or kit banks).
 Firmware loader: on the Project page hold Shift, the ? over F8 turns into FIRMWARE; press F8 for a window listing `Firmware/*.ptf` (what the bootloader accepts), Insert twice flashes it,
 Delete goes back. The `Firmware/ot_restore.txt` route still works.
-Sample Recorder (line / mic input) is not built yet.
+Sample Recorder key (0.8.0): records the line or mic input into a kit sample. Rows: INPUT (LINE / MIC LOW / MIC HIGH, jog wheel), TRIGGER (AT ONCE, or wait until the input passes LOW / MEDIUM / HIGH), START / STOP (Insert or Play); a level meter shows the input. It records up to 3 s (a kit holds 2.8 s), converts like a WAV (4 bits, normalised, noise-shaped) and opens the Sample Editor with the sound called REC. Delete while recording throws it away. The audio callback copies the input block into SDRAM (`App::recFeed`); the codec input is only switched (`hal::selectInput`) when the recorder page is opened or its input changed, never at boot. The simulator feeds it a made-up tone (`simLine`); on the device it uses the existing I2S receive path, which has not been tried on hardware.
 At power-on the PTSDJ block letters drop onto the display and the Game Boy chime plays (a recording of `assets/boot_chime.wav`, built into the firmware with
 `tools/make_chime.py`).
 Help pages (Help key, F8 pop-ups, the cheat sheets) are left aligned: the name of each key or function is bold, with a blank line between entries; the text is

@@ -45,6 +45,9 @@ struct Platform {
     bool (*isUpdateImageName)(const char* name) = nullptr;
     bool (*requestFirmwareUpdate)(ot::IStorage& fs, const char* image) = nullptr;
     void (*muteOutput)(bool on) = nullptr;   // hardware mute of the output stage (device only)
+    const int16_t* (*lineIn)(void* ctx) = nullptr;                      // the latest 128-frame block of the line / mic input, interleaved L R (device only)
+    bool (*selectInput)(void* ctx, uint8_t source, uint8_t gain) = nullptr;   // 0 line in, 2 mic low gain, 3 mic high gain (codec writes: main loop only)
+    void* inputCtx = nullptr;
 };
 
 class App {
@@ -72,6 +75,9 @@ public:
     // Each Game Boy has one bank file with its 32 songs: GB/Saves/A.srm (song A) and B.srm (song B), the same 128 KB layout as a cartridge save.
     bool saveToBank(int console);              // the song on screen goes into its slot (same name replaces, else the first free one) and the working song is updated
     bool loadFromBank(int slot, int console);
+    void recStart(int thresholdPct);
+    void recStop(bool keep);
+    int recStateNow() const { return recState_.load(std::memory_order_acquire); }   // 0 idle, 1 waiting for sound, 2 recording, 3 done
     bool loadLastSaved(int console);           // at start: the song each console saved last, or an empty one
     bool newSong(int console, const char* name);   // an empty song (the template LSDJ starts from) with this project name
     const char* bankPath(int console) const { return console ? "GB/Saves/B.srm" : "GB/Saves/A.srm"; }
@@ -159,6 +165,7 @@ private:
     ot::IStorage::Handle romH_ = -1;
     uint32_t romGot_ = 0;
     bool exporting_ = false;
+
     bool chimeOn_ = false;                     // the power-on recording is playing instead of the engines
     uint32_t chimePos_ = 0;                    // 16.16 index into the recording
     static constexpr int kChimeGain = 24;      // sixteenths: 1.5 times the recording's level
@@ -169,6 +176,16 @@ private:
     static constexpr int kMaxInst = 400;                                   // the library lists the presets too
     static constexpr uint32_t kInstOffset = kWorkOffset + 3 * gb::kKitBankSize;   // the names live in SDRAM after the edit buffers
     char (*instNames() const)[24] { return p_.bigMem && p_.bigMemSize >= kInstOffset + kMaxInst * 24 ? reinterpret_cast<char (*)[24]>(p_.bigMem + kInstOffset) : nullptr; }
+    // Sample recorder: the audio callback copies the input into a buffer in SDRAM; the main loop starts and stops it and turns the result into a kit sample.
+    enum RecState { kRecIdle = 0, kRecArmed = 1, kRecRunning = 2, kRecDone = 3 };
+    static constexpr uint32_t kRecMax = 132352;                          // samples: 3 seconds at 44.1 kHz, a little more than a kit can hold
+    static constexpr uint32_t kRecOffset = (kInstOffset + kMaxInst * 24 + 15) / 16 * 16;
+    int16_t* recBuf() const { return p_.bigMem && p_.bigMemSize >= kRecOffset + kRecMax * 2 ? reinterpret_cast<int16_t*>(p_.bigMem + kRecOffset) : nullptr; }
+    std::atomic<int> recState_{0};
+    std::atomic<uint32_t> recLen_{0};
+    std::atomic<int> recPeak_{0};                                        // loudest block since it was last read, 0-100
+    int recThreshold_ = 0;                                               // 0-32767: the input has to pass this to start
+    void recFeed(const int16_t* blk, uint32_t frames);
     int instCount_ = 0;
     bool linked() const { return song.at(gb::off::kSync) == 1 && songB.at(gb::off::kSync) == 1; }
     int masterConsole() const { return syncRole_[0] == 1 || syncRole_[1] != 1 ? 0 : 1; }
@@ -211,6 +228,14 @@ private:
             for (int j = i; j >= 0 && j < 14; ++j) std::memcpy(k[j], k[j + 1], 28);
             if (i >= 0 && i < 15) k[14][0] = 0;
         }
+        bool recInput(int source) override { return app->platform().selectInput && app->platform().selectInput(app->platform().inputCtx, uint8_t(source), 0); }
+        bool recAvailable() override { return app->platform().lineIn != nullptr && app->recBuf() != nullptr; }
+        void recStart(int thresholdPct) override { app->recStart(thresholdPct); }
+        void recStop(bool keep) override { app->recStop(keep); }
+        int recState() override { return app->recState_.load(std::memory_order_acquire); }
+        float recSeconds() override { return float(app->recLen_.load(std::memory_order_acquire)) / float(app->platform().sampleRateMilliHz / 1000); }
+        int recPeak() override { return app->recPeak_.exchange(0, std::memory_order_relaxed); }
+        int recConvert(bool* cut) override;
         int listSamples() override;
         const char* sampleName(int i) override { return i >= 0 && i < app->sampleCount_ ? app->sampleNames_[i] : ""; }
         uint8_t* sampleBuf() override { return app->workBuf(2); }

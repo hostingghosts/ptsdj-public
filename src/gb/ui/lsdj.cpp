@@ -157,6 +157,9 @@ void Lsdj::key(Key k, bool down) {
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Loader) loaderRemove();
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Editor) scr_ = Scr::Instr;
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Firmware) scr_ = Scr::Project;
+        else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Recorder) {                                   // Delete: stops and throws the recording away, or leaves
+            if (tr_ && (tr_->recState() == 1 || tr_->recState() == 2)) tr_->recStop(false); else scr_ = Scr::Instr;
+        }
         else if (b_ && !bUsed_ && !sel_ && scr_ == Scr::Wave) {          // a lone B tap copies the wave
             for (int i = 0; i < 16; ++i) waveClip_[i] = s_.wave(waveNo)[i];
             hasClip_ = true;
@@ -185,7 +188,8 @@ void Lsdj::key(Key k, bool down) {
                 p_.previewOn(2, 25, Player::kScratch);
                 auditionHeld_ = true;
             }
-        } else if (scr_ == Scr::Library) libPreviewKey();                                           // the library: Play previews the sound, nothing is put in the song
+        } else if (scr_ == Scr::Recorder) recToggle();                                            // the recorder: Play starts and stops it
+        else if (scr_ == Scr::Library) libPreviewKey();                                           // the library: Play previews the sound, nothing is put in the song
         else if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) kitAudition();    // the sample pages: Play hears the sample
         else if (!sel_ && scr_ == Scr::Chain) { if (tr_) tr_->startSolo(console_, songCh, 0, chain); else p_.start(0, songCh, 0, false, chain); }   // Play on the Chain page: just this chain, looping
         else if (!sel_ && scr_ == Scr::Phrase) { if (tr_) tr_->startSolo(console_, songCh, phrase, -1); else p_.start(0, songCh, phrase); }          // on the Phrase page: just this phrase
@@ -378,6 +382,7 @@ void Lsdj::navigate(Key k) {
         case Scr::File: scr_ = Scr::Project; return;                  // the song list is a sub-page of Project
         case Scr::Help: return;
         case Scr::Library: libStopPreview(); scr_ = Scr::Instr; return;
+        case Scr::Recorder: if (tr_ && (tr_->recState() == 1 || tr_->recState() == 2)) tr_->recStop(false); scr_ = Scr::Instr; return;
         case Scr::Loader: case Scr::Editor: case Scr::Kit: case Scr::Firmware: scr_ = Scr::Instr; return;
     }
     static const Scr main[5] = {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table};
@@ -416,6 +421,7 @@ void Lsdj::move(Key k) {
         case Scr::Library: libSel = clampi(libSel + dy + dx * 13, 0, libCount); break;                     // Left / Right turn a page of 13
         case Scr::Loader: case Scr::Editor: case Scr::Kit: kitMove(k); break;
         case Scr::Firmware: fwSel = clampi(fwSel + dy, 0, fwCount ? fwCount - 1 : 0); break;
+        case Scr::Recorder: recRow = clampi(recRow + dy, 0, 2); break;
         case Scr::Synth: synthRow = clampi(synthRow + dy, 0, 9); if (dx) synthCol = clampi(synthCol + dx, 0, 1); break;
         case Scr::Wave:
             waveCol = clampi(waveCol + dx, 0, 31);
@@ -449,6 +455,7 @@ void Lsdj::press(Key) {
             }
             break;
         case Scr::Loader: case Scr::Editor: case Scr::Kit: kitPress(); break;
+        case Scr::Recorder: if (recRow == 2) recToggle(); break;
         case Scr::Firmware:
             if (tr_ && fwCount) { std::snprintf(statusBuf_, sizeof statusBuf_, "FLASH IT? INSERT=YES"); status_ = statusBuf_; confirm_ = 12; }
             break;
@@ -461,6 +468,12 @@ void Lsdj::press(Key) {
 }
 
 void Lsdj::editKey(Key k) {
+    if (scr_ == Scr::Recorder) {                         // the jog wheel: the input or the trigger level
+        const int dir = (k == Key::Right || k == Key::Up) ? 1 : -1;
+        if (recRow == 0) { recInput = clampi(recInput + dir, 0, 2); if (tr_ && tr_->recAvailable()) tr_->recInput(recInput == 0 ? 0 : recInput == 1 ? 2 : 3); }
+        else if (recRow == 1) recTrig = clampi(recTrig + dir, 0, 3);
+        return;
+    }
     if (scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit) { kitEdit(k); return; }
     if (scr_ == Scr::Synth) { synthEdit(k); return; }
     if (scr_ == Scr::Wave) { waveEdit(k); return; }
@@ -1102,6 +1115,7 @@ void Lsdj::draw(Lcd& l) const {
         case Scr::Editor: drawEditor(l); break;
         case Scr::Kit: drawKit(l); break;
         case Scr::Firmware: drawFirmware(l); break;
+        case Scr::Recorder: drawRecorder(l); break;
     }
     if (!fullPage()) drawPanel(l, scr_ != Scr::Wave);
     if (msg_[0] && scr_ != Scr::Wave) ptext(l, kPc, 4, msg_, true);
@@ -1327,6 +1341,7 @@ const Entry kMovingTxt[] = {
     {"SAMPLE LOADER KEY", "Pick a WAV file to turn into a drum sample."},
     {"SAMPLE EDITOR KEY", "Cut a sample and add it to a kit."},
     {"SAMPLE PLAYBACK KEY", "The kit page: hear and edit the samples."},
+    {"SAMPLE RECORDER KEY", "Record a sound from the line or mic input."},
     {"SHIFT + ARROWS", "Move between the pages."},
 };
 const Entry kEditingTxt[] = {
@@ -1390,6 +1405,7 @@ const Entry kSamplesTxt[] = {
     {"COPY A SOUND", "On the kit page, move to any sample, even one in a ROM kit, and press Insert. It opens in the Sample Editor. Cut it, then add it to your own kit."},
     {"STEP 4", "On the Instr page, make a KIT sound and set KIT 1 to your kit number. In a phrase, the note column shows sample names: sample 1, sample 2, and so on."},
     {"LAYER TWO KITS", "Set KIT 2 on the Instr page too. In the phrase, Insert + Up/Down adds a sample of KIT 2 to a step. It plays together with the KIT 1 sample."},
+    {"RECORD ONE", "Press the SAMPLE RECORDER key. Pick LINE or MIC, press Insert, and make the sound. When it stops, the SAMPLE EDITOR opens with it."},
     {"SAMPLE PLAYBACK KEY", "Shows the samples in a kit. Play or a pad hears one. Change the kit number at the top."},
     {"SIZE", "A kit holds about 2.8 seconds of sound in all."},
     {"SAVING", "Every change to a kit is saved to the SD card at once."},
@@ -1624,6 +1640,16 @@ const Entry kFirmwareWinTxt[] = {
     {"INSERT", "Asks first. Press Insert again to flash it."},
     {"BKSP", "Go back."},
 };
+const Entry kRecorderTxt[] = {
+    {"", "Records a sound from the line or mic input and turns it into a kit sample."},
+    {"INPUT", "LINE for a cable from another device. MIC LOW or MIC HIGH for the microphone. The jog wheel changes it."},
+    {"TRIGGER", "When recording starts. AT ONCE starts when you press Insert. LOW, MEDIUM and HIGH wait until the sound passes that loudness."},
+    {"START / STOP", "Insert or Play. It records up to 2.8 seconds, or until you stop it."},
+    {"LEVEL", "How loud the input is now. Keep it out of the very top."},
+    {"AFTER", "The Sample Editor opens with the sound. Cut it and add it to a kit."},
+    {"BKSP", "While recording: stops and throws it away. Otherwise goes back."},
+};
+const Section kRecorderDocs[] = {sec("SAMPLE RECORDER", kRecorderTxt)};
 const Section kLoaderDocs[] = {sec("SAMPLE LOADER", kLoaderTxt)};
 const Section kEditorDocs[] = {sec("SAMPLE EDITOR", kEditorTxt)};
 const Section kKitDocs[] = {sec("KIT PAGE", kKitTxt)};
@@ -1661,6 +1687,7 @@ const Section* docsFor(Lsdj::Popup p, Scr s, int& n) {
         case Scr::Editor: return DOC_SET(kEditorDocs);
         case Scr::Kit: return DOC_SET(kKitDocs);
         case Scr::Firmware: return DOC_SET(kFirmwareDocs);
+        case Scr::Recorder: return DOC_SET(kRecorderDocs);
         default: return DOC_SET(kHelpDocs);
     }
 }
@@ -1721,7 +1748,7 @@ bool Lsdj::docsFit() {
     int n;
     bool ok = true;
     for (Popup p : {kPhraseSheet, kTableSheet}) { const Section* d = docsFor(p, Scr::Song, n); ok = ok && fits(d, n); }
-    for (Scr s : {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table, Scr::Groove, Scr::Project, Scr::Synth, Scr::Wave, Scr::File, Scr::Library, Scr::Loader, Scr::Editor, Scr::Kit, Scr::Firmware, Scr::Help}) {
+    for (Scr s : {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table, Scr::Groove, Scr::Project, Scr::Synth, Scr::Wave, Scr::File, Scr::Library, Scr::Loader, Scr::Editor, Scr::Kit, Scr::Firmware, Scr::Recorder, Scr::Help}) {
         const Section* d = docsFor(kPageHelp, s, n);
         ok = ok && fits(d, n);
     }

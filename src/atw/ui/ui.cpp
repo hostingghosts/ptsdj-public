@@ -154,6 +154,8 @@ bool GbScreen::splitOn() const { return split_ && lsdjA_ && lsdjA_->syncLinked()
 
 void GbScreen::prepare(ot::IDisplay& d) {
     if (!lsdj_) return;
+    lsdjA_->poll();
+    if (lsdjB_) lsdjB_->poll();
     lcd_.setLook(app_->look());
     if (splitOn()) {
         lsdjA_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamA);
@@ -308,6 +310,7 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::SampleLoader: if (down) lsdj_->openLoader(); break;
         case ot::btn::SampleEditor: if (down) lsdj_->openEditor(); break;
         case ot::btn::SamplePlayback: if (down) lsdj_->openKit(); break;
+        case ot::btn::SampleRecorder: if (down) lsdj_->openRecorder(); break;
         case ot::btn::Song: if (down) { if (shift_) swapConsole(); else lsdj_->jump(Scr::Song); } break;
         case ot::btn::Pattern: if (down) lsdj_->jump(Scr::Chain); break;
         case ot::btn::Note:                                                             // Shift + Note (held): the Phrase page's commands

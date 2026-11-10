@@ -1,0 +1,12 @@
+wait 300
+tap SAMPLERECORDER
+tap DOWN
+tap DOWN
+screenshot ../build/sim/rec1.png
+tap INSERT
+wait 60
+screenshot ../build/sim/rec2.png
+wait 1500
+tap INSERT
+wait 300
+screenshot ../build/sim/rec3.png

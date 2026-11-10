@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -26,6 +27,23 @@
 #include "sdl_audio.h"
 #include "sw_display.h"
 #include "ui/buttons.h"
+
+// The simulator's input: a 150 Hz tone that decays, then silence, then again.
+static const int16_t* simLine(void*) {
+    static int16_t blk[256];
+    static double ph = 0;
+    static int n = 0;
+    const int pos = n++ % 200;
+    for (int i = 0; i < 128; ++i) {
+        const double env = pos < 90 ? std::exp(-pos / 30.0) : 0.0;
+        blk[2 * i] = blk[2 * i + 1] = int16_t(std::sin(ph) * 14000 * env);
+        ph += 6.2831853 * 150 / 44100.0;
+    }
+    return blk;
+}
+static bool simSelectInput(void*, uint8_t, uint8_t) { return true; }
+
+
 
 namespace appns = atw;
 
@@ -121,6 +139,8 @@ struct Machine {
             audio = &sdlAudio;
         }
         appns::Platform p;
+        p.lineIn = &simLine;                // a made-up line input: a falling tone every half second, so the recorder can be tried on the desktop
+        p.selectInput = &simSelectInput;
         p.display = &display;
         p.audio = audio;
         p.storage = &storage;

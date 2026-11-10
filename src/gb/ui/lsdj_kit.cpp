@@ -249,6 +249,80 @@ void Lsdj::openFirmware() {
     scr_ = Scr::Firmware;
 }
 
+// ---- the sample recorder ---------------------------------------------------------------------------------------------------
+
+void Lsdj::openRecorder() {
+    if (!tr_) return;
+    recRow = 0;
+    recLevel_ = 0;
+    status_ = "";
+    if (tr_->recAvailable()) tr_->recInput(recInput == 0 ? 0 : recInput == 1 ? 2 : 3);       // only now does the input path get switched on
+    scr_ = Scr::Recorder;
+}
+
+// Insert / Play on the recorder: start waiting for sound, or stop and keep what there is.
+void Lsdj::recToggle() {
+    if (!tr_ || !tr_->recAvailable()) { status_ = "NO INPUT ON THIS DEVICE"; return; }
+    const int st = tr_->recState();
+    if (st == 1 || st == 2) { tr_->recStop(true); return; }
+    static const int kTrig[4] = {0, 4, 10, 25};
+    tr_->recInput(recInput == 0 ? 0 : recInput == 1 ? 2 : 3);
+    tr_->recStart(kTrig[recTrig & 3]);
+    status_ = "";
+}
+
+// Called every frame: a finished recording becomes the sample in the editor.
+void Lsdj::poll() {
+    if (scr_ != Scr::Recorder || !tr_) return;
+    if (tr_->recState() != 3) return;
+    bool cut = false;
+    const int n = tr_->recConvert(&cut);
+    if (n <= 0) { status_ = "NOTHING HEARD"; return; }
+    smpLen = n;
+    smpLoaded_ = -1;
+    smpStart = 0;
+    smpEnd = n / 16;
+    smpEditIdx = -1;
+    smpSrc_[0] = 0;
+    smpLoaderSrc_[0] = 0;
+    std::memcpy(smpName_, "REC", 4);
+    kitSelect(kitSlot);
+    smpRow = 0;
+    std::snprintf(statusBuf_, sizeof statusBuf_, "RECORDED %.1fS%s", double(nibbleSeconds(n)), cut ? " (CUT)" : "");
+    status_ = statusBuf_;
+    scr_ = Scr::Editor;
+}
+
+void Lsdj::drawRecorder(Lcd& l) const {
+    l.boldText(0, 0, console_ ? "SAMPLE RECORDER B" : "SAMPLE RECORDER A");
+    const bool have = tr_ && tr_->recAvailable();
+    const int st = tr_ ? tr_->recState() : 0;
+    char b[40];
+    if (!have) l.text(0, 1, "NO INPUT ON THIS DEVICE");
+    else if (status_[0] && st == 0) l.text(0, 1, status_);
+    else if (st == 1) l.text(0, 1, "WAITING FOR SOUND...");
+    else if (st == 2) { std::snprintf(b, sizeof b, "RECORDING %.1fS", double(tr_->recSeconds())); l.text(0, 1, b); }
+    else l.text(0, 1, "READY");
+    static const char* const in[3] = {"LINE", "MIC LOW", "MIC HIGH"};
+    static const char* const tr[4] = {"AT ONCE", "LOW", "MEDIUM", "HIGH"};
+    std::snprintf(b, sizeof b, "INPUT   %s", in[recInput % 3]);
+    l.text(0, 3, b, recRow == 0);
+    std::snprintf(b, sizeof b, "TRIGGER %s", tr[recTrig & 3]);
+    l.text(0, 4, b, recRow == 1);
+    l.text(0, 5, st == 1 || st == 2 ? "STOP" : "START", recRow == 2);
+    // the level meter: the loudest input lately, falling back
+    if (tr_) { const int v = tr_->recPeak(); recLevel_ = std::max(v, recLevel_ - 6); }
+    l.text(0, 8, "LEVEL");
+    l.frame(0, 72, 160, 12, 3);
+    l.rect(2, 74, 156 * std::min(100, recLevel_) / 100, 8, 3);
+    l.text(0, 11, "RECORDS UP TO 2.8 SECONDS");
+    l.text(0, 12, "THEN THE SAMPLE EDITOR");
+    l.text(0, 13, "OPENS TO CUT AND ADD IT");
+    l.text(0, 14, "TO A KIT");
+    l.text(0, 16, "INSERT/PLAY=START/STOP");
+    l.text(0, 17, "BKSP=CANCEL  JOG=CHANGE");
+}
+
 // ---- drawing -------------------------------------------------------------------------------------------------------------------
 
 void Lsdj::drawLoader(Lcd& l) const {

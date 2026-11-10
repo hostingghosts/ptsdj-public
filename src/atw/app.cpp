@@ -20,7 +20,90 @@ void fillSilence(int16_t* out, uint32_t frames, void*) {
 }
 }  // namespace
 
+// The recorder, in the audio callback: the newest input block goes into the buffer (left and right averaged). Armed, it waits for the input to pass the
+// threshold; the block that passes it is kept.
+void App::recFeed(const int16_t* blk, uint32_t frames) {
+    int16_t* buf = recBuf();
+    if (!buf) return;
+    int peak = 0;
+    int16_t mono[256];
+    const uint32_t n = frames > 256 ? 256 : frames;
+    for (uint32_t i = 0; i < n; ++i) {
+        const int m = (int(blk[2 * i]) + int(blk[2 * i + 1])) / 2;
+        mono[i] = int16_t(m);
+        peak = std::max(peak, m < 0 ? -m : m);
+    }
+    const int pct = peak * 100 / 32768;
+    if (pct > recPeak_.load(std::memory_order_relaxed)) recPeak_.store(pct, std::memory_order_relaxed);
+    int st = recState_.load(std::memory_order_relaxed);
+    if (st == kRecArmed) {
+        if (peak < recThreshold_) return;
+        st = kRecRunning;
+        recLen_.store(0, std::memory_order_relaxed);
+        recState_.store(kRecRunning, std::memory_order_relaxed);
+    }
+    if (st != kRecRunning) return;
+    uint32_t len = recLen_.load(std::memory_order_relaxed);
+    if (len + n > kRecMax) { recState_.store(kRecDone, std::memory_order_release); return; }
+    std::memcpy(buf + len, mono, n * sizeof(int16_t));
+    len += n;
+    recLen_.store(len, std::memory_order_release);
+    if (len + n > kRecMax) recState_.store(kRecDone, std::memory_order_release);   // full
+}
+
+void App::recStart(int thresholdPct) {
+    recThreshold_ = thresholdPct * 32768 / 100;
+    recLen_.store(0, std::memory_order_relaxed);
+    recPeak_.store(0, std::memory_order_relaxed);
+    recState_.store(kRecArmed, std::memory_order_release);
+}
+
+void App::recStop(bool keep) {
+    const int st = recState_.load(std::memory_order_acquire);
+    if (st == kRecArmed || st == kRecRunning) recState_.store(keep && recLen_.load() > 0 ? kRecDone : kRecIdle, std::memory_order_release);
+}
+
+namespace {
+// The recording as a 16-bit mono WAV the converter can read.
+struct PcmSource final : gb::WavReader {
+    const int16_t* d;
+    uint32_t bytes;
+    PcmSource(const int16_t* p, uint32_t n) : d(p), bytes(n * 2) {}
+    int read(uint32_t off, void* dst, int n) override {
+        if (off >= bytes) return 0;
+        const int k = int(std::min<uint32_t>(uint32_t(n), bytes - off));
+        std::memcpy(dst, reinterpret_cast<const uint8_t*>(d) + off, size_t(k));
+        return k;
+    }
+};
+}  // namespace
+
+// What was recorded becomes a kit sample in the sample buffer (cut to what a kit holds, normalised, 4 bits).
+int App::LinkedTransport::recConvert(bool* cut) {
+    App* a = app;
+    const uint32_t len = a->recLen_.load(std::memory_order_acquire);
+    int16_t* pcm = a->recBuf();
+    uint8_t* out = a->workBuf(2);
+    a->recState_.store(kRecIdle, std::memory_order_release);
+    if (!pcm || !out || !a->fileBuf() || len < 512) return 0;
+    PcmSource src(pcm, len);
+    gb::WavInfo w;
+    w.rate = int(a->platform().sampleRateMilliHz / 1000);
+    w.channels = 1;
+    w.bits = 16;
+    w.dataOff = 0;
+    w.dataBytes = len * 2;
+    bool c = false;
+    const int n = gb::wavToNibbles(src, w, reinterpret_cast<int16_t*>(a->fileBuf()), gb::kKitCapacity * 2 - 64, out, int(gb::kKitCapacity), c);
+    if (cut) *cut = c;
+    return n;
+}
+
 void App::fill(int16_t* out, uint32_t frames) {
+    {
+        const int rs = recState_.load(std::memory_order_relaxed);
+        if ((rs == kRecArmed || rs == kRecRunning) && p_.lineIn) { if (const int16_t* blk = p_.lineIn(p_.inputCtx)) recFeed(blk, frames); }
+    }
     uint32_t tail = ringTail_.load(std::memory_order_relaxed);
     const uint32_t head = ringHead_.load(std::memory_order_acquire);
     if (flush_.exchange(false, std::memory_order_acq_rel)) {                        // a new playback or note starts: drop the silence queued before it

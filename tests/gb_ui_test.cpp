@@ -79,6 +79,14 @@ struct FakeAudio final : ot::IAudioOut {
 bool gMuted = false;
 void muteStub(bool on) { gMuted = on; }
 
+static int gLineAmp = 0, gInputSel = -1;                       // a fake line input: a sine of this size, and the source last selected
+static const int16_t* fakeLine(void*) {
+    static int16_t blk[256];
+    static double ph = 0;
+    for (int i = 0; i < 128; ++i) { blk[2 * i] = blk[2 * i + 1] = int16_t(std::sin(ph) * gLineAmp); ph += 6.2831853 * 220 / 44117.0; }
+    return blk;
+}
+static bool fakeSelect(void*, uint8_t src, uint8_t) { gInputSel = src; return true; }
 static int gFwCalls = 0;
 static char gFwName[64];
 static bool fwStub(ot::IStorage&, const char* image) { ++gFwCalls; std::snprintf(gFwName, sizeof gFwName, "%s", image); return true; }
@@ -101,6 +109,8 @@ struct Rig {
         p.audio = withAudio ? &audio : nullptr;
         p.muteOutput = &muteStub;
         p.requestFirmwareUpdate = &fwStub;
+        p.lineIn = &fakeLine;
+        p.selectInput = &fakeSelect;
         gMuted = false;
         CHECK(app.init(p));
         app.boot();
@@ -1803,4 +1813,54 @@ TEST(a_kit_note_in_the_phrase_picks_a_sample_of_each_of_two_kits_and_layers_them
     for (int w = 0; w < 20; ++w) { p.render(out, 441, 44100); for (int i = 0; i < 441; ++i) peak = std::max(peak, std::abs(int(out[2 * i]))); }
     CHECK(peak > 200);
     p.stop();
+}
+
+TEST(the_recorder_waits_for_sound_records_it_and_opens_it_in_the_editor) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    gInputSel = -1;
+    gLineAmp = 0;
+    CHECK_EQ(gInputSel, -1);                                    // nothing touches the input before the page is opened
+    tap(r, ot::btn::SampleRecorder);
+    CHECK(l.screen() == gb::Scr::Recorder);
+    CHECK_EQ(gInputSel, 0);                                     // line in
+    l.recRow = 0;
+    l.encoder(1);                                               // the jog wheel: mic low
+    CHECK_EQ(gInputSel, 2);
+    l.encoder(-1);
+    CHECK_EQ(gInputSel, 0);
+    l.recTrig = 1;                                              // LOW
+    l.recRow = 2;
+    keyTap(r, ot::btn::Insert);                                 // START: waiting for sound
+    int16_t out[2 * 512];
+    for (int b = 0; b < 20; ++b) { r.loop(2); r.app.fill(out, 128); }
+    CHECK_EQ(r.app.recStateNow(), int(1));              // still waiting: nothing is loud enough
+    gLineAmp = 12000;
+    for (int b = 0; b < 40; ++b) { r.loop(2); r.app.fill(out, 128); }
+    CHECK_EQ(r.app.recStateNow(), int(2));              // recording
+    gb::Lcd lcd;
+    l.draw(lcd);
+    keyTap(r, ot::btn::Insert);                                 // STOP: keeps it
+    r.loop(40);                                                 // the next frame turns it into a sample
+    CHECK(l.screen() == gb::Scr::Editor);
+    CHECK(l.smpLen > 100);
+    CHECK(std::strcmp(l.sampleName(), "REC") == 0);
+    // a long take stops by itself when the buffer is full and the sample is cut to what a kit holds
+    tap(r, ot::btn::SampleRecorder);
+    l.recTrig = 0;                                              // AT ONCE
+    l.recRow = 2;
+    keyTap(r, ot::btn::Insert);
+    for (int b = 0; b < 1200; ++b) { r.app.fill(out, 128); }    // about 3.5 seconds
+    CHECK_EQ(r.app.recStateNow(), int(3));
+    r.loop(40);
+    CHECK(l.screen() == gb::Scr::Editor);
+    CHECK(l.smpLen > 14000 && l.smpLen <= gb::kKitCapacity);
+    // Delete while recording throws it away
+    tap(r, ot::btn::SampleRecorder);
+    l.recRow = 2;
+    keyTap(r, ot::btn::Insert);
+    for (int b = 0; b < 10; ++b) r.app.fill(out, 128);
+    keyTap(r, ot::btn::Delete);
+    CHECK_EQ(r.app.recStateNow(), int(0));
+    CHECK(l.screen() == gb::Scr::Recorder);
 }

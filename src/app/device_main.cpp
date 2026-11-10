@@ -83,6 +83,8 @@ extern "C" int main(void) {
         p.isUpdateImageName = &hal::isUpdateImageName;
         p.requestFirmwareUpdate = &hal::requestFirmwareUpdate;
         p.muteOutput = &hal::muteOutput;
+        p.lineIn = &hal::lineIn;                       // the recorder reads these only while its page is open
+        p.selectInput = &hal::selectInput;
         if (gApp.init(p)) {
             hal::setPowerOffHook(&powerOffHook);
             gApp.ui.showSplash(3600);

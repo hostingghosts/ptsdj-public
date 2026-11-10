@@ -12,7 +12,7 @@
 namespace gb {
 
 enum class Key : uint8_t { Up, Down, Left, Right, A, B, Select, Start };
-enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove, File, Help, Library, Loader, Editor, Kit, Firmware };
+enum class Scr : uint8_t { Project, Wave, Synth, Song, Chain, Phrase, Instr, Table, Groove, File, Help, Library, Loader, Editor, Kit, Firmware, Recorder };
 
 // Starts and stops playback for the whole machine (one or two consoles); the UI of a console calls it instead of its own player.
 struct Transport {
@@ -54,6 +54,15 @@ struct Transport {
     virtual const char* kitSource(int console, int i) { (void)console; (void)i; return ""; }   // the WAV file sample i of the kit being edited came from ("" if none)
     virtual void setKitSource(int console, int i, const char* wav) { (void)console; (void)i; (void)wav; }
     virtual void removeKitSource(int console, int i) { (void)console; (void)i; }              // sample i left the kit: the ones after it move up
+    // The sample recorder (line or mic input): the audio callback fills a buffer; the page starts, stops and converts it to a kit sample.
+    virtual bool recInput(int source) { (void)source; return false; }                // 0 line in, 2 mic low gain, 3 mic high gain
+    virtual bool recAvailable() { return false; }                                    // this device has an input
+    virtual void recStart(int thresholdPct) { (void)thresholdPct; }                  // wait for the input to pass the threshold (0: start at once), then record
+    virtual void recStop(bool keep) { (void)keep; }
+    virtual int recState() { return 0; }                                             // 0 idle, 1 waiting for sound, 2 recording, 3 done
+    virtual float recSeconds() { return 0; }
+    virtual int recPeak() { return 0; }                                              // loudest input since the last call, 0-100
+    virtual int recConvert(bool* cut) { (void)cut; return 0; }                       // the recording as a kit sample in sampleBuf(): bytes, 0 if nothing was heard
     virtual int listSamples() { return 0; }                                           // GB/Samples/*.wav
     virtual const char* sampleName(int i) { (void)i; return ""; }
     virtual uint8_t* sampleBuf() { return nullptr; }                                  // the sample being prepared: packed 4-bit, up to 16 KB
@@ -141,6 +150,9 @@ public:
     void openEditor();
     void openKit();
     void openFirmware();
+    void openRecorder();
+    void poll();                                 // once per frame: a finished recording turns into a sample
+    int recRow = 0, recInput = 0, recTrig = 2;   // Recorder: the cursor row, the input (0 line, 1 mic low, 2 mic high), the trigger level (0 now, 1 low, 2 medium, 3 high)
     int fwSel = 0, fwCount = 0;                 // Firmware window: the update images in /Firmware
     int smpSel = 0, smpCount = 0;               // Loader: the WAV list
     int smpLen = 0, smpStart = 0, smpEnd = 0, smpRow = 0;   // Editor: bytes in the prepared sample, trim in chunks of 16 bytes, cursor row
@@ -252,6 +264,9 @@ private:
     void drawEditor(Lcd& l) const;
     void drawKit(Lcd& l) const;
     void drawFirmware(Lcd& l) const;
+    void drawRecorder(Lcd& l) const;
+    void recToggle();
+    mutable int recLevel_ = 0;               // the meter, falling back after a peak
     void kitMove(Key k);
     void kitEdit(Key k);
     void kitPress();
@@ -275,7 +290,7 @@ private:
     void loaderRemove();
     bool inKit(const char* wav) const;
     char smpSrc_[28] = {};                   // the WAV the prepared sample came from
-    bool fullPage() const { return scr_ == Scr::File || scr_ == Scr::Library || scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit || scr_ == Scr::Firmware; }
+    bool fullPage() const { return scr_ == Scr::File || scr_ == Scr::Library || scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit || scr_ == Scr::Firmware || scr_ == Scr::Recorder; }
     char smpName_[4] = "SMP";
     int smpLoaded_ = -1;
     const char* status_ = "";
