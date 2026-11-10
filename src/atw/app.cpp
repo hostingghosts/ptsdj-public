@@ -234,6 +234,7 @@ static void bankName(const gb::Lsdj& l, int console, char* out) {
 
 bool App::saveToBank(int console) {
     error_ = nullptr;
+    (console ? songB : song).repairKitInstruments();
     if (!p_.storage || !fileBuf()) return false;
     p_.storage->mkdir("GB");
     p_.storage->mkdir(kSaveDir);
@@ -830,6 +831,8 @@ static bool copyFile(ot::IStorage* st, uint8_t* buf, uint32_t cap, const char* f
 // (or `name`_A / _B), named like the ROM it goes with (PTSDJ_A.gb), for the cartridge's save, and the song also goes out as a single .lsdsng for LSDJ's file manager.
 bool App::exportFiles(const char* name, int which) {
     if (!p_.storage || !fileBuf()) return false;
+    song.repairKitInstruments();
+    songB.repairKitInstruments();
     p_.storage->mkdir("GB");
     p_.storage->mkdir(kExportDir);
     char base[2][16], bank[2][16];

@@ -1574,6 +1574,32 @@ TEST(the_editors_level_row_turns_a_sample_down_as_it_is_added_so_layers_have_roo
     CHECK_EQ(l.smpLevel, 0);                                    // the next one starts at full level again
 }
 
+TEST(kit_instruments_carry_lsdjs_d0_in_byte_10_or_layered_notes_play_garbage_in_the_rom) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    uint8_t* in = r.app.song.instrument(5);
+    in[0] = 0; in[1] = 0xA0; in[4] = 0xFF;
+    l.instr = 5;
+    keyTap(r, ot::btn::Instr);
+    l.instrRow = 1;                                             // TYPE: pulse -> wave -> kit
+    l.encoder(1);
+    l.encoder(1);
+    CHECK_EQ(int(in[0]), 2);
+    CHECK_EQ(int(in[10]), 0xD0);                                // what every LSDJ kit instrument has
+    CHECK_EQ(int(in[14]), 0xF3);
+    // kit instruments from earlier builds (zeros there) are repaired before a save or an export
+    uint8_t* old = r.app.song.instrument(9);
+    old[0] = 2; old[9] = 0x15; old[2] = 0x15;
+    CHECK(r.app.song.repairKitInstruments());
+    CHECK_EQ(int(old[10]), 0xD0);
+    CHECK_EQ(int(old[9]), 0x15);                                // nothing else touched
+    CHECK(!r.app.song.repairKitInstruments());
+    uint8_t* pulse = r.app.song.instrument(10);
+    pulse[0] = 0;
+    r.app.song.repairKitInstruments();
+    CHECK_EQ(int(pulse[10]), 0);                                // only kits
+}
+
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
     Rig r;
     gb::Lsdj& l = r.app.lsdj;

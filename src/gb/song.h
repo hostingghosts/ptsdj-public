@@ -64,6 +64,19 @@ public:
     uint8_t& chainTrans(int chain, int step) { return m_[off::kChainTrans + chain * 16 + step]; }
     uint8_t& songCell(int row, int channel) { return m_[off::kSong + row * 4 + channel]; }
     uint8_t* instrument(int i) { return m_ + off::kInstr + i * 16; }
+    // LSDJ's kit instruments all carry D0 in byte 10 (P+L+VIB) and F3 in byte 14; measured on LSDJ 9.4.2: with byte 10 = 0 a layered note (KIT 2) plays garbage
+    // instead of the mix of the two samples. Kit instruments made by older builds had zeros there; this puts LSDJ's values in. True if anything changed.
+    bool repairKitInstruments() {
+        bool any = false;
+        for (int i = 0; i < 64; ++i) {
+            uint8_t* in = instrument(i);
+            if (in[0] != 2 || in[10] != 0) continue;
+            in[10] = 0xD0;
+            if (!in[14]) in[14] = 0xF3;
+            any = true;
+        }
+        return any;
+    }
     uint8_t* groove(int g) { return m_ + off::kGroove + g * 16; }
     uint8_t* synth(int s) { return m_ + off::kSynth + s * 16; }
     uint8_t* wave(int frame) { return m_ + off::kWave + frame * 16; }
