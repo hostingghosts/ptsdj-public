@@ -1,0 +1,10 @@
+wait 120
+screenshot @/01-boot.png
+wait 400
+screenshot @/02-first.png
+tap FILE
+wait 30
+screenshot @/03-file-list.png
+tap DOWN
+tap DOWN
+screenshot @/03b-file-list2.png
