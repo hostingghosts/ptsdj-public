@@ -237,6 +237,7 @@ private:
     int curInstr() const;
     int previewChannel(int instrIdx) const;
     void recordNote(int ch, int note);
+    void fixInstr(int i);                    // an all-zero instrument becomes the pulse default
     // sample kit screens (lsdj_kit.cpp)
     void drawLoader(Lcd& l) const;
     void drawEditor(Lcd& l) const;

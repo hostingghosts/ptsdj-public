@@ -1640,3 +1640,28 @@ TEST(the_library_lists_hundreds_of_presets_and_left_right_turn_a_page) {
     gb::Lcd lcd;
     l.draw(lcd);
 }
+
+TEST(a_new_songs_empty_instruments_sound_the_first_time_they_are_used_and_a_type_change_starts_from_its_defaults) {
+    for (int type = 0; type < 4; ++type) {
+        if (type == 2) continue;                                // a kit needs the ROM's kits
+        Rig r;
+        gb::Lsdj& l = r.app.lsdj;
+        r.app.newSong(0, "X");
+        l.instr = 5;                                            // an instrument nobody has touched: all zeros
+        keyTap(r, ot::btn::Instr);
+        CHECK_EQ(int(r.app.song.instrument(5)[1]), 0xA0);       // opening it gives the pulse default
+        l.instrRow = 1;                                         // TYPE
+        for (int i = 0; i < type; ++i) l.encoder(1);
+        CHECK_EQ(int(r.app.song.instrument(5)[0] & 3), type);
+        CHECK(r.app.song.instrument(5)[1] != 0);                // not silent: the type's own default
+        padEvent(r, ot::InputEvent::kPadDown, 20);
+        int peak = 0;
+        int16_t out[2 * 512];
+        for (int block = 0; block < 12; ++block) {
+            r.loop(2);
+            r.app.fill(out, 512);
+            for (int i = 0; i < 512; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
+        }
+        CHECK(peak > 300);                                      // heard, not a click
+    }
+}

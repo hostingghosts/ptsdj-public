@@ -55,6 +55,23 @@ FieldSet fieldsFor(int type) {
 }
 }  // namespace
 
+namespace {
+// What LSDJ writes into an instrument the first time it is used: a sound you can hear at once. (A new song's instruments are all zeros, which is silence.)
+const uint8_t kInstrDefault[4][16] = {
+    {0x00, 0xA0, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x03, 0x00, 0x00, 0xD0, 0x00, 0x00, 0x00, 0xF3, 0x00},      // pulse
+    {0x01, 0xA8, 0x0F, 0x00, 0xFF, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},      // wave
+    {0x02, 0xA8, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},      // kit
+    {0x03, 0xA0, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x03, 0x00, 0x00, 0xD0, 0x00, 0x00, 0x00, 0xF3, 0x00},      // noise
+};
+}  // namespace
+
+// An empty instrument (all zeros) gets the pulse default before it is shown, heard or put in a phrase.
+void Lsdj::fixInstr(int i) {
+    uint8_t* in = s_.instrument(i & 63);
+    for (int k = 0; k < 16; ++k) if (in[k]) return;
+    std::memcpy(in, kInstrDefault[0], 16);
+}
+
 int Lsdj::instrRows() const { return 2 + fieldsFor(s_.instrument(instr)[0]).n; }   // name, type, fields
 
 // ---- input ----------------------------------------------------------------------------------------------------------
@@ -67,6 +84,7 @@ void Lsdj::markHandDrawn(int wave) {
 
 void Lsdj::key(Key k, bool down) {
     if (down) msg_ = "";
+    if (scr_ == Scr::Instr) fixInstr(instr);
     if (prompt_ && down) {                              // the overwrite question takes the keys
         if (k == Key::Left) promptYes_ = true;
         else if (k == Key::Right) promptYes_ = false;
@@ -213,6 +231,7 @@ void Lsdj::tableAudition() {
 
 void Lsdj::encoder(int delta) {
     if (!delta) return;
+    if (scr_ == Scr::Instr) fixInstr(instr);
     if (nameOpen_) { for (int i = 0, n = delta < 0 ? -delta : delta; i < n; ++i) nameKey(delta > 0 ? Key::Right : Key::Left); return; }
     if (scr_ == Scr::Help) { helpPage = clampi(helpPage + (delta > 0 ? 1 : -1), 0, helpPages() - 1); return; }
     if (popup_) { popupTurn(delta > 0 ? 1 : -1); return; }
@@ -264,6 +283,7 @@ void Lsdj::padDown(int pad) {
         if (kb && i < KitBank::count(kb)) p_.auditionData(KitBank::data(kb, i), KitBank::length(kb, i));
         return;
     }
+    fixInstr(curInstr());
     int ins = curInstr();
     int note;
     const bool scratch = scr_ == Scr::Wave || scr_ == Scr::Synth;
@@ -306,9 +326,11 @@ void Lsdj::jump(Scr target) {
     if (a >= 0 && b >= 0) {
         while (a < b) { navigate(Key::Right); ++a; }
         while (a > b) { navigate(Key::Left); --a; }
+        if (scr_ == Scr::Instr) fixInstr(instr);
         return;
     }
     scr_ = target;
+    if (scr_ == Scr::Instr) fixInstr(instr);
 }
 
 void Lsdj::openLibrary() {
@@ -355,7 +377,8 @@ void Lsdj::navigate(Key k) {
             if (scr_ == Scr::Phrase) { const int i = s_.phraseInstr(phrase, step); if (i != 0xFF) instr = i & 63; }
             if (scr_ == Scr::Instr) { const uint8_t t = s_.instrument(instr)[6]; if (t & 0x20) table = t & 0x1F; }
             scr_ = main[col + 1];
-        } else if (k == Key::Left && col > 0) scr_ = main[col - 1];
+            if (scr_ == Scr::Instr) fixInstr(instr);
+        } else if (k == Key::Left && col > 0) { scr_ = main[col - 1]; if (scr_ == Scr::Instr) fixInstr(instr); }
         else if (k == Key::Up) scr_ = col <= 1 ? Scr::Project : col == 2 ? Scr::Synth : Scr::Wave;
         else if (k == Key::Down) scr_ = Scr::Groove;
     } else if (row == 0) {
@@ -399,8 +422,8 @@ void Lsdj::press(Key) {
             if (chainCol == 0) { uint8_t& p = s_.chainPhrase(chain, chainPos); if (p == 0xFF) { p = lastPhrase_; s_.markPhrase(p); } }
             break;
         case Scr::Phrase:
-            if (phraseCol == 0) { uint8_t& n = s_.note(phrase, step); if (!n) { n = lastNote_; if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_; s_.markPhrase(phrase); } }
-            else if (phraseCol == 1) { uint8_t& i = s_.phraseInstr(phrase, step); if (i == 0xFF) i = lastInstr_; }
+            if (phraseCol == 0) { uint8_t& n = s_.note(phrase, step); if (!n) { n = lastNote_; if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_; fixInstr(s_.phraseInstr(phrase, step)); s_.markPhrase(phrase); } }
+            else if (phraseCol == 1) { uint8_t& i = s_.phraseInstr(phrase, step); if (i == 0xFF) i = lastInstr_; fixInstr(i); }
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
         case Scr::Project: projectAct(); break;
@@ -452,6 +475,7 @@ void Lsdj::editKey(Key k) {
             } else if (phraseCol == 1) {
                 uint8_t& i = s_.phraseInstr(phrase, step);
                 if (i == 0xFF) i = lastInstr_; else i = uint8_t(clampi(i + d, 0, kInstruments - 1));
+                fixInstr(i);
                 lastInstr_ = i; s_.markInstrument(i);
             } else if (phraseCol == 2) {
                 uint8_t& c = s_.phraseCmd(phrase, step);
@@ -463,7 +487,7 @@ void Lsdj::editKey(Key k) {
             if (instrRow == -1) { instr = clampi(instr + d, 0, kInstruments - 1); break; }   // the number at the top
             uint8_t* in = s_.instrument(instr);
             if (instrRow == 0) break;
-            if (instrRow == 1) { in[0] = uint8_t((in[0] + sgn) & 3); s_.markInstrument(instr); break; }
+            if (instrRow == 1) { std::memcpy(in, kInstrDefault[(in[0] + sgn) & 3], 16); s_.markInstrument(instr); break; }   // a new type starts from that type's defaults
             const FieldSet fs = fieldsFor(in[0]);
             const Field& f = fs.f[instrRow - 2];
             int v = (in[f.byte] & f.mask) >> f.shift;
@@ -1349,7 +1373,8 @@ const Entry kPhraseTxt[] = {
 const Entry kInstrTxt[] = {
     {"", "An instrument is a sound you can play."},
     {"THE NUMBER", "Move up to the number at the top. Then use < > or the jog wheel to pick one. The pads play it as you go."},
-    {"TYPE", "Pulse, wave, kit or noise. The rows below change with the type."},
+    {"TYPE", "Pulse, wave, kit or noise. The rows below change with the type. Changing the type starts the sound again from that type's plain settings."},
+    {"EMPTY SOUNDS", "An instrument nobody has used yet starts as a plain pulse sound you can hear at once."},
     {"NAME", "Press Insert to type a name."},
     {"ENVELOPE", "How the volume goes up and down."},
     {"TABLE", "A list of extra steps for this sound."},
