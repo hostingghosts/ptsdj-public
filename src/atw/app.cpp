@@ -362,6 +362,7 @@ bool App::LinkedTransport::deleteSongFile(int i, int console) {
 }
 
 bool App::LinkedTransport::action(Action a, int slot) {
+    app->done_ = nullptr;
     char name[8];
     std::snprintf(name, sizeof name, "S%02d", slot);
     switch (a) {
@@ -507,7 +508,8 @@ bool App::exportFiles(const char* name, int which) {
     std::snprintf(bank[1], sizeof bank[1], "%s_B", name ? name : "LSDJ");
     bool ok = true;
     int step = 0;
-    const int steps = (which == 2 ? 6 : 3);
+    done_ = nullptr;
+    const int steps = (which == 2 ? 6 : 3) + 1;
     for (int c = 0; c < 2; ++c) {
         if (which != 2 && which != c) continue;
         char path[80], sn[16];
@@ -521,7 +523,33 @@ bool App::exportFiles(const char* name, int which) {
         std::snprintf(sn, sizeof sn, "%.8s", base[c]);
         ok = saveSong(path, sn, c) && ok;
     }
+    // Kits are not in a song: they are banks of the LSDJ ROM. A ROM with the card's extra kits goes with the export so the Game Boy plays the same drums.
+    if (kitsLoaded_ > 0 && romGot_ >= (1u << 19)) {
+        progress("EXPORT LSDJ", step * 100 / steps);
+        char path[80];
+        std::snprintf(path, sizeof path, "%s/%s_KITS.gb", kExportDir, name ? name : "LSDJ");
+        if (exportRom(path)) done_ = "EXPORT DONE + ROM"; else ok = false;
+    }
     progress("", 0);
+    return ok;
+}
+
+bool App::exportRom(const char* path) {
+    uint8_t* base = p_.bigMem && p_.bigMemSize >= kKitOffset + kMaxKitFiles * gb::kKitBankSize ? p_.bigMem + kKitOffset : nullptr;
+    if (!p_.storage || !base || !p_.bigMem || romGot_ < (1u << 19)) return false;
+    const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
+    if (h < 0) return false;
+    bool ok = true;
+    const uint32_t banks = romGot_ / uint32_t(gb::kKitBankSize);
+    for (uint32_t b = 0; b < banks && ok; ++b) {
+        const uint8_t* src = p_.bigMem + size_t(b) * gb::kKitBankSize;
+        for (int i = 0; i < kitFiles_; ++i) {             // a kit file loaded for slot n replaces bank 8 + n
+            const uint8_t* kit = base + size_t(i) * gb::kKitBankSize;
+            if (b == 8u + kitIdx_[i] && kit[0] == 0x60 && kit[1] == 0x40) src = kit;
+        }
+        ok = p_.storage->write(h, src, uint32_t(gb::kKitBankSize)) == int32_t(gb::kKitBankSize);
+    }
+    p_.storage->close(h);
     return ok;
 }
 

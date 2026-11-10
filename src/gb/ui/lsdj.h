@@ -31,6 +31,7 @@ struct Transport {
     virtual bool loadSongFile(int i, int console) = 0;               // session actions from the Project screen; false = failed
     virtual bool deleteSongFile(int i, int console) = 0;             // removes a bank slot (not a loose file); false = failed
     virtual const char* errorText() { return nullptr; }              // why the last action failed, if it knows (e.g. "BANK FULL")
+    virtual const char* doneText() { return nullptr; }               // what to say instead of the usual success text, if there is more to tell
     // The virtual link cable: 0 off, 1 master, 2 slave. The slave follows the master's tempo.
     virtual int syncMode(int console) = 0;
     virtual void setSyncMode(int console, int mode) = 0;

@@ -30,6 +30,9 @@ same name replaces it, a new name takes the next free slot; "BANK FULL" if all 3
 `.lsdsng` files in `GB/Songs` follow with a `+` and are filed into the bank by the next save; Shift + Delete then Insert erases a bank song.
 EXPORT LSDJ saves the chosen song(s) into the bank(s) and copies each bank to `GB/Export/LSDJ_A.srm` / `LSDJ_B.srm` (plus the song as a single `.lsdsng`):
 rename the copy to your LSDJ ROM's name (`LSDJ.srm`) for the Game Boy, emulator or flash cart.
+Sample kits are not in a song, they are banks of the LSDJ ROM: a song that uses a kit your cartridge's ROM lacks (GUESSWHO uses kits 16 and 1D) plays noise on a real Game Boy.
+When kit files from `GB/Kits` are loaded, EXPORT LSDJ also writes `GB/Export/LSDJ_KITS.gb`: the ROM from the card with those kits put into their slots (kit n = bank 8 + n); use that ROM on the cartridge or emulator.
+The song list shows ` -TITLE` for a song in the bank and ` +TITLE` for a loose file.
 SYNC: with both projects on, Play on either console starts both; the slave follows the master's tempo (the master's tempo edit also goes into the slave's project).
 Master key (while linked) shows both consoles side by side. An A sits above F1 and a B above F8; hold either to raise a dock that names every F key. F1 / F8 pick
 the console the keys control, F2 / F7 held + jog = level A / B, F3-F6 mute (Shift: solo) the four tracks of the active console.

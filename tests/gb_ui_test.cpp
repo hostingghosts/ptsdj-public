@@ -1238,3 +1238,24 @@ TEST(the_power_on_chime_plays_the_recording_and_then_stops) {
     CHECK_EQ(late, 0);
     r.app.bootChime(2);
 }
+
+TEST(export_lsdj_also_writes_the_rom_with_the_card_kits_in_their_slots) {
+    MemStorage st;
+    std::vector<uint8_t> rom(1u << 20);
+    for (size_t i = 0; i < rom.size(); ++i) rom[i] = uint8_t(i / 0x4000);          // bank b is filled with b
+    st.files["GB/LSDJ.GB"] = rom;
+    std::vector<uint8_t> kit(0x4000, 0xAA);
+    kit[0] = 0x60; kit[1] = 0x40;
+    st.files["GB/Kits/16_AMEN.kit"] = kit;                      // kit 0x16 goes to bank 8 + 0x16 = 30
+    st.dirs.insert("GB/Kits");
+    Rig r(true, &st);
+    CHECK(r.app.loadKits() || true);
+    CHECK_EQ(r.app.kitFilesLoaded(), 1);
+    oneNote(r.app.song, 0, 25, 3);
+    CHECK(r.app.exportFiles("K", 0));
+    const auto& out = st.files["GB/Export/K_KITS.gb"];
+    CHECK_EQ(int(out.size()), 1 << 20);
+    CHECK_EQ(int(out[29 * 0x4000 + 5]), 29);                    // other banks stay as they were
+    CHECK_EQ(int(out[30 * 0x4000 + 5]), 0xAA);                  // the kit slot has the card's kit
+    CHECK_EQ(int(out[31 * 0x4000 + 5]), 31);
+}

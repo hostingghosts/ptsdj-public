@@ -27,4 +27,5 @@ Checks, in order (stop at the first failure and report what the screen showed):
 17. Power-on chime: a recording of the supplied WAV now. Tell me if it still sounds short or different.
 18. Help key and F8 pop-ups: text is left aligned, names in bold, a blank line between entries; more pages than before.
 19. New in 0.4.1: hold F8 on a page with a long explanation; a tab with `<` and `>` appears at the lower left, over F1 and F2. F1 turns back, F2 forward, Left/Right still work.
+21. New in 0.4.2: the song list is ` -TITLE` (a bold LOAD SONG title, a blank row under the hint). With kit files in `GB/Kits`, EXPORT LSDJ ends with `EXPORT DONE + ROM` and writes `GB/Export/LSDJ_KITS.gb` (1 MB). Run that ROM with `LSDJ_A.srm` renamed to match: GUESSWHO's hi-hat should sound like it does on the Tracker. Report if the ROM does not start.
 20. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.

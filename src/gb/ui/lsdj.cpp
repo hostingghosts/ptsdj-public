@@ -532,7 +532,7 @@ void Lsdj::setName(const char* n) {
 void Lsdj::projectAct() {
     auto act = [&](Transport::Action a, int arg, const char* ok, const char* bad) {
         if (!tr_) return;
-        status_ = tr_->action(a, arg) ? ok : (tr_->errorText() ? tr_->errorText() : bad);
+        status_ = tr_->action(a, arg) ? (tr_->doneText() ? tr_->doneText() : ok) : (tr_->errorText() ? tr_->errorText() : bad);
     };
     switch (projRow) {
         case 0: openName(1); break;
@@ -1164,6 +1164,7 @@ const Entry kSavingTxt[] = {
     {"SHIFT + BKSP", "In the song list, erases the song under the cursor."},
     {"EXPORT WAV", "Makes an audio file."},
     {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as LSDJ_A.SRM or LSDJ_B.SRM."},
+    {"KITS", "Drum kits live in the LSDJ ROM, not in the song. If you added kits in GB/Kits, EXPORT LSDJ also writes LSDJ_KITS.GB: your ROM with those kits in. Use it on the Game Boy."},
     {"ON A GAME BOY", "Give the copy the same name as your LSDJ ROM, like LSDJ.SRM."},
 };
 const Section kHelpDocs[] = {sec("WELCOME", kWelcomeTxt), sec("MOVING AROUND", kMovingTxt), sec("EDITING", kEditingTxt), sec("PLAYING", kPlayingTxt),
@@ -1281,6 +1282,7 @@ const Entry kFileTxt[] = {
     {"", "These are the songs for this Game Boy."},
     {"UP / DOWN", "Choose a song."},
     {"INSERT", "Loads it into the song on screen."},
+    {"- BEFORE A NAME", "A song in the save file."},
     {"+ BEFORE A NAME", "A loose file from GB/Songs. Saving files it in the save file."},
     {"SHIFT + BKSP", "Erases the song under the cursor. Press Insert to say yes."},
     {"BKSP", "Go back."},
@@ -1578,13 +1580,17 @@ void Lsdj::drawWave(Lcd& l) const {
 }
 
 void Lsdj::drawFile(Lcd& l) const {
-    l.text(0, 0, console_ ? "LOAD SONG B" : "LOAD SONG A");
+    l.boldText(0, 0, console_ ? "LOAD SONG B" : "LOAD SONG A");
     if (!fileCount) { l.text(0, 2, "NO SONGS YET"); l.text(0, 3, "SAVE SONG ADDS ONE"); return; }
     l.text(0, 1, status_[0] ? status_ : "SHIFT+BKSP=ERASE");
-    const int top = std::max(0, std::min(fileSel - 8, fileCount - 16));
-    for (int r = 0; r < 16 && top + r < fileCount; ++r) {
-        char s[24]; std::snprintf(s, sizeof s, "%-19.19s", tr_ ? tr_->songName(top + r) : "");
-        l.text(0, 2 + r, s, top + r == fileSel);
+    // a blank row, then the songs: a space and a dash before each title (a plus for a loose file from GB/Songs)
+    const int rows = 15, top = std::max(0, std::min(fileSel - rows / 2, fileCount - rows));
+    for (int r = 0; r < rows && top + r < fileCount; ++r) {
+        const char* nm = tr_ ? tr_->songName(top + r) : "";
+        char s[32];
+        if (nm[0] == '+') std::snprintf(s, sizeof s, " +%-17.17s", nm + 1);
+        else std::snprintf(s, sizeof s, " -%-17.17s", nm);
+        l.text(0, 3 + r, s, top + r == fileSel);
     }
 }
 

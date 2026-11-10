@@ -103,6 +103,8 @@ private:
     char songNames_[kMaxSongs][24] = {};
     uint8_t songSlot_[kMaxSongs] = {};         // bank slot of each listed song, 0xFF = a loose file
     const char* error_ = nullptr;
+    const char* done_ = nullptr;               // success text when the export also wrote a ROM
+    bool exportRom(const char* path);          // the card's LSDJ ROM with the GB/Kits files put into their kit slots
     bool installSong(size_t n, int console, const char* name);   // the .lsdsng in fileBuf() becomes this console's song
     int songCount_ = 0;
     static constexpr uint32_t kRomBytes = 1u << 20, kFileBytes = 64 * 1024, kScratchOffset = kRomBytes, kScratchBytes = kFileBytes + gb::kMemSize;
@@ -158,6 +160,7 @@ private:
         bool loadSongFile(int i, int console) override;
         bool deleteSongFile(int i, int console) override;
         const char* errorText() override { return app->error_; }
+        const char* doneText() override { return app->done_; }
         int syncMode(int console) override { const gb::Song& s = console ? app->songB : app->song; return s.at(gb::off::kSync) == 1 ? app->syncRole_[console] : 0; }
         void setSyncMode(int console, int mode) override;
         void tempoChanged(int console) override;
