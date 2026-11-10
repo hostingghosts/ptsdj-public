@@ -753,14 +753,14 @@ void Lsdj::openName(int target) {
     nameMax_ = target == 3 || target == 5 ? 3 : target ? 8 : 5;
     nameCx_ = nameCy_ = 0;
     std::memset(nameBuf_, 0, sizeof nameBuf_);
-    if (target == 1) std::strncpy(nameBuf_, name_, 8);
+    if (target == 1) std::snprintf(nameBuf_, sizeof nameBuf_, "%.8s", name_);
     else if (target == 6) {}                                              // a new song starts with no name at all
     else if (target == 3) {}                                             // a sample name starts empty: three letters fill it, so there would be no room to type
     else if (target == 4 || target == 5) {
         const uint8_t* kb = kitBuf();
         if (kb && target == 4 && KitBank::hasSamples(kb)) KitBank::kitName(kb, nameBuf_);
     }
-    else { char tmp[6]; instrName(instr, tmp); std::strncpy(nameBuf_, tmp, 5); }
+    else { char tmp[6]; instrName(instr, tmp); std::snprintf(nameBuf_, sizeof nameBuf_, "%.5s", tmp); }
     for (int i = int(std::strlen(nameBuf_)) - 1; i >= 0 && nameBuf_[i] == ' '; --i) nameBuf_[i] = 0;
     if (target == 2 && !nameBuf_[0]) std::snprintf(nameBuf_, sizeof nameBuf_, "INST%02X", instr);
     nameOpen_ = true;
