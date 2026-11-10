@@ -1,4 +1,5 @@
 #include "gb/kits.h"
+#include "gb/kitbank.h"
 
 namespace gb {
 
@@ -20,8 +21,9 @@ bool Kit::range(int i, int& begin, int& end) const {
 Kit RomKits::kit(int index) const {
     Kit k;
     if (index >= 0 && index < 64 && over_[index]) { k.data = over_[index]; return k; }
-    const size_t off = (8 + size_t(index)) * kKitBankSize;
-    if (rom_ && index >= 0 && off + kKitBankSize <= size_ && rom_[off] == 0x60 && rom_[off + 1] == 0x40) k.data = rom_ + off;
+    const int bank = kitBank(index);
+    const size_t off = bank < 0 ? 0 : size_t(bank) * kKitBankSize;
+    if (rom_ && bank >= 0 && off + kKitBankSize <= size_ && rom_[off] == 0x60 && rom_[off + 1] == 0x40) k.data = rom_ + off;
     return k;
 }
 

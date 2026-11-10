@@ -192,6 +192,18 @@ private:
         int listFirmware() override;
         const char* firmwareName(int i) override { return i >= 0 && i < app->fwCount_ ? app->fwNames_[i] : ""; }
         bool flashFirmware(int i) override;
+        bool kitSampleName(int console, int kit, int sample, char out[4]) override {
+            const gb::Kit k = (console ? app->kitsB : app->kits).kit(kit);
+            if (!k.data || sample < 0 || sample >= gb::KitBank::count(k.data)) return false;
+            gb::KitBank::name(k.data, sample, out);
+            return true;
+        }
+        bool kitName(int console, int kit, char out[9]) override {
+            const gb::Kit k = (console ? app->kitsB : app->kits).kit(kit);
+            if (!k.data || !gb::KitBank::hasSamples(k.data)) return false;
+            gb::KitBank::kitName(k.data, out);
+            return true;
+        }
         const char* kitSource(int console, int i) override { return i >= 0 && i < 15 ? app->kitSrc_[console ? 1 : 0][i] : ""; }
         void setKitSource(int console, int i, const char* wav) override { if (i >= 0 && i < 15) std::snprintf(app->kitSrc_[console ? 1 : 0][i], sizeof app->kitSrc_[0][0], "%s", wav); }
         void removeKitSource(int console, int i) override {

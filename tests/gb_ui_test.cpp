@@ -1253,26 +1253,28 @@ TEST(the_power_on_chime_plays_the_recording_and_then_stops) {
     r.app.bootChime(2);
 }
 
-TEST(export_lsdj_also_writes_the_rom_with_the_card_kits_in_free_slots_only) {
+TEST(export_lsdj_also_writes_the_rom_with_the_card_kits_in_the_banks_lsdj_reads_them_from) {
     MemStorage st;
     std::vector<uint8_t> rom(1u << 20);
-    for (size_t i = 0; i < rom.size(); ++i) rom[i] = i / 0x4000 >= 34 ? 0xFF : uint8_t(i / 0x4000 + 1);   // bank b holds b + 1; banks 34 and up are empty
+    for (size_t i = 0; i < rom.size(); ++i) rom[i] = i / 0x4000 == 35 ? 0x55 : i / 0x4000 >= 34 ? 0xFF : uint8_t(i / 0x4000 + 1);   // bank b holds b + 1; banks 34 and 36 up are empty, 35 is something else
     st.files["GB/LSDJ.GB"] = rom;
     std::vector<uint8_t> kit(0x4000, 0xAA);
     kit[0] = 0x60; kit[1] = 0x40;
-    st.files["GB/Kits/1A_AMEN.kit"] = kit;                      // kit 0x1A goes to bank 8 + 0x1A = 34, which is empty
-    st.files["GB/Kits/16_CODE.kit"] = kit;                      // kit 0x16 would land on bank 30: program code, must stay
+    st.files["GB/Kits/15_AMEN.kit"] = kit;                      // kit 0x15 is bank 34, which is empty
+    st.files["GB/Kits/16_OTHER.kit"] = kit;                     // kit 0x16 is bank 35, which holds something else: it must stay
+    st.files["GB/Kits/1A_AMEN.kit"] = kit;                      // kit 0x1A is bank 39 (n + 13), empty
     st.dirs.insert("GB/Kits");
     Rig r(true, &st);
     r.app.loadKits();
-    CHECK_EQ(r.app.kitFilesLoaded(), 2);
+    CHECK_EQ(r.app.kitFilesLoaded(), 3);
     oneNote(r.app.song, 0, 25, 3);
     CHECK(r.app.exportFiles("K", 0));
     const auto& out = st.files["GB/Export/K_A.gb"];
     CHECK_EQ(int(out.size()), 1 << 20);
-    CHECK_EQ(int(out[30 * 0x4000 + 5]), 31);                    // the code bank is untouched
-    CHECK_EQ(int(out[34 * 0x4000 + 5]), 0xAA);                  // the kit is in its free slot
-    CHECK_EQ(int(out[35 * 0x4000 + 5]), 0xFF);
+    CHECK_EQ(int(out[30 * 0x4000 + 5]), 31);                    // other banks are untouched
+    CHECK_EQ(int(out[34 * 0x4000 + 5]), 0xAA);                  // kit 15 is in its bank
+    CHECK_EQ(int(out[35 * 0x4000 + 5]), 0x55);                  // the occupied bank stays
+    CHECK_EQ(int(out[39 * 0x4000 + 5]), 0xAA);                  // kit 1A is in bank 39, where LSDJ reads kit 1A
 }
 
 // ---- sample kits ----------------------------------------------------------------------------------------------------------------
@@ -1311,17 +1313,17 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     keyTap(r, ot::btn::Insert);                                 // Insert adds KICK to kit 1A at once
     CHECK(l.screen() == gb::Scr::Loader);
     CHECK(std::strstr(l.status(), "ADDED") != nullptr);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.kit")), 1);     // saved at once for console A
-    CHECK_EQ(int(st.files["GB/Kits/A/1A_KIT1A.kit"].size()), 0x4000);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.src")), 1);     // it remembers where the sample came from (the check mark)
-    CHECK(std::string(st.files["GB/Kits/A/1A_KIT1A.src"].begin(), st.files["GB/Kits/A/1A_KIT1A.src"].end()).find("KICK.wav") != std::string::npos);
-    CHECK(r.app.kits.kit(0x1A).data != nullptr);                // console A plays it
-    CHECK(r.app.kitsB.kit(0x1A).data == nullptr);               // console B does not
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.kit")), 1);     // saved at once for console A
+    CHECK_EQ(int(st.files["GB/Kits/A/15_KIT15.kit"].size()), 0x4000);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.src")), 1);     // it remembers where the sample came from (the check mark)
+    CHECK(std::string(st.files["GB/Kits/A/15_KIT15.src"].begin(), st.files["GB/Kits/A/15_KIT15.src"].end()).find("KICK.wav") != std::string::npos);
+    CHECK(r.app.kits.kit(0x15).data != nullptr);                // console A plays it
+    CHECK(r.app.kitsB.kit(0x15).data == nullptr);               // console B does not
     gb::Lcd lcd0;
     l.draw(lcd0);
     keyTap(r, ot::btn::Insert);
     CHECK(std::strstr(l.status(), "ALREADY") != nullptr);       // not twice
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 1);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), 1);
     // SNARE: Shift + Insert opens it in the editor to cut it, then ADD TO KIT
     keyTap(r, ot::btn::Down);
     r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
@@ -1338,11 +1340,11 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     l.smpRow = 5;                                               // ADD TO KIT
     keyTap(r, ot::btn::Insert);
     CHECK(std::strstr(l.status(), "ADDED") != nullptr);
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 2);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), 2);
     // the kit page lists both
     tap(r, ot::btn::SamplePlayback);
     CHECK(l.screen() == gb::Scr::Kit);
-    CHECK_EQ(l.kitSlot, 0x1A);
+    CHECK_EQ(l.kitSlot, 0x15);
     gb::Lcd lcd;
     l.draw(lcd);
     padEvent(r, ot::InputEvent::kPadDown, 1);
@@ -1364,7 +1366,7 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     l.smpSel = 0;
     keyTap(r, ot::btn::Delete);
     CHECK(std::strstr(l.status(), "REMOVED") != nullptr);
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 1);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x15).data), 1);
     keyTap(r, ot::btn::Delete);
     CHECK(std::strstr(l.status(), "NOT IN") != nullptr);
     // erasing the last sample on the kit page removes the kit's files
@@ -1373,8 +1375,8 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     keyTap(r, ot::btn::Delete);
     CHECK(std::strstr(l.status(), "ERASE") != nullptr);
     keyTap(r, ot::btn::Insert);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.kit")), 0);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.src")), 0);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.kit")), 0);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.src")), 0);
 }
 
 TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_after_asking) {
@@ -1387,7 +1389,7 @@ TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_af
     keyTap(r, ot::btn::Insert);                                 // KICK into kit 1A
     keyTap(r, ot::btn::Down);
     keyTap(r, ot::btn::Insert);                                 // SNARE too
-    const uint8_t* kit = r.app.kits.kit(0x1A).data;
+    const uint8_t* kit = r.app.kits.kit(0x15).data;
     CHECK_EQ(gb::KitBank::count(kit), 2);
     const int kickLen = gb::KitBank::length(kit, 0);
     const int snareLen = gb::KitBank::length(kit, 1);
@@ -1410,13 +1412,13 @@ TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_af
     keyTap(r, ot::btn::Insert);
     gb::Lcd lcd;
     l.draw(lcd);
-    CHECK_EQ(gb::KitBank::length(r.app.kits.kit(0x1A).data, 0), kickLen);
+    CHECK_EQ(gb::KitBank::length(r.app.kits.kit(0x15).data, 0), kickLen);
     keyTap(r, ot::btn::Delete);                                 // BKSP says no
-    CHECK_EQ(gb::KitBank::length(r.app.kits.kit(0x1A).data, 0), kickLen);
+    CHECK_EQ(gb::KitBank::length(r.app.kits.kit(0x15).data, 0), kickLen);
     keyTap(r, ot::btn::Insert);
     keyTap(r, ot::btn::Insert);                                 // yes
     CHECK(std::strstr(l.status(), "REPLACED") != nullptr);
-    kit = r.app.kits.kit(0x1A).data;
+    kit = r.app.kits.kit(0x15).data;
     CHECK_EQ(gb::KitBank::count(kit), 2);                       // replaced, not added
     CHECK(gb::KitBank::length(kit, 0) < kickLen);
     CHECK_EQ(gb::KitBank::length(kit, 1), snareLen);            // the next one is untouched
@@ -1512,7 +1514,7 @@ TEST(on_the_kit_page_insert_opens_a_sample_in_the_editor_and_shift_insert_rename
     CHECK(l.screen() == gb::Scr::Editor);
     CHECK_EQ(l.smpLen, 160);
     CHECK(std::strcmp(l.sampleName(), "ABC") == 0);
-    CHECK_EQ(l.kitSlot, 0x1A);                                  // a ROM sample goes to the first kit of your own
+    CHECK_EQ(l.kitSlot, 0x15);                                  // a ROM sample goes to the first kit of your own
 }
 
 TEST(play_on_the_chain_phrase_and_table_pages_plays_just_that_and_shift_play_plays_the_song) {
@@ -1734,4 +1736,71 @@ TEST(every_export_writes_the_rom_with_the_save_of_the_same_name_even_without_kit
     for (size_t i = 0; i < rom.size(); ++i) differ += out[i] != rom[i];
     CHECK(differ <= 2);                                         // no kits: only the two checksum bytes can change
     CHECK_EQ(int(st.files.count("GB/Export/PTSDJ_B.gb")), 0);
+}
+
+TEST(kit_numbers_map_to_rom_banks_as_lsdj_reads_them) {
+    std::vector<uint8_t> rom(1u << 20, 0xFF);
+    for (int b = 0; b < 64; ++b) { rom[size_t(b) * 0x4000] = 0x60; rom[size_t(b) * 0x4000 + 1] = 0x40; rom[size_t(b) * 0x4000 + 2] = uint8_t(b); }   // every bank a kit, tagged with its number
+    gb::RomKits k;
+    k.setRom(rom.data(), rom.size());
+    auto bankOf = [&](int kit) { const gb::Kit x = k.kit(kit); return x.data ? int(x.data[2]) : -1; };
+    CHECK_EQ(bankOf(0x00), 8);
+    CHECK_EQ(bankOf(0x12), 26);                                 // the last kit before the program code
+    CHECK_EQ(bankOf(0x13), 32);                                 // then the code banks are skipped
+    CHECK_EQ(bankOf(0x14), 33);
+    CHECK_EQ(bankOf(0x15), 34);
+    CHECK_EQ(bankOf(0x1A), 39);
+    CHECK_EQ(bankOf(0x32), 63);
+    CHECK_EQ(gb::kitOfBank(39), 0x1A);
+    CHECK_EQ(gb::kitOfBank(30), -1);                            // program code is no kit
+    CHECK_EQ(gb::kitOfBank(34), 0x15);
+}
+
+TEST(a_kit_note_in_the_phrase_picks_a_sample_of_each_of_two_kits_and_layers_them) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    putWav(st, "GB/Samples/SNARE.wav", 22050, 300, 0.3);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    tap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Insert);                                 // KICK = sample 1 of kit 15
+    keyTap(r, ot::btn::Down);
+    keyTap(r, ot::btn::Insert);                                 // SNARE = sample 2
+    uint8_t* in = r.app.song.instrument(3);
+    in[0] = 2; in[1] = 0xA8; in[3] = 0; in[4] = 0xFF; in[7] = 3; in[9] = 0x15; in[2] = 0x15;     // a kit sound: KIT 1 and KIT 2 both kit 15
+    r.app.song.phraseInstr(0, 0) = 3;
+    l.instr = 3;
+    l.phrase = 0;
+    l.step = 0;
+    keyTap(r, ot::btn::Note);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0);
+    keyTap(r, ot::btn::Insert);                                 // Insert on an empty step: sample 1
+    CHECK_EQ(int(r.app.song.note(0, 0)), 1);
+    holdTap(l, gb::Key::A, gb::Key::Right);                     // Insert + Right: the next sample of KIT 1
+    CHECK_EQ(int(r.app.song.note(0, 0)), 2);
+    holdTap(l, gb::Key::A, gb::Key::Up);                        // Insert + Up: a sample of KIT 2 joins in
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0x12);
+    holdTap(l, gb::Key::A, gb::Key::Up);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0x22);
+    holdTap(l, gb::Key::A, gb::Key::Left);                      // the digits do not carry into each other
+    holdTap(l, gb::Key::A, gb::Key::Left);
+    holdTap(l, gb::Key::A, gb::Key::Left);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0x20);                 // KIT 1 sample 0 = none, KIT 2 sample 2 alone
+    holdTap(l, gb::Key::A, gb::Key::Down);
+    holdTap(l, gb::Key::A, gb::Key::Down);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0x00);
+    gb::Lcd lcd;
+    r.app.song.note(0, 1) = 0x21; r.app.song.phraseInstr(0, 1) = 3;
+    l.draw(lcd);                                                // both names are drawn without trouble
+    // the player mixes the two samples: a layered note plays and sounds
+    r.app.song.note(0, 0) = 0x21;
+    r.app.song.songCell(0, 2) = 0;
+    r.app.song.chainPhrase(0, 0) = 0;
+    gb::Player& p = r.app.player;
+    p.start(0);
+    int peak = 0;
+    int16_t out[2 * 441];
+    for (int w = 0; w < 20; ++w) { p.render(out, 441, 44100); for (int i = 0; i < 441; ++i) peak = std::max(peak, std::abs(int(out[2 * i]))); }
+    CHECK(peak > 200);
+    p.stop();
 }

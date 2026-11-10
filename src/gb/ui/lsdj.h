@@ -44,10 +44,13 @@ struct Transport {
     virtual const char* instrumentFile(int i) = 0;
     virtual bool saveInstrumentFile(const char* name, const uint8_t* data, int n) = 0;
     virtual int loadInstrumentFile(int i, uint8_t* out, int max) = 0;   // bytes read, -1 on failure
-    // Sample kits, one set per console. Kit numbers 00-37 hex: 00-12, 18 and 19 are the ROM's, 1A-37 can be made here.
+    // Sample kits, one set per console. Kit numbers 00-32 hex: 00-14 are the ROM's, 15-32 can be made here.
     virtual uint8_t* kitBuf(int console) { (void)console; return nullptr; }          // the kit being edited: 16 KB
     virtual bool kitOpen(int console, int slot) { (void)console; (void)slot; return false; }   // copies that kit into the edit buffer (an empty kit if there is none)
     virtual bool kitSave(int console, int slot) { (void)console; (void)slot; return false; }   // writes the edit buffer as the kit's file and makes it live; an empty kit erases it
+    // The names of a kit's samples, for the phrase page (a kit note shows the samples it plays) and the Instr page. False if there is no such kit or sample.
+    virtual bool kitSampleName(int console, int kit, int sample, char out[4]) { (void)console; (void)kit; (void)sample; (void)out; return false; }
+    virtual bool kitName(int console, int kit, char out[9]) { (void)console; (void)kit; (void)out; return false; }
     virtual const char* kitSource(int console, int i) { (void)console; (void)i; return ""; }   // the WAV file sample i of the kit being edited came from ("" if none)
     virtual void setKitSource(int console, int i, const char* wav) { (void)console; (void)i; (void)wav; }
     virtual void removeKitSource(int console, int i) { (void)console; (void)i; }              // sample i left the kit: the ones after it move up
@@ -142,7 +145,7 @@ public:
     int smpSel = 0, smpCount = 0;               // Loader: the WAV list
     int smpLen = 0, smpStart = 0, smpEnd = 0, smpRow = 0;   // Editor: bytes in the prepared sample, trim in chunks of 16 bytes, cursor row
     int smpEditIdx = -1;                        // Editor: -1 a new sample, else the kit's sample being changed (ADD TO KIT replaces it)
-    int kitSlot = 0x1A, kitRow = 0;             // Kit: the kit number 00-37 and the cursor row (0 number, 1 name, 2.. the samples)
+    int kitSlot = 0x15, kitRow = 0;             // Kit: the kit number 00-32 and the cursor row (0 number, 1 name, 2.. the samples)
     const char* sampleName() const { return smpName_; }
     int packInstrument(uint8_t* out) const;      // 'GBI1', flags, name[5], instrument[16], optional table[96] (the instrument on screen)
     bool unpackInstrument(const uint8_t* in, int n);
@@ -241,7 +244,9 @@ private:
     void libStopPreview();
     bool libPreview_ = false;                // the library's preview sound is loaded (pads play it)
     int libTable_ = -1, libCh_ = 0;          // a table slot borrowed for the preview, and the channel it sounds on
-    void fixInstr(int i);                    // an all-zero instrument becomes the pulse default
+    void fixInstr(int i);
+    bool kitInstr(int i) const { return i != 0xFF && (s_.instrument(i & 63)[0] & 3) == 2; }   // a kit instrument: its notes pick samples, not pitches
+    void kitNote(int note, int kit1, int kit2, char out[8]) const;                    // an all-zero instrument becomes the pulse default
     // sample kit screens (lsdj_kit.cpp)
     void drawLoader(Lcd& l) const;
     void drawEditor(Lcd& l) const;

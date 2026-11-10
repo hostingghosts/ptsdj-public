@@ -40,4 +40,6 @@ Checks, in order (stop at the first failure and report what the screen showed):
 31. Output level: the same song should be clearly louder than before. Tell me if anything distorts on loud passages.
 32. The noise hi-hat with the K command plus two pulse sounds and a kit: no chugging or slow-down any more. If it still chugs, tell me what the Project page's technical line says (hold Shift): `P` is the worst callback in thousands of cycles.
 33. EverDrive: `PTSDJ_A.gb` must pass the cartridge test and boot like the original ROM. If it does not, send me what the screen says; the ROM differs from the stock one only in the kit banks and header bytes 0x14E-0x14F.
+34. Kits (0.7.0): the kit numbers now follow LSDJ's own bank rule (see README), so a kit made in slot 1A really plays as KIT 1A in the exported PTSDJ_A.gb. Make a kit, export, put `PTSDJ_A.gb` and `PTSDJ_A.srm` on the cart and play a song with that kit.
+35. Layering: on a KIT sound set KIT 2 on the Instr page; in the phrase, Insert + Up/Down adds a KIT 2 sample to a step (the note column shows `KK1+SN2`).
 20. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.

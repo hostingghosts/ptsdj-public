@@ -433,7 +433,7 @@ void Lsdj::press(Key) {
             if (chainCol == 0) { uint8_t& p = s_.chainPhrase(chain, chainPos); if (p == 0xFF) { p = lastPhrase_; s_.markPhrase(p); } }
             break;
         case Scr::Phrase:
-            if (phraseCol == 0) { uint8_t& n = s_.note(phrase, step); if (!n) { n = lastNote_; if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_; fixInstr(s_.phraseInstr(phrase, step)); s_.markPhrase(phrase); } }
+            if (phraseCol == 0) { uint8_t& n = s_.note(phrase, step); if (!n) { const uint8_t pi = s_.phraseInstr(phrase, step) == 0xFF ? lastInstr_ : s_.phraseInstr(phrase, step); n = kitInstr(pi) ? 1 : lastNote_; if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_; fixInstr(s_.phraseInstr(phrase, step)); s_.markPhrase(phrase); } }
             else if (phraseCol == 1) { uint8_t& i = s_.phraseInstr(phrase, step); if (i == 0xFF) i = lastInstr_; fixInstr(i); }
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
@@ -482,8 +482,18 @@ void Lsdj::editKey(Key k) {
         case Scr::Phrase: {
             if (phraseCol == 0) {
                 uint8_t& n = s_.note(phrase, step);
-                if (!n) n = lastNote_; else n = uint8_t(clampi(n + (big ? sgn * 12 : sgn), 1, 127));
-                lastNote_ = n; if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_; s_.markPhrase(phrase);
+                const uint8_t pi = s_.phraseInstr(phrase, step) == 0xFF ? lastInstr_ : s_.phraseInstr(phrase, step);
+                if (kitInstr(pi)) {
+                    // a kit note is two sample numbers: the low digit picks a sample of KIT 1, the high digit one of KIT 2, and both play together
+                    int a = n & 15, b = n >> 4;
+                    if (!n) a = 1; else if (big) b = clampi(b + sgn, 0, 15); else a = clampi(a + sgn, 0, 15);
+                    n = uint8_t(b << 4 | a);
+                } else {
+                    if (!n) n = lastNote_; else n = uint8_t(clampi(n + (big ? sgn * 12 : sgn), 1, 127));
+                    lastNote_ = n;
+                }
+                if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_;
+                s_.markPhrase(phrase);
             } else if (phraseCol == 1) {
                 uint8_t& i = s_.phraseInstr(phrase, step);
                 if (i == 0xFF) i = lastInstr_; else i = uint8_t(clampi(i + d, 0, kInstruments - 1));
@@ -1155,15 +1165,31 @@ void Lsdj::drawChain(Lcd& l) const {
     for (int c = 0; c < 4; ++c) if (p_.running() && p_.seq().active(c) && p_.seq().chain(c) == chain) l.glyphAt(36, 16 + p_.seq().chainPos(c) * 8, '\x05', false, 3, 0);
 }
 
+// What a kit note shows: the name of the KIT 1 sample (or --- for none), then, if a KIT 2 sample plays with it, a plus and its name. out: 3 + 5 characters.
+void Lsdj::kitNote(int note, int kit1, int kit2, char out[8]) const {
+    auto name = [&](int kit, int sample, char* o) {                          // 3 characters; the sample's own name, or S and its number if the kit is not there
+        char nm[4];
+        if (tr_ && tr_->kitSampleName(console_, kit, sample - 1, nm)) { std::memcpy(o, nm, 3); return; }
+        o[0] = 'S'; o[1] = hx16[sample & 15]; o[2] = ' ';
+    };
+    std::memset(out, 0, 8);
+    const int a = note & 15, b = note >> 4;
+    if (a) name(kit1, a, out); else std::memcpy(out, "---", 3);
+    if (b) { out[3] = '+'; name(kit2, b, out + 4); }
+}
+
 void Lsdj::drawPhrase(Lcd& l) const {
     char t[16]; std::snprintf(t, sizeof t, "PHRASE %02X", phrase); l.text(0, 0, t);
     const char* hd[3] = {"NOTE", "INSTR", "CMD"}; const int hx0[3] = {24, 76, 128};
     for (int h = 0; h < 3; ++h) for (int i = 0; hd[h][i]; ++i) l.glyphAt(hx0[h] + i * 6 - 2, 8, hd[h][i], false, 2, 0);
     for (int r = 0; r < 16; ++r) {
         l.glyph(0, 2 + r, hx16[r]);
-        char nn[4]; noteName(s_.note(phrase, r), nn);
-        for (int i = 0; i < 3; ++i) l.glyphAt(24 + i * 8, 16 + r * 8, nn[i], r == step && phraseCol == 0, 3, selected(r, 0) ? 1 : 0);
         const uint8_t in = s_.phraseInstr(phrase, r);
+        char nn[4]; noteName(s_.note(phrase, r), nn);
+        char second[8] = "";                                                   // a kit note: the sample names it plays, one after the other
+        if (kitInstr(in) && s_.note(phrase, r)) { char kn[8]; kitNote(s_.note(phrase, r), s_.instrument(in & 63)[9] & 0x7F, s_.instrument(in & 63)[2] & 0x7F, kn); std::memcpy(nn, kn, 3); nn[3] = 0; std::memcpy(second, kn + 3, 5); }
+        for (int i = 0; i < 3; ++i) l.glyphAt(24 + i * 8, 16 + r * 8, nn[i], r == step && phraseCol == 0, 3, selected(r, 0) ? 1 : 0);
+        for (int i = 0; second[i]; ++i) l.glyphAt(48 + i * 8, 16 + r * 8, second[i], false, 3, 0);
         char ib[3] = {in == 0xFF ? '-' : hx16[(in >> 4) & 15], in == 0xFF ? '-' : hx16[in & 15], 0};
         for (int i = 0; i < 2; ++i) l.glyphAt(80 + i * 8, 16 + r * 8, ib[i], r == step && phraseCol == 1, 3, selected(r, 1) ? 1 : 0);
         const uint8_t c = s_.phraseCmd(phrase, r), v = s_.phraseVal(phrase, r);
@@ -1350,19 +1376,20 @@ const Entry kSavingTxt[] = {
     {"EXPORT WAV", "Makes an audio file."},
     {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as PTSDJ_A.SRM or PTSDJ_B.SRM."},
     {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's own kits in. Each one goes with the save file of the same name, PTSDJ_A.SRM."},
-    {"KIT SLOTS", "Use slot 1A to 37 for your own kits. Slots 13 to 17 hold program code in the ROM and are never replaced."},
+    {"KIT SLOTS", "Use kit 15 to 32 for your own kits: 30 slots. Kits 00 to 14 are the ROM's own."},
     {"ON A GAME BOY", "Put PTSDJ_A.GB and PTSDJ_A.SRM together on the cartridge or emulator. The save file has to have the same name as the ROM."},
 };
 const Entry kSamplesTxt[] = {
     {"", "Drum kits are sets of up to 15 short sounds. The WAV track plays them with a KIT instrument."},
-    {"KIT NUMBERS", "Kits 00 to 12, 18 and 19 are in the ROM. Make your own in 1A to 37. Each Game Boy has its own kits. 13 to 17 are not kit slots: the ROM keeps its program code there, so they stay empty."},
+    {"KIT NUMBERS", "Kits 00 to 14 are in the ROM. Make your own in 15 to 32. Each Game Boy has its own kits."},
     {"STEP 1", "Put WAV files in the GB/Samples folder on the SD card."},
     {"STEP 2", "Press the SAMPLE LOADER key. The kit number is at the top: the jog wheel changes it. Pick a file and press Insert. It is changed to Game Boy sound quality and added to the kit. A check mark shows the files already in it."},
     {"REMOVE IT", "On the loader, BKSP takes the file's sample out of the kit again."},
     {"CUT IT FIRST", "Shift + Insert on the loader opens the file in the SAMPLE EDITOR. Set START and END to cut the sound. Pick a NAME and a KIT number. Then choose ADD TO KIT."},
     {"CHANGE A SAMPLE", "In the editor, move to the SAMPLES row and turn the jog wheel to step through the kit. Cut or rename the sample, then choose REPLACE SAMPLE. It asks first: the change is for good and can't be undone."},
     {"COPY A SOUND", "On the kit page, move to any sample, even one in a ROM kit, and press Insert. It opens in the Sample Editor. Cut it, then add it to your own kit."},
-    {"STEP 4", "On the Instr page, make a KIT sound and set KIT 1 to your kit number. In a phrase, note 1 plays sample 1, note 2 plays sample 2, and so on."},
+    {"STEP 4", "On the Instr page, make a KIT sound and set KIT 1 to your kit number. In a phrase, the note column shows sample names: sample 1, sample 2, and so on."},
+    {"LAYER TWO KITS", "Set KIT 2 on the Instr page too. In the phrase, Insert + Up/Down adds a sample of KIT 2 to a step. It plays together with the KIT 1 sample."},
     {"SAMPLE PLAYBACK KEY", "Shows the samples in a kit. Play or a pad hears one. Change the kit number at the top."},
     {"SIZE", "A kit holds about 2.8 seconds of sound in all."},
     {"SAVING", "Every change to a kit is saved to the SD card at once."},
@@ -1421,6 +1448,7 @@ const Entry kPhraseTxt[] = {
     {"PADS, REC OFF", "Press a pad to type the note at the cursor."},
     {"PADS, REC ON", "The pads make sound but write nothing. The jog wheel picks the sound."},
     {"REC + PLAY", "The phrase loops while the song plays. The pads write the notes. Play stops it."},
+    {"KIT SOUNDS", "The note column shows a sample name, not a pitch. Insert + Left/Right picks the sample of KIT 1. Insert + Up/Down adds a sample of KIT 2 (+NAME). Both play together."},
     {"BKSP", "Clears a step."},
     {"BKSP + UP/DOWN", "Go to another phrase."},
     {"SHIFT+INSERT+ARROWS", "Pick many steps. The jog wheel changes them all."},
@@ -1437,7 +1465,7 @@ const Entry kInstrTxt[] = {
     {"OUTPUT", "Left, right or both speakers."},
     {"LENGTH", "How long a note lasts."},
     {"SHIFT + INSTR KEY", "Opens the library: save this sound to the card, or load one."},
-    {"KIT 1 AND KIT 2", "On a KIT sound: the kit numbers. The note is the sample number: note 1 plays sample 1 of KIT 1."},
+    {"KIT 1 AND KIT 2", "On a KIT sound: the two kits. Their names show beside the numbers. A phrase note picks a sample from each, and the two play together."},
 };
 const Entry kTableTxt[] = {
     {"", "A table is a tiny pattern that plays by itself with a sound."},
@@ -1574,7 +1602,7 @@ const Entry kEditorTxt[] = {
     {"", "Cut a sample, name it and add it to a kit."},
     {"START, END", "Where the sound begins and ends. The jog wheel, or Insert + < >, moves it a little. Insert + UP/DOWN moves it a lot."},
     {"NAME", "Press Insert to type 3 letters."},
-    {"KIT", "The kit number to add to: 1A to 37."},
+    {"KIT", "The kit number to add to: 15 to 32."},
     {"SAMPLES", "Turn the jog wheel to step through the kit's samples and change one."},
     {"ADD TO KIT", "A new sample: press Insert. The kit is saved at once. The status line says which note plays it."},
     {"REPLACE SAMPLE", "A sample from the kit: press Insert. It asks first, because the change is for good and can't be undone."},
@@ -1583,11 +1611,11 @@ const Entry kEditorTxt[] = {
 };
 const Entry kKitTxt[] = {
     {"", "This page shows the samples in a kit."},
-    {"TOP NUMBER", "The kit. Left / Right or the jog wheel changes it. Kits 1A to 37 are yours."},
+    {"TOP NUMBER", "The kit. Left / Right or the jog wheel changes it. Kits 15 to 32 are yours."},
     {"NAME", "Press Insert to name the kit."},
     {"A SAMPLE", "Insert opens it in the Sample Editor, in any kit. Shift + Insert renames it (your kits only). BKSP erases it: press Insert to say yes."},
     {"PLAY OR A PAD", "Hears the sample. A pad plays the sample with the same number."},
-    {"ROM KITS", "You can hear them, but not change them. Kits 13 to 17 are program code in the ROM, not kits."},
+    {"ROM KITS", "You can hear them, but not change them."},
     {"", "Every change is saved at once."},
 };
 const Entry kFirmwareWinTxt[] = {
@@ -1906,6 +1934,11 @@ void Lsdj::drawInstr(Lcd& l) const {
             default: v[0] = hx16[(raw >> 4) & 15]; v[1] = hx16[raw & 15]; v[2] = 0; break;
         }
         l.text(9, f.row, v, instrRow == 2 + i);
+    }
+    if ((in[0] & 3) == 2 && tr_) {                                          // the names of the two kits, beside their numbers
+        char kn[9];
+        if (tr_->kitName(console_, in[9] & 0x7F, kn)) l.text(12, 5, kn);
+        if (tr_->kitName(console_, in[2] & 0x7F, kn)) l.text(12, 6, kn);
     }
 }
 

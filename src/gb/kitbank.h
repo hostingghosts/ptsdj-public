@@ -11,7 +11,11 @@ namespace gb {
 
 constexpr int kKitMaxSamples = 15, kKitHeader = 0x60, kKitBytes = 0x4000, kKitRate = 11460;
 constexpr int kKitCapacity = kKitBytes - kKitHeader;       // bytes of sample data in a bank
-constexpr int kKitFirstUserSlot = 0x1A, kKitLastUserSlot = 0x37;   // empty banks in a stock ROM; 0x13-0x17 are program code there
+// LSDJ finds kit n in ROM bank n + 8 for kits 00-12, and in bank n + 13 from kit 13 on (the banks between are program code); measured on LSDJ 9.4.2.
+// The stock ROM's kits are 00-14 (banks 8-26 and 32-33); banks 34-63 are empty, so kits 15-32 (30 of them) are free for your own.
+constexpr int kKitFirstUserSlot = 0x15, kKitLastUserSlot = 0x32;
+inline int kitBank(int kit) { return kit < 0 ? -1 : kit <= 0x12 ? kit + 8 : (kit + 13) & 63; }   // the ROM bank LSDJ reads for this kit number
+inline int kitOfBank(int bank) { return bank >= 8 && bank <= 26 ? bank - 8 : bank >= 32 && bank <= 63 ? bank - 13 : -1; }   // the kit number of a ROM bank, -1 for code banks
 
 // Operations on a 16 KB kit image (the caller owns the memory).
 struct KitBank {
