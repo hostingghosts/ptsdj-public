@@ -978,10 +978,10 @@ TEST(instrument_library_saves_and_loads_an_instrument_with_its_table) {
     gb::Lsdj& l = r.app.lsdj;
     l.instr = 4;
     keyTap(r, ot::btn::Instr);
-    l.instrRow = -1;
-    keyTap(r, ot::btn::Up);                                     // above the instrument number: the LIBRARY row
-    CHECK_EQ(l.instrRow, -2);
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Instr);                                  // Shift + Instr: the instrument library
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
     CHECK(l.screen() == gb::Scr::Library);
     l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // SAVE row: name keyboard (starts with the instrument's own name)
     CHECK(l.nameEditing());
@@ -1402,4 +1402,47 @@ TEST(shift_f8_on_the_project_page_opens_the_firmware_loader_and_flashes_after_a_
     keyTap(r, ot::btn::Insert);
     CHECK_EQ(gFwCalls, 1);
     CHECK(std::strcmp(gFwName, "PolyendTracGBTrkv041.ptf") == 0);
+}
+
+TEST(a_heard_sample_plays_to_its_end_and_not_just_its_first_chunk) {
+    Rig r;
+    std::vector<uint8_t> buf(2400);
+    for (size_t i = 0; i < buf.size(); ++i) buf[i] = (i / 8) % 2 ? 0xFF : 0x00;     // a loud square wave, 0.4 s at the kit rate
+    r.app.player.auditionData(buf.data(), int(buf.size()));
+    int16_t out[2 * 512];
+    int latePeak = 0;
+    for (int block = 0; block < 36; ++block) {                  // 0.42 s, through the audio queue as the Tracker plays it
+        r.loop(2);
+        r.app.fill(out, 512);
+        if (block >= 20 && block < 30) for (int i = 0; i < 512; ++i) latePeak = std::max(latePeak, std::abs(int(out[2 * i])));
+    }
+    CHECK(latePeak > 500);                                      // still sounding a quarter of a second in
+}
+
+TEST(on_the_kit_page_insert_opens_a_sample_in_the_editor_and_shift_insert_renames_it) {
+    MemStorage st;
+    std::vector<uint8_t> rom(1u << 20, 0xFF);
+    std::vector<uint8_t> kit(0x4000);
+    gb::KitBank::clear(kit.data());
+    std::vector<uint8_t> smp(160, 0x9A);
+    gb::KitBank::add(kit.data(), "ABC", smp.data(), int(smp.size()));
+    std::memcpy(rom.data() + 8 * 0x4000, kit.data(), 0x4000);   // a ROM kit 00 with one sample
+    st.files["GB/LSDJ.GB"] = rom;
+    Rig r(true, &st);
+    r.app.loadKits();
+    gb::Lsdj& l = r.app.lsdj;
+    l.kitSlot = 0;
+    tap(r, ot::btn::SamplePlayback);
+    keyTap(r, ot::btn::Down); keyTap(r, ot::btn::Down); keyTap(r, ot::btn::Down);   // down to sample 1
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Insert);                                 // Shift + Insert on a ROM kit: no renaming
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    CHECK(l.screen() == gb::Scr::Kit);
+    CHECK(!l.nameEditing());
+    l.kitRow = 2;
+    keyTap(r, ot::btn::Insert);                                 // opens it in the Sample Editor
+    CHECK(l.screen() == gb::Scr::Editor);
+    CHECK_EQ(l.smpLen, 160);
+    CHECK(std::strcmp(l.sampleName(), "ABC") == 0);
+    CHECK_EQ(l.kitSlot, 0x1A);                                  // a ROM sample goes to the first kit of your own
 }

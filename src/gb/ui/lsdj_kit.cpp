@@ -110,9 +110,34 @@ void Lsdj::kitPress() {
         else if (smpRow == 4) kitAdd();
         return;
     }
-    if (kitRow == 1 && kitEditable()) openName(4);
-    else if (kitRow >= 2 && kitEditable() && kitRow - 2 < KitBank::count(kitBuf())) openName(5);
-    else if (!kitEditable() && kitRow > 0) status_ = "ROM KIT: LOOK, DON'T EDIT";
+    if (kitRow == 1) { if (kitEditable()) openName(4); else status_ = "ROM KIT: NO RENAME"; }
+    else if (kitRow >= 2) kitToEditor();
+}
+
+// Insert on a sample of any kit (the ROM's too): it opens in the Sample Editor, ready to cut and add to one of your kits.
+void Lsdj::kitToEditor() {
+    uint8_t* kb = kitBuf();
+    uint8_t* sb = tr_ ? tr_->sampleBuf() : nullptr;
+    const int i = kitRow - 2;
+    if (!kb || !sb || i < 0 || i >= KitBank::count(kb)) { status_ = "NO SAMPLE HERE"; return; }
+    int n = KitBank::length(kb, i);
+    if (n >= 48) n -= 16;                                            // the silent chunk that ends it comes back when it is added
+    std::memcpy(sb, KitBank::data(kb, i), size_t(n));
+    smpLen = n;
+    smpLoaded_ = -1;
+    smpStart = 0;
+    smpEnd = n / 16;
+    KitBank::name(kb, i, smpName_);
+    if (!kitEditable()) kitSelect(kKitFirstUserSlot);                // a ROM sample goes into your first kit by default
+    smpRow = 0;
+    status_ = "COPIED TO THE EDITOR";
+    scr_ = Scr::Editor;
+}
+
+void Lsdj::kitRename() {
+    uint8_t* kb = kitBuf();
+    if (kitRow < 2 || !kb || !kitEditable() || kitRow - 2 >= KitBank::count(kb)) { status_ = kitEditable() ? "NOTHING TO RENAME" : "ROM KIT: NO RENAME"; return; }
+    openName(5);
 }
 
 void Lsdj::kitAdd() {
@@ -201,7 +226,7 @@ void Lsdj::drawEditor(Lcd& l) const {
         l.text(0, 14, b);
     }
     l.text(0, 15, "ADD TO KIT", smpRow == 4);
-    l.text(0, 17, status_[0] ? status_ : "PLAY=HEAR  A+< >=CHANGE");
+    l.text(0, 17, status_[0] ? status_ : "PLAY=HEAR  JOG=CHANGE");
 }
 
 // The firmware loader window: the images in /Firmware that the bootloader accepts. Insert picks one, a second Insert flashes it.

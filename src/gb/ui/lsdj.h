@@ -238,6 +238,8 @@ private:
     void kitEdit(Key k);
     void kitPress();
     void kitAudition();
+    void kitToEditor();
+    void kitRename();
     void kitSelect(int slot);
     bool kitEditable() const;
     uint8_t* kitBuf() const;

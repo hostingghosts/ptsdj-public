@@ -114,6 +114,7 @@ void Lsdj::key(Key k, bool down) {
             else if (b_) { cut(); edited_ = true; }
         } else {
             if (a_ && sel_ && scr_ == Scr::Song && !selUsed_ && !edited_ && !b_) { p_.mute(songCh, !p_.muted(songCh)); }   // Shift + Insert alone mutes the channel
+            else if (a_ && sel_ && scr_ == Scr::Kit && !edited_ && !b_) kitRename();                    // Shift + Insert on the kit page renames
             else if (a_ && !edited_ && !b_ && !sel_) press(Key::A);
             a_ = false;
         }
@@ -341,7 +342,7 @@ void Lsdj::move(Key k) {
         case Scr::Chain: chainCol = clampi(chainCol + dx, 0, 1); chainPos = clampi(chainPos + dy, 0, 15); break;
         case Scr::Phrase: phraseCol = clampi(phraseCol + dx, 0, 3); step = clampi(step + dy, 0, 15); break;
         case Scr::Instr:
-            instrRow = clampi(instrRow + dy, -2, instrRows() - 1);                    // -2 the LIBRARY row, -1 the number at the top
+            instrRow = clampi(instrRow + dy, -1, instrRows() - 1);                    // -1 the number at the top
             if (instrRow == -1 && dx) instr = clampi(instr + dx, 0, kInstruments - 1);   // the number: Left / Right scroll through the instruments
             break;
         case Scr::Table: tableCol = clampi(tableCol + dx, 0, 5); tableRow = clampi(tableRow + dy, 0, 15); break;
@@ -373,7 +374,7 @@ void Lsdj::press(Key) {
             else if (phraseCol == 2 && !s_.phraseCmd(phrase, step)) { s_.phraseCmd(phrase, step) = lastCmd_ ? lastCmd_ : 1; s_.phraseVal(phrase, step) = lastVal_; }
             break;
         case Scr::Project: projectAct(); break;
-        case Scr::Instr: if (instrRow == 0) openName(0); else if (instrRow == -2) openLibrary(); break;
+        case Scr::Instr: if (instrRow == 0) openName(0); break;
         case Scr::Library:
             if (libSel == 0) openName(2);
             else if (tr_) {
@@ -429,7 +430,6 @@ void Lsdj::editKey(Key k) {
         }
         case Scr::Instr: {
             if (instrRow == -1) { instr = clampi(instr + d, 0, kInstruments - 1); break; }   // the number at the top
-            if (instrRow < 0) break;
             uint8_t* in = s_.instrument(instr);
             if (instrRow == 0) break;
             if (instrRow == 1) { in[0] = uint8_t((in[0] + sgn) & 3); s_.markInstrument(instr); break; }
@@ -768,7 +768,7 @@ void Lsdj::drawLibrary(Lcd& l) const {
         std::snprintf(b, sizeof b, "%-24.24s", tr_ ? tr_->instrumentFile(top + r) : "");
         l.text(0, 4 + r, b, libSel == top + r + 1);
     }
-    l.text(0, 17, status_[0] ? status_ : "INSERT=SAVE/LOAD B=BACK");
+    l.text(0, 17, status_[0] ? status_ : "INSERT=PICK  BKSP=BACK");
 }
 
 // ---- selection and clipboard --------------------------------------------------------------------------------------------------
@@ -1163,6 +1163,7 @@ const Entry kMovingTxt[] = {
     {"CONFIG KEY", "Project page."},
     {"PERFORMANCE KEY", "Groove page."},
     {"FILE KEY", "The song list."},
+    {"SHIFT + INSTR KEY", "The instrument library."},
     {"SAMPLE LOADER KEY", "Pick a WAV file to turn into a drum sample."},
     {"SAMPLE EDITOR KEY", "Cut a sample and add it to a kit."},
     {"SAMPLE PLAYBACK KEY", "The kit page: hear and edit the samples."},
@@ -1192,7 +1193,7 @@ const Entry kNamesTxt[] = {
     {"< KEY", "Erases a letter."},
     {"PLAY", "OK."},
     {"BKSP", "No."},
-    {"LIBRARY", "On the Instr page, move up above the number to LIBRARY and press Insert. It saves a sound to the card, or loads one from it."},
+    {"SHIFT + INSTR KEY", "Opens the library. It saves a sound to the card, or loads one from it."},
 };
 const Entry kTwoSongsTxt[] = {
     {"SYNC", "On the Project page. MASTER sets the tempo. SLAVE follows it. Play starts both."},
@@ -1220,6 +1221,7 @@ const Entry kSamplesTxt[] = {
     {"STEP 1", "Put WAV files in the GB/Samples folder on the SD card."},
     {"STEP 2", "Press the SAMPLE LOADER key. Pick a file and press Insert. It is changed to Game Boy sound quality."},
     {"STEP 3", "The SAMPLE EDITOR opens. Set START and END to cut the sound. Pick a NAME and a KIT number. Then choose ADD TO KIT."},
+    {"COPY A SOUND", "On the kit page, move to any sample, even one in a ROM kit, and press Insert. It opens in the Sample Editor. Cut it, then add it to your own kit."},
     {"STEP 4", "On the Instr page, make a KIT sound and set KIT 1 to your kit number. In a phrase, note 1 plays sample 1, note 2 plays sample 2, and so on."},
     {"SAMPLE PLAYBACK KEY", "Shows the samples in a kit. Play or a pad hears one. Change the kit number at the top."},
     {"SIZE", "A kit holds about 2.8 seconds of sound in all."},
@@ -1291,7 +1293,7 @@ const Entry kInstrTxt[] = {
     {"TABLE", "A list of extra steps for this sound."},
     {"OUTPUT", "Left, right or both speakers."},
     {"LENGTH", "How long a note lasts."},
-    {"LIBRARY", "Move up above the number and press Insert. It saves and loads sounds on the card."},
+    {"SHIFT + INSTR KEY", "Opens the library: save this sound to the card, or load one."},
     {"KIT 1 AND KIT 2", "On a KIT sound: the kit numbers. The note is the sample number: note 1 plays sample 1 of KIT 1."},
 };
 const Entry kTableTxt[] = {
@@ -1358,7 +1360,7 @@ const Entry kFileTxt[] = {
     {"BKSP", "Go back."},
 };
 const Entry kLibraryTxt[] = {
-    {"", "The library keeps your sounds on the card. Open it from LIBRARY at the top of the Instr page."},
+    {"", "The library keeps your sounds on the card. Open it with Shift + the Instr key."},
     {"TOP ROW", "Saves the sound on screen. Press Insert, type a name, then press Play."},
     {"OTHER ROWS", "Load a file into the sound on screen."},
     {"BKSP", "Go back."},
@@ -1419,7 +1421,7 @@ const Entry kLoaderTxt[] = {
 };
 const Entry kEditorTxt[] = {
     {"", "Cut a sample, name it and add it to a kit."},
-    {"START, END", "Where the sound begins and ends. A + < > or the jog wheel moves it a little. A + UP/DOWN moves it a lot."},
+    {"START, END", "Where the sound begins and ends. The jog wheel, or Insert + < >, moves it a little. Insert + UP/DOWN moves it a lot."},
     {"NAME", "Press Insert to type 3 letters."},
     {"KIT", "The kit number to add to: 1A to 37."},
     {"ADD TO KIT", "Press Insert. The kit is saved at once. The status line says which note plays it."},
@@ -1430,7 +1432,7 @@ const Entry kKitTxt[] = {
     {"", "This page shows the samples in a kit."},
     {"TOP NUMBER", "The kit. Left / Right or the jog wheel changes it. Kits 1A to 37 are yours."},
     {"NAME", "Press Insert to name the kit."},
-    {"A SAMPLE", "Insert renames it. BKSP erases it: press Insert to say yes."},
+    {"A SAMPLE", "Insert opens it in the Sample Editor, in any kit. Shift + Insert renames it (your kits only). BKSP erases it: press Insert to say yes."},
     {"PLAY OR A PAD", "Hears the sample. A pad plays the sample with the same number."},
     {"ROM KITS", "You can hear them, but not change them."},
     {"", "Every change is saved at once."},
@@ -1514,7 +1516,7 @@ void drawDoc(Lcd& l, const Section* d, int n, int page, int x0, int w, const cha
         row[rows[i].len] = 0;
         if (rows[i].bold) l.boldText(1, 3 + i, row); else l.text(1, 3 + i, row);
     }
-    l.text(1, 16, foot);
+    l.text(24 - int(std::strlen(foot)), 16, foot);               // right aligned: the page tab under the bezel covers the left end
 }
 }  // namespace
 
@@ -1731,7 +1733,6 @@ void Lsdj::drawProject(Lcd& l) const {
 void Lsdj::drawInstr(Lcd& l) const {
     l.text(0, 0, "INSTRUMENT");
     { char t[4]; std::snprintf(t, sizeof t, "%02X", instr); l.text(11, 0, t, instrRow == -1); }
-    l.text(0, 1, "LIBRARY", instrRow == -2);
     const uint8_t* in = s_.instrument(instr);
     char nm[6]; instrName(instr, nm);
     l.text(0, 2, "NAME"); l.rect(72, 16, 40, 8, 1); l.text(9, 2, nm, instrRow == 0);

@@ -38,12 +38,13 @@ SYNC: with both projects on, Play on either console starts both; the slave follo
 Master key (while linked) shows both consoles side by side. An A sits above F1 and a B above F8; hold either to raise a dock that names every F key. F1 / F8 pick
 the console the keys control, F2 / F7 held + jog = level A / B, F3-F6 mute (Shift: solo) the four tracks of the active console.
 Recording from the pads is placed by what you hear: the sequencer's lead over the speakers (the audio queue) is taken off the step position.
-Instrument library (`GB/Instruments/*.gbi`): on the Instr page move up above the instrument number to LIBRARY and press Insert. The first row saves the current instrument
+Instrument library (`GB/Instruments/*.gbi`): Shift + the Instr key. The first row saves the current instrument
 (name keyboard), the others load into it (its table too).
 Sample kits (per console): drum kits are banks of the LSDJ ROM, up to 15 samples and about 2.8 s of 4-bit sound at 11.46 kHz. Put WAV files (PCM 8/16/24 bit, any rate) in `GB/Samples`.
-Sample Loader key: pick a file, Insert converts it (resampled, normalised, 4 bits) and opens the Sample Editor; Play hears it. Sample Editor key: START and END trim it (A + Left/Right or
-the jog wheel; A + Up/Down moves 16 times as far), NAME (3 letters), KIT (1A to 37, the slots that are empty in a stock ROM), ADD TO KIT saves the kit at once. Sample Playback key: the
-kit page, kit number at the top (Left/Right or jog; ROM kits can be heard, not changed), kit NAME, the 15 samples (Insert renames, Delete then Insert erases, Play or a pad hears one).
+Sample Loader key: pick a file, Insert converts it (resampled, normalised, 4 bits) and opens the Sample Editor; Play hears it. Sample Editor key: START and END trim it (the jog wheel or Insert + Left/Right;
+Insert + Up/Down moves 16 times as far), NAME (3 letters), KIT (1A to 37, the slots that are empty in a stock ROM), ADD TO KIT saves the kit at once. Sample Playback key: the
+kit page, kit number at the top (Left/Right or jog; ROM kits can be heard, not changed), kit NAME, the 15 samples (Insert opens a sample of any kit, ROM kits too, in the Sample Editor to cut and add to a kit of
+your own; Shift + Insert renames one of yours, Delete then Insert erases it, Play or a pad hears one).
 Kits are saved as `GB/Kits/A/<slot>_<name>.kit` and `GB/Kits/B/...` (LSDJ kit files); `.kit` files in `GB/Kits` itself serve both consoles. A KIT instrument's KIT 1 / KIT 2 on the Instr page
 pick the kits; note n plays sample n of KIT 1 (note 16 * m + n adds sample m of KIT 2). EXPORT LSDJ writes `GB/Export/PTSDJ_A.gb` and `PTSDJ_B.gb`: the card's ROM with that console's kits
 put into their slots (never over program code: kits 13 to 17 stay).

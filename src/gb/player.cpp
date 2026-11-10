@@ -628,7 +628,7 @@ void Player::tick() {
         }
     }
     if (!seq_.playing()) running_ = false;
-    if (live_ && !running_) { bool any = false; for (const Voice& v : v_) any = any || v.on; if (!any) live_ = false; }
+    if (live_ && !running_) { bool any = false; for (const Voice& v : v_) any = any || v.on; if (v_[2].kPlay) any = true; if (!any) live_ = false; }
 }
 
 void Player::sub360() {

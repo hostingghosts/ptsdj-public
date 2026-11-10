@@ -315,7 +315,7 @@ bool GbScreen::button(uint8_t id, bool down) {
             else if (down) lsdj_->jump(Scr::Phrase);
             else if (popupKey_ == id) closePopup();
             break;
-        case ot::btn::Instr: if (down) lsdj_->jump(Scr::Instr); break;
+        case ot::btn::Instr: if (down) { if (shift_) lsdj_->openLibrary(); else lsdj_->jump(Scr::Instr); } break;     // Shift + Instr: the instrument library
         case ot::btn::InstrParams:                                                      // Shift + Instr params (held): the Table page's commands
             if (down && shift_) { lsdj_->showPopup(gb::Lsdj::kTableSheet); popupKey_ = id; }
             else if (down) lsdj_->jump(Scr::Table);
