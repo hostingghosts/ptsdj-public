@@ -27,5 +27,7 @@ int wavToNibbles(WavReader& r, const WavInfo& w, int16_t* tmp, int tmpCap, uint8
 
 // Seconds of audio in n packed bytes.
 inline float nibbleSeconds(int bytes) { return float(bytes) * 2.f / 11460.f; }
+// The device's printf has no float support (newlib nano), so times are shown from whole hundredths of a second.
+inline int secHundredths(int bytes) { return int(int64_t(bytes) * 200 / 11460); }
 
 }  // namespace gb

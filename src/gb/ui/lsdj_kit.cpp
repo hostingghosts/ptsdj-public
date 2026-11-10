@@ -66,7 +66,7 @@ bool Lsdj::sampleLoad(bool toEditor) {
     for (; *f && k < 3; ++f) { const char c = *f >= 'a' && *f <= 'z' ? char(*f - 32) : *f; if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) smpName_[k++] = c; }
     for (; k < 3; ++k) smpName_[k] = '-';
     smpName_[3] = 0;
-    std::snprintf(statusBuf_, sizeof statusBuf_, "LOADED %.1fS%s", double(nibbleSeconds(n)), cut ? " (CUT)" : "");
+    std::snprintf(statusBuf_, sizeof statusBuf_, "LOADED %d.%dS%s", secHundredths(n) / 100, secHundredths(n) / 10 % 10, cut ? " (CUT)" : "");
     status_ = statusBuf_;
     if (toEditor) { kitSelect(kitSlot); smpRow = 0; scr_ = Scr::Editor; }
     return true;
@@ -314,7 +314,7 @@ void Lsdj::poll() {
     std::memcpy(smpName_, "REC", 4);
     kitSelect(kitSlot);
     smpRow = 0;
-    std::snprintf(statusBuf_, sizeof statusBuf_, "RECORDED %.1fS%s", double(nibbleSeconds(n)), cut ? " (CUT)" : "");
+    std::snprintf(statusBuf_, sizeof statusBuf_, "RECORDED %d.%dS%s", secHundredths(n) / 100, secHundredths(n) / 10 % 10, cut ? " (CUT)" : "");
     status_ = statusBuf_;
     scr_ = Scr::Editor;
 }
@@ -327,7 +327,7 @@ void Lsdj::drawRecorder(Lcd& l) const {
     if (!have) l.text(0, 1, "NO INPUT ON THIS DEVICE");
     else if (status_[0] && st == 0) l.text(0, 1, status_);
     else if (st == 1) l.text(0, 1, "WAITING FOR SOUND...");
-    else if (st == 2) { std::snprintf(b, sizeof b, "RECORDING %.1fS", double(tr_->recSeconds())); l.text(0, 1, b); }
+    else if (st == 2) { std::snprintf(b, sizeof b, "RECORDING %d.%dS", int(tr_->recSeconds() * 10) / 10, int(tr_->recSeconds() * 10) % 10); l.text(0, 1, b); }
     else l.text(0, 1, "READY");
     static const char* const in[3] = {"LINE", "MIC LOW", "MIC HIGH"};
     static const char* const tr[4] = {"AT ONCE", "LOW", "MEDIUM", "HIGH"};
@@ -378,7 +378,7 @@ void Lsdj::drawEditor(Lcd& l) const {
         l.text(0, 3, "USE SAMPLE LOADER FIRST");
     } else {
         char b[40];
-        std::snprintf(b, sizeof b, "%.2f SECONDS", double(nibbleSeconds(smpLen)));
+        std::snprintf(b, sizeof b, "%d.%02d SECONDS", secHundredths(smpLen) / 100, secHundredths(smpLen) % 100);
         l.text(0, 1, b);
         const int n = smpLen * 2, x0 = 20;
         for (int x = 0; x < 160; ++x) {                                   // the wave: the lowest and highest nibble under each column
@@ -395,9 +395,9 @@ void Lsdj::drawEditor(Lcd& l) const {
         l.rect(mx1, 20, 1, 52, 3);
     }
     char b[40];
-    std::snprintf(b, sizeof b, "START %6.2fS", double(nibbleSeconds(smpStart * 16)));
+    std::snprintf(b, sizeof b, "START %3d.%02dS", secHundredths(smpStart * 16) / 100, secHundredths(smpStart * 16) % 100);
     l.text(0, 10, b, smpRow == 0);
-    std::snprintf(b, sizeof b, "END   %6.2fS", double(nibbleSeconds(smpEnd * 16)));
+    std::snprintf(b, sizeof b, "END   %3d.%02dS", secHundredths(smpEnd * 16) / 100, secHundredths(smpEnd * 16) % 100);
     l.text(0, 11, b, smpRow == 1);
     std::snprintf(b, sizeof b, "NAME  %s", smpName_);
     l.text(0, 12, b, smpRow == 2);
@@ -405,8 +405,8 @@ void Lsdj::drawEditor(Lcd& l) const {
     std::snprintf(b, sizeof b, "KIT   %02X %s", unsigned(kitSlot), kitEditable() ? "" : "(ROM KIT)");
     l.text(0, 13, b, smpRow == 3);
     if (kb && kitEditable()) {
-        if (smpEditIdx < 0) std::snprintf(b, sizeof b, "%d/15 SAMPLES %.1fS FREE", KitBank::count(kb), double(nibbleSeconds(KitBank::freeBytes(kb))));
-        else std::snprintf(b, sizeof b, "SAMPLE %X OF %d  %.1fS FREE", unsigned(smpEditIdx + 1), KitBank::count(kb), double(nibbleSeconds(KitBank::freeBytes(kb))));
+        if (smpEditIdx < 0) std::snprintf(b, sizeof b, "%d/15 SAMPLES %d.%dS FREE", KitBank::count(kb), secHundredths(KitBank::freeBytes(kb)) / 100, secHundredths(KitBank::freeBytes(kb)) / 10 % 10);
+        else std::snprintf(b, sizeof b, "SAMPLE %X OF %d  %d.%dS FREE", unsigned(smpEditIdx + 1), KitBank::count(kb), secHundredths(KitBank::freeBytes(kb)) / 100, secHundredths(KitBank::freeBytes(kb)) / 10 % 10);
         l.text(0, 14, b, smpRow == 4);
     }
     if (smpEditIdx < 0) l.text(0, 15, "ADD TO KIT", smpRow == 5);
@@ -473,11 +473,11 @@ void Lsdj::drawKit(Lcd& l) const {
         if (i < count) {
             char nm[4];
             KitBank::name(kb, i, nm);
-            std::snprintf(b, sizeof b, "%X %s %5.2fS", i + 1, nm, double(nibbleSeconds(KitBank::length(kb, i))));
+            std::snprintf(b, sizeof b, "%X %s %d.%02dS", i + 1, nm, secHundredths(KitBank::length(kb, i)) / 100, secHundredths(KitBank::length(kb, i)) % 100);
         } else std::snprintf(b, sizeof b, "%X --", i + 1);
         l.text(0, 2 + i, b, kitRow == 2 + i);
     }
-    if (kb && count && kitEditable()) { std::snprintf(b, sizeof b, "FREE %.1fS", double(nibbleSeconds(KitBank::freeBytes(kb)))); l.text(14, 1, b); }
+    if (kb && count && kitEditable()) { std::snprintf(b, sizeof b, "FREE %d.%dS", secHundredths(KitBank::freeBytes(kb)) / 100, secHundredths(KitBank::freeBytes(kb)) / 10 % 10); l.text(14, 1, b); }
     const bool mine = kb && count && kitEditable() && kitRow >= 2 && kitRow - 2 < count;
     l.text(0, 17, status_[0] ? status_ : mine ? "INS=EDIT SHIFT+INS=NAME" : count ? "PLAY=HEAR" : "NO KIT HERE");   // the way to rename a sample is always on screen
 }

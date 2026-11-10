@@ -231,3 +231,9 @@ TEST(a_kit_has_an_end_entry_after_its_last_sample_like_lsdjs_own_kits) {
     CHECK_EQ(KitBank::count(b.data()), 2);
     CHECK_EQ(KitBank::entries(b.data()), 3);
 }
+
+TEST(times_are_shown_from_whole_hundredths_because_the_devices_printf_has_no_floats) {
+    CHECK_EQ(secHundredths(0), 0);
+    CHECK_EQ(secHundredths(5730), 100);                 // 5730 bytes = 11460 samples = one second
+    CHECK_EQ(secHundredths(kKitCapacity), 284);
+}
