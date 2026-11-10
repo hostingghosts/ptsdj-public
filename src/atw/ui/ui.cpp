@@ -191,6 +191,7 @@ void GbScreen::draw(ot::Gfx& g) {
         g.color(0xFFFFFF);
         lcd_.draw(g.display(), kLcdX, kLcdY, 3);
         g.text(750, 462, ui::kSmall, kLensLight, "?", ot::IDisplay::kOptCenterX);      // F8 explains the page
+        if (lsdj_->popup() != gb::Lsdj::kNoPopup && lsdj_->popupPages() > 1) drawPageTab(g);
         return;
     }
     g.fill(0, 0, 800, 480, kLens);
@@ -206,6 +207,15 @@ void GbScreen::draw(ot::Gfx& g) {
     const bool want = aHeld_ || bHeld_ || volHeld_ >= 0;
     dock_ = want ? std::min(1.f, dock_ + 0.4f) : std::max(0.f, dock_ - 0.4f);
     if (dock_ > 0) drawStrip(g, 480 - int(136 * dock_));
+}
+
+// While a pop-up with several pages is open, a tab grows out of the bezel's lower left corner so that < and > sit right above F1 and F2.
+void GbScreen::drawPageTab(ot::Gfx& g) {
+    g.roundRect(14, 428, 192, 60, 10, kLensLight);
+    g.roundRect(17, 431, 186, 54, 8, kLensDark);
+    g.text(50, 444, ui::kText, 0xFFFFFF, "<", ot::IDisplay::kOptCenterX);
+    g.text(150, 444, ui::kText, 0xFFFFFF, ">", ot::IDisplay::kOptCenterX);
+    g.text(100, 462, ui::kSmall, kLensLight, "PAGE", ot::IDisplay::kOptCenterX);
 }
 
 // F1..F8 sit under the screen: song A, its level, the four tracks of the active song (mute, solo with Shift), song B's level, song B.
@@ -250,6 +260,10 @@ bool GbScreen::button(uint8_t id, bool down) {
     if (!lsdj_) return false;
     using gb::Key;
     using gb::Scr;
+    if (popupKey_ != 0xFF && !splitOn() && (id == ot::btn::F1 || id == ot::btn::F2)) {   // a pop-up is up: F1 / F2 turn its pages, a free hand beside the held key
+        if (down) lsdj_->popupTurn(id == ot::btn::F1 ? -1 : 1);
+        return true;
+    }
     if (id <= ot::btn::F8) {
         if (id == 7 && !splitOn()) {                       // F8 outside the side by side view: hold it for an explanation of the page
             if (down && lsdj_->screen() != Scr::Help) { lsdj_->showPopup(gb::Lsdj::kPageHelp); popupKey_ = id; }

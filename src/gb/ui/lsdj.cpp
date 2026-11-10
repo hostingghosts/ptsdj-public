@@ -1443,7 +1443,7 @@ void Lsdj::drawPopup(Lcd& l) const {
     const int pages = totalPages(d, n);
     l.rect(0, 0, 200, 144, 3);                       // covers the page and the side panel; a border of the dark shade
     l.rect(2, 2, 196, 140, 0);
-    drawDoc(l, d, n, clampi(popupPage_, 0, pages - 1), 2, 196, pages > 1 ? "< > PAGE" : "");
+    drawDoc(l, d, n, clampi(popupPage_, 0, pages - 1), 2, 196, pages > 1 ? "PAGE: < > OR F1 F2" : "");
 }
 
 void Lsdj::drawHelp(Lcd& l) const {

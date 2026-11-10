@@ -21,7 +21,7 @@ changes every filled cell. Shift + Insert alone mutes a channel on the Song page
 Instr page: move up onto the instrument number, then Left/Right or the jog wheel scroll through the instruments (the pads play the one on screen). Insert on NAME opens
 the name keyboard (Insert types, the < key erases, Play = OK, Delete = NO); the project name works the same way.
 Help: the Help key opens the pages (Left/Right turn them, Delete leaves). Hold F8 (outside the side by side view, a ? shows above it) for a pop-up that explains the
-page you are on; Left/Right turn its pages. Hold Shift + Note for the Phrase page's command cheat sheet, Shift + Instr params for the Table page's; they go away on release.
+page you are on; Left/Right turn its pages, or F1 (back) and F2 (forward) with the free hand: a tab with < and > grows out of the bezel above them. Hold Shift + Note for the Phrase page's command cheat sheet, Shift + Instr params for the Table page's; they go away on release.
 Project: NAME, TEMPO, TRANSPOSE, SYNC (OFF / MASTER / SLAVE), CLONE, LOOK (display colours), PRELISTEN, HELP, CLEAN SONG DATA / CLEAN INSTR DATA (Insert twice),
 SAVE SONG, LOAD SONG, EXPORT WAV, EXPORT LSDJ (A, B or A + B; pick with the jog wheel). Saving and exporting show a progress bar.
 Songs live in one bank file per Game Boy, like a real LSDJ cartridge: `GB/Saves/A.srm` (song A) and `GB/Saves/B.srm` (song B), 128 KB each with up to 32 songs

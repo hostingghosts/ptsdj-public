@@ -35,6 +35,7 @@ public:
 private:
     bool splitOn() const;
     void drawStrip(ot::Gfx& g, int top);
+    void drawPageTab(ot::Gfx& g);
     App* app_ = nullptr;
     gb::Lsdj* lsdj_ = nullptr;                      // the console on screen (in the split view: the one the keys control)
     gb::Lsdj* lsdjA_ = nullptr;

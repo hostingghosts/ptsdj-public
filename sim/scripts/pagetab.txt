@@ -1,0 +1,6 @@
+wait 200
+press F8
+wait 100
+tap F2
+screenshot ../build/sim/tab.png
+release F8

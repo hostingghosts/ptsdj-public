@@ -1061,6 +1061,31 @@ TEST(delete_and_the_name_keyboard_and_help_use_the_same_exit_key) {
     CHECK(l.screen() != gb::Scr::Help);
 }
 
+TEST(f1_and_f2_turn_the_pop_up_pages_with_a_free_hand) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    keyTap(r, ot::btn::Pattern);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::F8);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kPageHelp);
+    CHECK(l.popupPages() >= 2);
+    keyTap(r, ot::btn::F2);
+    CHECK_EQ(l.popupPage(), 1);
+    keyTap(r, ot::btn::F2);
+    CHECK_EQ(l.popupPage(), std::min(2, l.popupPages() - 1));
+    keyTap(r, ot::btn::F1);
+    keyTap(r, ot::btn::F1);
+    keyTap(r, ot::btn::F1);
+    CHECK_EQ(l.popupPage(), 0);                                 // stops at the first page
+    CHECK(&r.app.ui != nullptr);
+    r.loop(3);                                                  // drawing with the page tab up must not crash
+    r.push(ot::InputEvent::kButtonUp, ot::btn::F8);
+    r.loop(3);
+    CHECK(l.popup() == gb::Lsdj::kNoPopup);
+    keyTap(r, ot::btn::F2);                                     // with no pop-up F2 is its usual self (the level key), not a page key
+    CHECK_EQ(l.popupPage(), 0);
+}
+
 TEST(f8_explains_the_page_while_held_and_arrows_turn_its_pages) {
     Rig r;
     gb::Lsdj& l = r.app.lsdj;
