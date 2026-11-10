@@ -501,7 +501,8 @@ void Lsdj::editKey(Key k) {
                 if (kitInstr(pi)) {
                     // a kit note is two sample numbers: the low digit picks a sample of KIT 1, the high digit one of KIT 2, and both play together
                     int a = n & 15, b = n >> 4;
-                    if (!n) a = 1; else if (big) b = clampi(b + sgn, 0, 15); else a = clampi(a + sgn, 0, 15);
+                    if (!n) { if (big) b = 1; else a = 1; }                // an empty step: Up/Down starts with a KIT 2 sample alone, Left/Right with a KIT 1 sample alone
+                    else if (big) b = clampi(b + sgn, 0, 15); else a = clampi(a + sgn, 0, 15);
                     n = uint8_t(b << 4 | a);
                 } else {
                     if (!n) n = lastNote_; else n = uint8_t(clampi(n + (big ? sgn * 12 : sgn), 1, 127));
@@ -1405,7 +1406,7 @@ const Entry kSamplesTxt[] = {
     {"CHANGE A SAMPLE", "In the editor, move to the SAMPLES row and turn the jog wheel to step through the kit. Cut or rename the sample, then choose REPLACE SAMPLE. It asks first: the change is for good and can't be undone."},
     {"COPY A SOUND", "On the kit page, move to any sample, even one in a ROM kit, and press Insert. It opens in the Sample Editor. Cut it, then add it to your own kit."},
     {"STEP 4", "On the Instr page, make a KIT sound and set KIT 1 to your kit number. In a phrase, the note column shows sample names: sample 1, sample 2, and so on."},
-    {"LAYER TWO KITS", "Set KIT 2 on the Instr page too. In the phrase, Insert + Up/Down adds a sample of KIT 2 to a step. It plays together with the KIT 1 sample."},
+    {"LAYER TWO KITS", "Set KIT 2 on the Instr page too. In the phrase, Insert + Up/Down adds a sample of KIT 2 to a step. On an empty step it plays alone. On a step with a KIT 1 sample the two play together."},
     {"RECORD ONE", "Press the SAMPLE RECORDER key. Pick LINE or MIC, press Insert, and make the sound. When it stops, the SAMPLE EDITOR opens with it."},
     {"SAMPLE PLAYBACK KEY", "Shows the samples in a kit. Play or a pad hears one. Change the kit number at the top."},
     {"SIZE", "A kit holds about 2.8 seconds of sound in all."},

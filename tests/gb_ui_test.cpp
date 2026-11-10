@@ -1878,6 +1878,10 @@ TEST(a_kit_note_in_the_phrase_picks_a_sample_of_each_of_two_kits_and_layers_them
     holdTap(l, gb::Key::A, gb::Key::Down);
     holdTap(l, gb::Key::A, gb::Key::Down);
     CHECK_EQ(int(r.app.song.note(0, 0)), 0x00);
+    holdTap(l, gb::Key::A, gb::Key::Up);                        // Insert + Up on an empty step: a KIT 2 sample alone, nothing from KIT 1
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0x10);
+    holdTap(l, gb::Key::A, gb::Key::Down);
+    CHECK_EQ(int(r.app.song.note(0, 0)), 0x00);
     gb::Lcd lcd;
     r.app.song.note(0, 1) = 0x21; r.app.song.phraseInstr(0, 1) = 3;
     l.draw(lcd);                                                // both names are drawn without trouble
