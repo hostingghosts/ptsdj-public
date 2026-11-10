@@ -1,5 +1,6 @@
 #include "gb/kitbank.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace gb {
@@ -20,16 +21,48 @@ void KitBank::clear(uint8_t* b) {
     for (int i = 0; i < kKitMaxSamples; ++i) { b[kNames + i * 3] = 0; b[kNames + i * 3 + 1] = '-'; b[kNames + i * 3 + 2] = '-'; }
 }
 
-int KitBank::count(const uint8_t* b) {
+int KitBank::entries(const uint8_t* b) {
     int n = 0;
-    while (n < kKitMaxSamples && (b[n * 2] | b[n * 2 + 1] << 8) != 0) ++n;
+    while (n < kKitMaxSamples + 1 && (b[n * 2] | b[n * 2 + 1] << 8) != 0) ++n;
     return n;
+}
+
+int KitBank::dataEnd(const uint8_t* b) {
+    int end = kKitBytes;
+    while (end - 16 >= kKitHeader && padding(b + end - 16)) end -= 16;
+    return end;
+}
+
+// The end entry points at or past the last chunk with sound; the start of a real sample never does.
+bool KitBank::hasEnd(const uint8_t* b) {
+    const int n = entries(b);
+    return n > 0 && offsetOf(b, n - 1) >= dataEnd(b);
+}
+
+int KitBank::count(const uint8_t* b) {
+    const int n = entries(b);
+    return n - (hasEnd(b) ? 1 : 0);
+}
+
+namespace {
+// Sample starts stay, the entry after the last sample points at `end`, the rest are empty.
+void seal(uint8_t* b, int count, int end) {
+    setOffset(b, count, end);
+    for (int k = count + 1; k <= kKitMaxSamples; ++k) setOffset(b, k, 0);
+}
+}  // namespace
+
+void KitBank::normalize(uint8_t* b) {
+    if (!hasSamples(b) || hasEnd(b)) return;
+    const int n = entries(b);
+    if (n > kKitMaxSamples) return;
+    seal(b, n, used(b));
 }
 
 int KitBank::length(const uint8_t* b, int i) {
     const int n = count(b);
     if (i < 0 || i >= n) return 0;
-    const int end = i + 1 < n ? offsetOf(b, i + 1) : used(b);
+    const int end = i + 1 < entries(b) ? offsetOf(b, i + 1) : used(b);
     return end - offsetOf(b, i);
 }
 
@@ -58,9 +91,8 @@ void KitBank::setKitName(uint8_t* b, const char* nm) {
 int KitBank::used(const uint8_t* b) {
     const int n = count(b);
     if (!n) return kKitHeader;
-    int end = kKitBytes;
     const int floor = offsetOf(b, n - 1) + 16;                       // the last sample keeps at least one chunk
-    while (end - 16 >= floor && padding(b + end - 16)) end -= 16;
+    const int end = std::max(dataEnd(b), floor);
     return end + 16 <= kKitBytes ? end + 16 : kKitBytes;             // plus the silent chunk that ends it (the last chunk of a sample is not played)
 }
 
@@ -74,6 +106,7 @@ bool KitBank::add(uint8_t* b, const char* nm, const uint8_t* bytes, int n) {
     std::memset(b + start + n, 0x88, size_t(size - n));
     setOffset(b, c, start);
     setName(b, c, nm);
+    seal(b, c + 1, start + size);
     return true;
 }
 
@@ -90,6 +123,7 @@ bool KitBank::replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, i
     if (delta < 0) std::memset(b + u + delta, 0x88, size_t(-delta));            // the end of the kit is silence again
     for (int k = i + 1; k < c; ++k) setOffset(b, k, offsetOf(b, k) + delta);
     setName(b, i, nm);
+    seal(b, c, u + delta);
     return true;
 }
 
@@ -104,7 +138,7 @@ bool KitBank::remove(uint8_t* b, int i) {
         setOffset(b, k, offsetOf(b, k + 1) - len);
         std::memcpy(b + kNames + k * 3, b + kNames + (k + 1) * 3, 3);
     }
-    setOffset(b, c - 1, 0);
+    seal(b, c - 1, c > 1 ? u - len : 0);
     b[kNames + (c - 1) * 3] = 0; b[kNames + (c - 1) * 3 + 1] = '-'; b[kNames + (c - 1) * 3 + 2] = '-';
     return true;
 }

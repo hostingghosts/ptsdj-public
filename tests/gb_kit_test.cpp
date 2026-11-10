@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "gb/kitbank.h"
+#include "gb/kits.h"
 #include "gb/wavconv.h"
 #include "test.h"
 
@@ -122,12 +123,13 @@ TEST(the_demo_amen_kits_are_read_as_kits) {
     CHECK_EQ(int(std::fread(b.data(), 1, b.size(), f)), kKitBytes);
     std::fclose(f);
     CHECK(KitBank::hasSamples(b.data()));
-    CHECK_EQ(KitBank::count(b.data()), 14);
+    CHECK_EQ(KitBank::count(b.data()), 13);                                  // 14 table entries: the last one is where the data ends
     char kn[9];
     KitBank::kitName(b.data(), kn);
     CHECK(std::strncmp(kn, "AMEN1", 5) == 0);
     CHECK_EQ(KitBank::length(b.data(), 0), 0x4530 - 0x4060);
-    CHECK(KitBank::freeBytes(b.data()) < 200);                               // the last sample runs to the end of the bank
+    CHECK(KitBank::freeBytes(b.data()) < 200);
+    CHECK_EQ(KitBank::length(b.data(), 12), 0x7f70 - 0x7af0);                // the last sample ends at the end entry
 }
 
 TEST(replacing_a_sample_keeps_the_others_and_gives_back_or_takes_room) {
@@ -196,4 +198,36 @@ TEST(rounding_error_is_pushed_away_from_the_bass_so_a_kick_is_less_gritty) {
     const double e1 = lowError(shaped), e0 = lowError(plain);
     std::printf("  low-frequency error: shaped %.3f plain %.3f\n", e1, e0);
     CHECK(e1 < e0 * 0.8);
+}
+
+TEST(a_kit_has_an_end_entry_after_its_last_sample_like_lsdjs_own_kits) {
+    std::vector<uint8_t> b(kKitBytes);
+    KitBank::clear(b.data());
+    std::vector<uint8_t> a(100, 0x91), m(300, 0x72);
+    CHECK(KitBank::add(b.data(), "AAA", a.data(), int(a.size())));
+    CHECK(KitBank::add(b.data(), "MMM", m.data(), int(m.size())));
+    CHECK_EQ(KitBank::count(b.data()), 2);
+    CHECK_EQ(KitBank::entries(b.data()), 3);
+    const int end = (b[4] | b[5] << 8) - 0x4000;                              // entry 2: after the last sample
+    CHECK_EQ(end, KitBank::used(b.data()));
+    CHECK_EQ(KitBank::length(b.data(), 1), end - ((b[2] | b[3] << 8) - 0x4000));
+    Kit k; k.data = b.data();
+    int bg, en;
+    CHECK(k.range(1, bg, en));                                                // the player reads the same end
+    CHECK_EQ(en, end);
+    CHECK(!k.range(2, bg, en));
+    KitBank::remove(b.data(), 0);
+    CHECK_EQ(KitBank::count(b.data()), 1);
+    CHECK_EQ(KitBank::entries(b.data()), 2);
+    KitBank::remove(b.data(), 0);
+    CHECK_EQ(KitBank::entries(b.data()), 0);
+    // a kit file from before the end entry: its last sample gets one
+    KitBank::clear(b.data());
+    KitBank::add(b.data(), "AAA", a.data(), int(a.size()));
+    KitBank::add(b.data(), "MMM", m.data(), int(m.size()));
+    b[4] = b[5] = 0;                                                          // take the end entry off again
+    CHECK_EQ(KitBank::count(b.data()), 2);
+    KitBank::normalize(b.data());
+    CHECK_EQ(KitBank::count(b.data()), 2);
+    CHECK_EQ(KitBank::entries(b.data()), 3);
 }

@@ -383,6 +383,7 @@ int App::kitFileStep(int i) {
     }
     p_.storage->close(h);
     if (got != gb::kKitBankSize || dst[0] != 0x60 || dst[1] != 0x40) { kitFile_[i].console = 3; return 0; }   // not a kit bank (the offset table starts at 0x4060)
+    gb::KitBank::normalize(dst);                                          // kits saved before the end entry existed get one
     applyKit(i);
     ++kitsLoaded_;
     return 1;

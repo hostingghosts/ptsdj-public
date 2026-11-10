@@ -1513,6 +1513,32 @@ TEST(a_recorded_samples_name_can_be_typed_in_the_editor) {
     CHECK(std::strlen(l.sampleName()) == 3);
 }
 
+TEST(shift_insert_on_a_sample_of_your_kit_renames_it_from_the_kit_page) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    tap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Insert);                                 // KICK into the kit
+    const int idx = gb::KitBank::count(r.app.kits.kit(0x15).data) - 1;
+    tap(r, ot::btn::SamplePlayback);
+    CHECK(l.screen() == gb::Scr::Kit);
+    l.kitRow = 2 + idx;
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Insert);                                 // Shift + Insert: the name keyboard
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    CHECK(l.nameEditing());
+    keyTap(r, ot::btn::Insert);                                 // Q
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Play);                                   // commit
+    CHECK(!l.nameEditing());
+    char nm[4];
+    gb::KitBank::name(r.app.kits.kit(0x15).data, idx, nm);
+    CHECK(std::strcmp(nm, "KIC") != 0);
+    CHECK_EQ(int(std::strlen(nm)), 3);
+}
+
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
     Rig r;
     gb::Lsdj& l = r.app.lsdj;

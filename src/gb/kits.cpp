@@ -3,18 +3,13 @@
 
 namespace gb {
 
-int Kit::samples() const {
-    if (!data) return 0;
-    int n = 0;
-    while (n < 15 && (data[n * 2] | data[n * 2 + 1] << 8) != 0) ++n;
-    return n;
-}
+int Kit::samples() const { return data ? KitBank::count(data) : 0; }
 
 bool Kit::range(int i, int& begin, int& end) const {
     const int n = samples();
     if (!data || i < 0 || i >= n) return false;
     begin = (data[i * 2] | data[i * 2 + 1] << 8) - 0x4000;
-    end = i + 1 < n ? (data[i * 2 + 2] | data[i * 2 + 3] << 8) - 0x4000 : int(kKitBankSize);
+    end = i + 1 < KitBank::entries(data) ? (data[i * 2 + 2] | data[i * 2 + 3] << 8) - 0x4000 : int(kKitBankSize);   // the entry after the last sample is where it ends
     return begin >= 0x60 && end > begin && end <= int(kKitBankSize);
 }
 

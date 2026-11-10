@@ -477,8 +477,9 @@ void Lsdj::drawKit(Lcd& l) const {
         } else std::snprintf(b, sizeof b, "%X --", i + 1);
         l.text(0, 2 + i, b, kitRow == 2 + i);
     }
-    if (kb && count && kitEditable()) { std::snprintf(b, sizeof b, "FREE %.1fS", double(nibbleSeconds(KitBank::freeBytes(kb)))); l.text(15, 17, b); }
-    l.text(0, 17, status_[0] ? status_ : count ? "PLAY=HEAR" : "NO KIT HERE");
+    if (kb && count && kitEditable()) { std::snprintf(b, sizeof b, "FREE %.1fS", double(nibbleSeconds(KitBank::freeBytes(kb)))); l.text(14, 1, b); }
+    const bool mine = kb && count && kitEditable() && kitRow >= 2 && kitRow - 2 < count;
+    l.text(0, 17, status_[0] ? status_ : mine ? "INS=EDIT SHIFT+INS=NAME" : count ? "PLAY=HEAR" : "NO KIT HERE");   // the way to rename a sample is always on screen
 }
 
 }  // namespace gb
