@@ -585,6 +585,7 @@ bool Lsdj::hasData(int row, int col) const {
         case Scr::Chain: return col == 1 || v != 0xFF;
         case Scr::Phrase: return col == 0 ? v != 0 : col == 1 ? v != 0xFF : col == 2 ? v != 0 : true;
         case Scr::Table: return (col == 2 || col == 4) ? v != 0 : true;
+        case Scr::Groove: return true;
         default: return false;
     }
 }
@@ -609,6 +610,7 @@ void Lsdj::clearCells() {
                     *p = 0;
                     if (c == 2 || c == 4) *cellPtr(r, c + 1) = 0;
                     break;
+                case Scr::Groove: *p = 0; break;                       // 00 ends the groove there
                 default: break;
             }
         }
@@ -1504,6 +1506,7 @@ const Entry kGrooveTxt[] = {
     {"", "The list repeats."},
     {"COMMAND G", "In a phrase, picks a groove number."},
     {"BKSP + LEFT/RIGHT", "Pick another groove."},
+    {"BKSP", "Alone, it clears the step to 00. A 00 ends the groove there."},
 };
 const Entry kProjectTxt[] = {
     {"", "Settings for the song."},
@@ -1623,6 +1626,7 @@ const Entry kEditorTxt[] = {
     {"KIT", "The kit number to add to: 15 to 32."},
     {"SAMPLES", "Turn the jog wheel to step through the kit's samples and change one."},
     {"DELETE", "Throws the sample away. A new sample is dropped at once. A sample from the kit asks first, then is erased from the kit and gives its space back."},
+    {"RED LIGHT", "While a sound plays, the red light in the frame flickers when it is loud enough to crackle if layered. Lower LEVEL until it stays dark."},
     {"LEVEL", "How loud the sample is stored: 100%, 75%, 50% or 25%. Layered sounds add together, and loud ones crackle. Use 50% for sounds you will layer. It goes back to 100% after each add."},
     {"ADD TO KIT", "A new sample: press Insert. The kit is saved at once. The status line says which note plays it."},
     {"REPLACE SAMPLE", "A sample from the kit: press Insert. It asks first, because the change is for good and can't be undone."},

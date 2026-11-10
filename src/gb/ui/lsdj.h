@@ -152,7 +152,14 @@ public:
     void openKit();
     void openFirmware();
     void openRecorder();
-    void poll();                                 // once per frame: a finished recording turns into a sample
+    void poll(uint32_t nowMs = 0);               // once per frame: a finished recording turns into a sample, the peak light follows the sample being heard
+    bool peakLight() const { return hot_; }      // the sample being heard is at its loudest right now (the red light in the frame flickers)
+    // The peak light: while a sample plays on the sample pages, every frame looks at the chunks played since the last one for a nibble far from the centre.
+    const uint8_t* meterData_ = nullptr;
+    int meterLen_ = 0, meterPct_ = 100, meterChunk_ = 0;
+    uint32_t meterAt_ = 0, lastMs_ = 0;
+    bool hot_ = false;
+    void meterStart(const uint8_t* data, int len, int pct) { meterData_ = data; meterLen_ = len; meterPct_ = pct; meterChunk_ = 0; meterAt_ = lastMs_; }
     bool recMonOn_ = false;
     bool recMon = true;   // Recorder: hear the input
     int recRow = 0, recInput = 0, recTrig = 2;   // Recorder: the cursor row, the input (0 line, 1 mic low, 2 mic high), the trigger level (0 now, 1 low, 2 medium, 3 high)

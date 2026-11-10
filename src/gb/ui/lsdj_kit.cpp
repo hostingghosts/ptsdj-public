@@ -78,12 +78,14 @@ void Lsdj::kitAudition() {
     if (scr_ == Scr::Loader) {
         if (smpLoaded_ != smpSel && !sampleLoad(false)) return;
         p_.auditionData(tr_->sampleBuf(), smpLen);
+        meterStart(tr_->sampleBuf(), smpLen, 100);
     } else if (scr_ == Scr::Editor) {
         if (!smpLen) { status_ = "LOAD A SAMPLE FIRST"; return; }
         p_.auditionData(tr_->sampleBuf() + smpStart * 16, (smpEnd - smpStart) * 16);
+        meterStart(tr_->sampleBuf() + smpStart * 16, (smpEnd - smpStart) * 16, levelPct());
     } else if (uint8_t* kb = kitBuf()) {
         const int i = kitRow >= 2 ? kitRow - 2 : 0;
-        if (i < KitBank::count(kb)) p_.auditionData(KitBank::data(kb, i), KitBank::length(kb, i));
+        if (i < KitBank::count(kb)) { p_.auditionData(KitBank::data(kb, i), KitBank::length(kb, i)); meterStart(KitBank::data(kb, i), KitBank::length(kb, i), 100); }
         else status_ = "NO SAMPLE HERE";
     }
 }
@@ -299,7 +301,20 @@ void Lsdj::recToggle() {
 }
 
 // Called every frame: a finished recording becomes the sample in the editor.
-void Lsdj::poll() {
+void Lsdj::poll(uint32_t nowMs) {
+    lastMs_ = nowMs;
+    hot_ = false;
+    if (meterData_ && (scr_ == Scr::Editor || scr_ == Scr::Loader || scr_ == Scr::Kit)) {
+        const int chunk = int(int64_t(nowMs - meterAt_) * 358 / 1000);          // a chunk of 16 bytes every 11712 cycles: 358 a second
+        for (int c = meterChunk_; c < chunk && c * 16 < meterLen_; ++c)
+            for (int i = 0; i < 16 && c * 16 + i < meterLen_; ++i) {
+                const int b = meterData_[c * 16 + i];
+                const int hi = ((b >> 4) - 8) * meterPct_ / 100, lo = ((b & 15) - 8) * meterPct_ / 100;
+                if (hi >= 5 || hi <= -6 || lo >= 5 || lo <= -6) hot_ = true;       // layered with another loud sound this would clip
+            }
+        meterChunk_ = chunk;
+        if (chunk * 16 >= meterLen_) meterData_ = nullptr;
+    } else meterData_ = nullptr;
     if (!tr_) return;
     const bool mon = scr_ == Scr::Recorder && recMon;                  // the input is only heard while this page is open
     if (mon != recMonOn_) { recMonOn_ = mon; tr_->recMonitor(mon); }     // (the other console's page must not switch it off)

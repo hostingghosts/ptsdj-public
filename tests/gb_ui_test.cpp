@@ -1600,6 +1600,42 @@ TEST(kit_instruments_carry_lsdjs_d0_in_byte_10_or_layered_notes_play_garbage_in_
     CHECK_EQ(int(pulse[10]), 0);                                // only kits
 }
 
+TEST(the_peak_light_flickers_while_a_loud_sample_plays_and_stays_dark_at_a_low_level) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    tap(r, ot::btn::SampleLoader);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Insert);                                 // into the editor
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    CHECK(l.screen() == gb::Scr::Editor);
+    auto flickers = [&] {
+        keyTap(r, ot::btn::Play);
+        int hot = 0;
+        for (int i = 0; i < 300; ++i) { r.loop(5); hot += l.peakLight() ? 1 : 0; }
+        return hot;
+    };
+    CHECK(flickers() > 3);                                      // a full-scale kick peaks
+    l.smpRow = 5;
+    l.encoder(-3);                                              // LEVEL 25%
+    CHECK_EQ(l.smpLevel, 3);
+    CHECK_EQ(flickers(), 0);
+}
+
+TEST(delete_clears_a_groove_step_to_zero) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    r.app.song.groove(0)[0] = 6;
+    r.app.song.groove(0)[1] = 7;
+    keyTap(r, ot::btn::Performance);
+    CHECK(l.screen() == gb::Scr::Groove);
+    l.grooveStep = 1;
+    keyTap(r, ot::btn::Delete);
+    CHECK_EQ(int(r.app.song.groove(0)[1]), 0);
+    CHECK_EQ(int(r.app.song.groove(0)[0]), 6);                  // only that step
+}
+
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
     Rig r;
     gb::Lsdj& l = r.app.lsdj;

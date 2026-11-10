@@ -154,8 +154,9 @@ bool GbScreen::splitOn() const { return split_ && lsdjA_ && lsdjA_->syncLinked()
 
 void GbScreen::prepare(ot::IDisplay& d) {
     if (!lsdj_) return;
-    lsdjA_->poll();
-    if (lsdjB_) lsdjB_->poll();
+    const uint32_t ms = app_->platform().clock ? app_->platform().clock->millis() : 0;
+    lsdjA_->poll(ms);
+    if (lsdjB_) lsdjB_->poll(ms);
     lcd_.setLook(app_->look());
     if (splitOn()) {
         lsdjA_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamA);
@@ -189,7 +190,7 @@ void GbScreen::draw(ot::Gfx& g) {
     const bool play = lsdjA_->playing() || (lsdjB_ && lsdjB_->playing());
     const int look = app_->look();
     if (!splitOn()) {
-        drawLens(g, play, look);
+        drawLens(g, play || lsdjA_->peakLight() || (lsdjB_ && lsdjB_->peakLight()), look);
         g.color(0xFFFFFF);
         lcd_.draw(g.display(), kLcdX, kLcdY, 3);
         const bool fw = shift_ && lsdj_->screen() == gb::Scr::Project;

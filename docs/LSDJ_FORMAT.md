@@ -67,7 +67,8 @@ Todo: remaining instrument bytes per type, command bytes, tables/synth semantics
   down to byte 10's high nibble; byte 10's low nibble is the rate to 0; rate 0 holds; rates use the release-digit table. The old "byte 9 with 0xC0" finding was this with a target above the start.
 - Instrument byte 5 bit 3 (pulse and noise): the instrument's table advances one row per note (position carries over between notes) instead of one per tick.
   A table started by A runs per tick. A B command inside a table does nothing.
-- B (command byte 2) is used on kit instruments in the demos and its effect is unknown; Z (random) cannot match the ROM's random numbers.
+- B (command byte 2) is a chance: the step's note plays only if a random test passes (B FF always, B 00 never; measured by looping one step and counting triggers). The demos use it on pulse and noise instruments, not kits. src/gb/player.cpp models it with the same generator as Z; the ROM's exact random sequence is not reproduced, so a given run differs from the ROM, the odds are the same.
+- T (tempo) is measured: T v sets the tempo to v at once (6 ticks of groove at tempo 128 become 4 after T C0, 12 after T 40); the tick that carries it is a partial tick, which the sub-step accumulator in player.cpp reproduces.
 
 ## Wave animation and kits (measured)
 - Wave instrument: b3 = first frame; b9 = play mode (0 manual, 1 once, 2 and 3 loop in the ROM); b11 = speed, one frame update every (int8 b11 + 4) ticks;
@@ -186,3 +187,11 @@ SYNC is project byte 0x3FBD (0 off, 1 LSDJ, 3 MIDI, 5 KEYBD, 6 ARDUINOBOY as the
 
 ## Export check against the ROM
 A .sav written by Song::writeSav (PRESSURE, SYNC set to LSDJ) opens in the oracle ROM: the Project page shows tempo 152 and SYNC LSDJ, and the 92 note triggers of the first 400 frames are identical to the same song loaded from the ROM's own conversion. The .lsdsng files are not loaded by the ROM here (they need LSDJ's file manager); their format is covered by the round-trip tests.
+
+
+## How close the player is to the ROM (0.8.8, tools/oracle/compare.py on the demo songs, first 240 ticks, channels 1, 2 and 4)
+Mismatches are counted per tick and per register field against the ROM running the same song. Most are one-step differences from where the 360 Hz sub-step lands
+(volume off by one, frequency off by 1-3 units, NR51 shown as 0xBB while a kit sample ends); those stay. The larger ones, for the next round:
+- TRAINJAM channel 1 (211 frequency mismatches): a table with V (vibrato) next to T A4 and M commands; the vibrato phase differs.
+- Friendbender, NOLIGHT, i_mpuzzled, revision: duty and frequency on pulse 2 with long tables.
+- kicks-v9.2 and PRESSURE: pulse 1 sweeps; the frame sequencer phase at the first note is not matched (tick phase leftover in the ROM, see above).
