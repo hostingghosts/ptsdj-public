@@ -1579,8 +1579,11 @@ TEST(new_song_asks_for_a_name_and_starts_empty_from_the_load_page_and_the_projec
     l.openFiles();
     CHECK(l.screen() == gb::Scr::File);
     CHECK_EQ(l.fileSel, 0);                                     // NEW SONG is the first entry
+    r.app.song.at(gb::off::kInstrNames) = 'K';                  // instrument 0 is called K...: that must not leak into the new name
+    l.instr = 0;
     keyTap(r, ot::btn::Insert);
     CHECK(l.nameEditing());
+    CHECK_EQ(int(l.nameBuffer()[0]), 0);                        // the name starts blank
     l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
     l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
     l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // a letter

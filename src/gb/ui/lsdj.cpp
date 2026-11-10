@@ -692,6 +692,7 @@ void Lsdj::openName(int target) {
     nameCx_ = nameCy_ = 0;
     std::memset(nameBuf_, 0, sizeof nameBuf_);
     if (target == 1) std::strncpy(nameBuf_, name_, 8);
+    else if (target == 6) {}                                              // a new song starts with no name at all
     else if (target == 3) std::strncpy(nameBuf_, smpName_, 3);
     else if (target == 4 || target == 5) {
         const uint8_t* kb = kitBuf();
