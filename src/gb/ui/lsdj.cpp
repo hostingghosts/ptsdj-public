@@ -1165,6 +1165,7 @@ const Entry kSavingTxt[] = {
     {"EXPORT WAV", "Makes an audio file."},
     {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as LSDJ_A.SRM or LSDJ_B.SRM."},
     {"KITS", "Drum kits live in the LSDJ ROM, not in the song. If you added kits in GB/Kits, EXPORT LSDJ also writes LSDJ_KITS.GB: your ROM with those kits in. Use it on the Game Boy."},
+    {"KIT SLOTS", "Use slot 1A to 37 for your own kits. Slots 13 to 17 hold program code in the ROM and are never replaced."},
     {"ON A GAME BOY", "Give the copy the same name as your LSDJ ROM, like LSDJ.SRM."},
 };
 const Section kHelpDocs[] = {sec("WELCOME", kWelcomeTxt), sec("MOVING AROUND", kMovingTxt), sec("EDITING", kEditingTxt), sec("PLAYING", kPlayingTxt),

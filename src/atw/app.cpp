@@ -528,7 +528,10 @@ bool App::exportFiles(const char* name, int which) {
         progress("EXPORT LSDJ", step * 100 / steps);
         char path[80];
         std::snprintf(path, sizeof path, "%s/%s_KITS.gb", kExportDir, name ? name : "LSDJ");
-        if (exportRom(path)) done_ = "EXPORT DONE + ROM"; else ok = false;
+        if (exportRom(path)) {
+            if (romSkipped_ == 0xFF) done_ = "EXPORT DONE + ROM";
+            else { std::snprintf(doneBuf_, sizeof doneBuf_, "KIT %02X: USE 1A-37", romSkipped_); done_ = doneBuf_; }
+        } else ok = false;
     }
     progress("", 0);
     return ok;
@@ -540,12 +543,17 @@ bool App::exportRom(const char* path) {
     const ot::IStorage::Handle h = p_.storage->open(path, ot::IStorage::kWrite);
     if (h < 0) return false;
     bool ok = true;
+    romSkipped_ = 0xFF;
     const uint32_t banks = romGot_ / uint32_t(gb::kKitBankSize);
     for (uint32_t b = 0; b < banks && ok; ++b) {
         const uint8_t* src = p_.bigMem + size_t(b) * gb::kKitBankSize;
-        for (int i = 0; i < kitFiles_; ++i) {             // a kit file loaded for slot n replaces bank 8 + n
+        for (int i = 0; i < kitFiles_; ++i) {             // a kit file loaded for slot n replaces bank 8 + n, if that bank is a kit or empty
             const uint8_t* kit = base + size_t(i) * gb::kKitBankSize;
-            if (b == 8u + kitIdx_[i] && kit[0] == 0x60 && kit[1] == 0x40) src = kit;
+            if (b != 8u + kitIdx_[i] || kit[0] != 0x60 || kit[1] != 0x40) continue;
+            bool free = src[0] == 0x60 && src[1] == 0x40;
+            if (!free) { free = true; for (size_t k = 0; k < gb::kKitBankSize && free; ++k) free = src[k] == 0xFF; }
+            if (free) src = kit;
+            else if (romSkipped_ == 0xFF) romSkipped_ = kitIdx_[i];   // the stock ROM keeps program code in the banks of kits 13-17: never overwritten
         }
         ok = p_.storage->write(h, src, uint32_t(gb::kKitBankSize)) == int32_t(gb::kKitBankSize);
     }

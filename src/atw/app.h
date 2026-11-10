@@ -104,6 +104,8 @@ private:
     uint8_t songSlot_[kMaxSongs] = {};         // bank slot of each listed song, 0xFF = a loose file
     const char* error_ = nullptr;
     const char* done_ = nullptr;               // success text when the export also wrote a ROM
+    char doneBuf_[24] = {};
+    uint8_t romSkipped_ = 0xFF;                // first kit slot exportRom left alone because the ROM keeps code there
     bool exportRom(const char* path);          // the card's LSDJ ROM with the GB/Kits files put into their kit slots
     bool installSong(size_t n, int console, const char* name);   // the .lsdsng in fileBuf() becomes this console's song
     int songCount_ = 0;
