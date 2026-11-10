@@ -22,7 +22,7 @@ public:
     explicit Player(Song& s) : s_(s), seq_(s) {}
     // loopCh >= 0: that channel loops one phrase; with withSong the other channels play the song from `row` behind it (Rec + Play overdub),
     // without it they stay silent.
-    void start(int row = 0, int loopCh = -1, int loopPhrase = 0, bool withSong = false);
+    void start(int row = 0, int loopCh = -1, int loopPhrase = 0, bool withSong = false, int soloChain = -1);   // soloChain >= 0: only loopCh, looping that chain
 
     // Stopping silences the chip: a console stopped while the other keeps playing is still rendered and must not hold its last notes.
     void stop() { running_ = false; live_ = false; seq_.stopAll(); apu_.reset(); }

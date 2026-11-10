@@ -1,0 +1,17 @@
+wait 200
+tap SAMPLELOADER
+tap INSERT
+tap DOWN
+tap INSERT
+wait 100
+screenshot ../build/sim/k3-loader.png
+tap SAMPLEEDITOR
+tap DOWN
+tap DOWN
+tap DOWN
+tap DOWN
+wait 50
+screenshot ../build/sim/k3-editor.png
+tap FILE
+wait 50
+screenshot ../build/sim/k3-songs.png

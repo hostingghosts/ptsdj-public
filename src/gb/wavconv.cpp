@@ -9,6 +9,7 @@
 namespace gb {
 
 namespace {
+constexpr double kShape = 0.9;                  // how much of the rounding error is fed back (1 pushes it all up in frequency)
 uint32_t le32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24; }
 uint16_t le16(const uint8_t* p) { return uint16_t(p[0] | p[1] << 8); }
 }  // namespace
@@ -84,12 +85,20 @@ int wavToNibbles(WavReader& r, const WavInfo& w, int16_t* tmp, int tmpCap, uint8
     const double gain = std::min(32767.0 / peak, 16.0);
     const int bytes = (nOut + 31) / 32 * 16;                                    // whole chunks
     if (bytes > outCap) return 0;
+    // 4 bits is coarse: plain rounding turns a low, loud sound (a kick) into stair steps that sound hard and gritty. Error feedback pushes the rounding
+    // error up to the highest frequencies, away from the bass, and a little dither stops it repeating with the sound.
+    uint32_t rng = 0x2545F491u;
+    auto rnd = [&rng]() { rng = rng * 1664525u + 1013904223u; return double(rng >> 8) / 16777216.0; };
+    double err = 0;
     for (int b = 0; b < bytes; ++b) {
         int nib[2];
         for (int h = 0; h < 2; ++h) {
             const int k = b * 2 + h;
             const double x = k < nOut ? (tmp[k] - mean) * gain / 32768.0 : 0.0;
-            nib[h] = std::clamp(int(std::floor(8.0 + x * 7.5 + 0.5)), 0, 15);
+            const double u = 8.0 + x * 7.0 - kShape * err;                       // the wanted level, less the last error
+            const int q = std::clamp(int(std::floor(u + (rnd() - rnd()) * 0.25 + 0.5)), 0, 15);
+            err = std::clamp(double(q) - u, -2.0, 2.0);
+            nib[h] = q;
         }
         out[b] = uint8_t(nib[0] << 4 | nib[1]);
     }

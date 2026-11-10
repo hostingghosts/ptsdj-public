@@ -23,6 +23,7 @@ public:
     void start(int row = 0);                  // play all channels from a song row
     void startLoop(int c, int phrase);        // only channel c, looping one phrase (live recording): no chain, no song
     void startOverdub(int row, int c, int phrase);   // the song from `row`, but channel c loops `phrase` instead
+    void startChain(int c, int chain);        // only channel c, looping one chain (its phrases and transposes), no song
     void stopAll() { for (Ch& h : ch_) h.active = false; }
     // Advance one tick; calls f(StepEvent) for every channel step that begins on this tick.
     template <class F> void tick(F&& f) {
@@ -63,7 +64,7 @@ public:
 
 private:
     struct Ch {
-        bool active = false, looped = false, loop = false;     // looped: the channel has come round to song row 0 again
+        bool active = false, looped = false, loop = false, chainLoop = false;     // looped: the channel has come round to song row 0 again
         int row = 0, cpos = 0, step = 0, gpos = 0, wait = 0, len = 6;
         uint8_t chain = 0xFF, phrase = 0xFF, groove = 0;
         int hopStep = -1;

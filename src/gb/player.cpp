@@ -18,7 +18,7 @@ constexpr long long kSub = 70224 / 6;   // six steps per video frame (358.4 Hz),
 constexpr long long kKitChunk = 11712;   // cycles per 32-sample wave RAM chunk: one chunk every 2.79 ms (11.47 kHz sample rate)
 }  // namespace
 
-void Player::start(int row, int loopCh, int loopPhrase, bool withSong) {
+void Player::start(int row, int loopCh, int loopPhrase, bool withSong, int soloChain) {
     live_ = false;
     apu_.reset();
     apu_.write(0xFF26, 0x80);
@@ -30,7 +30,8 @@ void Player::start(int row, int loopCh, int loopPhrase, bool withSong) {
     if (tempo_ < 40) tempo_ = 40;
     nr50_ = 0x77;
     rngState_ = 0x0052;                                   // LSDJ seeds the generator with 0x52 whenever playback starts
-    if (loopCh >= 0) { if (withSong) seq_.startOverdub(row, loopCh, loopPhrase); else seq_.startLoop(loopCh, loopPhrase); } else seq_.start(row);
+    if (loopCh >= 0 && soloChain >= 0) seq_.startChain(loopCh, soloChain);
+    else if (loopCh >= 0) { if (withSong) seq_.startOverdub(row, loopCh, loopPhrase); else seq_.startLoop(loopCh, loopPhrase); } else seq_.start(row);
     tickNo_ = -1;
     running_ = true;
     hpInit_ = false;

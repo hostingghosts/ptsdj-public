@@ -166,6 +166,24 @@ bool App::saveToBank(int console) {
     return gb::Bank::writeWorking(io, sg);
 }
 
+bool App::newSong(int console, const char* name) {
+    dual.stop();
+    (console ? songB : song).reset();
+    gb::Lsdj& l = console ? lsdjB : lsdj;
+    l.setName(name);
+    l.newSongView();
+    return true;
+}
+
+// Each console starts with the song it saved last (the bank's active slot) and empty if it never saved one.
+bool App::loadLastSaved(int console) {
+    if (!p_.storage || !p_.storage->exists(bankPath(console))) return false;
+    CardIO io(p_.storage, bankPath(console), ot::IStorage::kRead);
+    gb::Bank bank;
+    if (!io.ok() || !bank.load(io) || !bank.used(bank.active)) return false;
+    return loadFromBank(bank.active, console);
+}
+
 bool App::loadFromBank(int slot, int console) {
     if (!p_.storage || !fileBuf() || !p_.storage->exists(bankPath(console))) return false;
     CardIO io(p_.storage, bankPath(console), ot::IStorage::kRead);
@@ -280,9 +298,41 @@ int App::kitFileStep(int i) {
 }
 
 // The kit being edited: a copy of what the console plays for that slot (an empty kit when there is none).
+// The file beside a kit file that remembers which WAV each sample came from ("<index> <file>" per line).
+void App::srcPath(int console, int slot, char* out, size_t n) const {
+    out[0] = 0;
+    for (int i = 0; i < kitFiles_; ++i)
+        if (kitFile_[i].console == console && kitFile_[i].idx == slot) {
+            std::snprintf(out, n, "%s", kitFile_[i].path);
+            const size_t l = std::strlen(out);
+            if (l > 4) std::strcpy(out + l - 4, ".src");
+        }
+}
+
 bool App::kitOpen(int console, int slot) {
     uint8_t* w = workBuf(console);
     if (!w || slot < 0 || slot > 63) return false;
+    for (auto& s : kitSrc_[console ? 1 : 0]) s[0] = 0;
+    {
+        char sp[72];
+        srcPath(console, slot, sp, sizeof sp);
+        if (sp[0] && p_.storage && p_.storage->exists(sp)) {
+            const ot::IStorage::Handle h = p_.storage->open(sp, ot::IStorage::kRead);
+            if (h >= 0) {
+                char buf[640] = {};
+                const int32_t n = p_.storage->read(h, buf, sizeof buf - 1);
+                p_.storage->close(h);
+                for (char* line = n > 0 ? buf : nullptr; line && *line;) {
+                    char* nl = std::strchr(line, '\n');
+                    if (nl) *nl = 0;
+                    int idx = -1;
+                    char name[28] = {};
+                    if (std::sscanf(line, "%d %27s", &idx, name) == 2 && idx >= 0 && idx < 15) std::snprintf(kitSrc_[console ? 1 : 0][idx], sizeof kitSrc_[0][0], "%s", name);
+                    line = nl ? nl + 1 : nullptr;
+                }
+            }
+        }
+    }
     const gb::Kit k = (console ? kitsB : kits).kit(slot);
     if (k.data) { std::memcpy(w, k.data, gb::kKitBankSize); return true; }
     gb::KitBank::clear(w);
@@ -297,7 +347,15 @@ bool App::kitSave(int console, int slot) {
     int at = -1;
     for (int i = 0; i < kitFiles_; ++i) if (kitFile_[i].console == console && kitFile_[i].idx == slot) at = i;
     if (!gb::KitBank::hasSamples(w)) {                                   // an empty kit: forget the file
-        if (at >= 0) { p_.storage->remove(kitFile_[at].path); kitFile_[at].console = 3; (console ? kitsB : kits).setOverride(slot, nullptr); }
+        if (at >= 0) {
+            char sp[72];
+            srcPath(console, slot, sp, sizeof sp);
+            p_.storage->remove(kitFile_[at].path);
+            if (sp[0]) p_.storage->remove(sp);
+            kitFile_[at].console = 3;
+            (console ? kitsB : kits).setOverride(slot, nullptr);
+        }
+        for (auto& sr : kitSrc_[console ? 1 : 0]) sr[0] = 0;
         return true;
     }
     char nm[9], base[12] = {};
@@ -317,7 +375,12 @@ bool App::kitSave(int console, int slot) {
     const bool ok = p_.storage->write(h, w, gb::kKitBankSize) == int32_t(gb::kKitBankSize);
     p_.storage->close(h);
     if (!ok) return false;
-    if (at >= 0 && std::strcmp(kitFile_[at].path, path) != 0) p_.storage->remove(kitFile_[at].path);   // renamed
+    if (at >= 0 && std::strcmp(kitFile_[at].path, path) != 0) {                                     // renamed: the old file and its note go
+        char old[72];
+        srcPath(console, slot, old, sizeof old);
+        p_.storage->remove(kitFile_[at].path);
+        if (old[0]) p_.storage->remove(old);
+    }
     if (at < 0) for (int i = 0; i < kitFiles_; ++i) if (kitFile_[i].console == 3) { at = i; break; }
     if (at < 0) { if (kitFiles_ >= kMaxKitFiles) { error_ = "TOO MANY KIT FILES"; return false; } at = kitFiles_++; }
     std::snprintf(kitFile_[at].path, sizeof kitFile_[at].path, "%s", path);
@@ -325,6 +388,16 @@ bool App::kitSave(int console, int slot) {
     kitFile_[at].console = uint8_t(console);
     std::memcpy(p_.bigMem + kKitOffset + size_t(at) * gb::kKitBankSize, w, gb::kKitBankSize);
     applyKit(at);
+    {                                                                  // which WAV each sample came from
+        char sp[72], text[640];
+        srcPath(console, slot, sp, sizeof sp);
+        int len = 0;
+        for (int i = 0; i < 15; ++i) if (kitSrc_[console ? 1 : 0][i][0]) len += std::snprintf(text + len, sizeof text - size_t(len), "%d %s\n", i, kitSrc_[console ? 1 : 0][i]);
+        if (len > 0) {
+            const ot::IStorage::Handle h = p_.storage->open(sp, ot::IStorage::kWrite);
+            if (h >= 0) { p_.storage->write(h, text, uint32_t(len)); p_.storage->close(h); }
+        } else if (sp[0]) p_.storage->remove(sp);
+    }
     return true;
 }
 
@@ -551,19 +624,20 @@ bool App::LinkedTransport::action(Action a, int slot) {
 // Instrument files: GB/Instruments/<name>.gbi
 int App::LinkedTransport::listInstruments() {
     app->instCount_ = 0;
-    if (!app->platform().storage) return 0;
+    if (!app->platform().storage || !app->instNames()) return 0;
     app->platform().storage->mkdir(kInstDir);
     app->platform().storage->listDir(kInstDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* a = static_cast<App*>(ctx);
         const size_t n = std::strlen(e.name);
         if (e.isDir || n < 5 || n > 23 + 4 || strcasecmp(e.name + n - 4, ".gbi") != 0 || a->instCount_ >= kMaxInst) return a->instCount_ < kMaxInst;
-        std::snprintf(a->instNames_[a->instCount_], sizeof a->instNames_[0], "%.*s", int(std::min<size_t>(n - 4, 23)), e.name);
+        std::snprintf(a->instNames()[a->instCount_], 24, "%.*s", int(std::min<size_t>(n - 4, 23)), e.name);
         ++a->instCount_;
         return true;
     }, app);
+    char (*nm)[24] = app->instNames();
     for (int i = 1; i < app->instCount_; ++i)
-        for (int j = i; j > 0 && strcasecmp(app->instNames_[j - 1], app->instNames_[j]) > 0; --j) {
-            char tmp[24]; std::memcpy(tmp, app->instNames_[j], 24); std::memcpy(app->instNames_[j], app->instNames_[j - 1], 24); std::memcpy(app->instNames_[j - 1], tmp, 24);
+        for (int j = i; j > 0 && strcasecmp(nm[j - 1], nm[j]) > 0; --j) {
+            char tmp[24]; std::memcpy(tmp, nm[j], 24); std::memcpy(nm[j], nm[j - 1], 24); std::memcpy(nm[j - 1], tmp, 24);
         }
     return app->instCount_;
 }
@@ -586,7 +660,7 @@ bool App::LinkedTransport::saveInstrumentFile(const char* name, const uint8_t* d
 int App::LinkedTransport::loadInstrumentFile(int i, uint8_t* out, int max) {
     if (i < 0 || i >= app->instCount_ || !app->platform().storage) return -1;
     char path[64];
-    std::snprintf(path, sizeof path, "%s/%s.gbi", kInstDir, app->instNames_[i]);
+    std::snprintf(path, sizeof path, "%s/%s.gbi", kInstDir, app->instNames()[i]);
     const ot::IStorage::Handle h = app->platform().storage->open(path, ot::IStorage::kRead);
     if (h < 0) return -1;
     const int32_t n = app->platform().storage->read(h, out, uint32_t(max));
@@ -794,8 +868,8 @@ void App::boot() {
 // unit ever stops, the last banner says where.
 void App::bootTick() {
     switch (bootStep_) {
-        case 0: loadSong("GB/AUTOLOAD.LSDSNG"); setBanner("LOADING SONG B"); ++bootStep_; break;
-        case 1: loadSong("GB/AUTOLOAD_B.LSDSNG", 1); setBanner("LOADING ROM"); ++bootStep_; break;
+        case 0: loadLastSaved(0); setBanner("LOADING SONG B"); ++bootStep_; break;
+        case 1: loadLastSaved(1); setBanner("LOADING ROM"); ++bootStep_; break;
         case 2: {
             const bool done = romStep();
             if (!done) { char b[24]; std::snprintf(b, sizeof b, "LOADING ROM %u%%", unsigned(romGot_ * 100 / kRomBytes)); setBanner(b); }

@@ -41,6 +41,15 @@ void Seq::startLoop(int c, int phrase) {
     h.wait = 0;
 }
 
+void Seq::startChain(int c, int chain) {
+    for (int i = 0; i < 4; ++i) ch_[i] = Ch();
+    Ch& h = ch_[c];
+    h.chain = uint8_t(chain);
+    h.chainLoop = true;
+    h.active = enterChainPos(h, 0);
+    h.wait = 0;
+}
+
 void Seq::startOverdub(int row, int c, int phrase) {
     start(row);
     Ch& h = ch_[c];
@@ -62,6 +71,7 @@ int Seq::grooveTicks(Ch& h) {
 bool Seq::hopNext(Ch& h) {
     if (h.loop) return true;                                  // a hop in a looping phrase stays in it
     if (enterChainPos(h, h.cpos + 1)) return true;
+    if (h.chainLoop) { if (enterChainPos(h, 0)) return true; h.active = false; return false; }
     if (enterRow(h, h.row + 1)) return true;
     h.looped = true;
     if (enterRow(h, 0)) return true;
@@ -73,6 +83,7 @@ void Seq::advance(Ch& h) {
     if (++h.step < 16) return;
     if (h.loop) { h.step = 0; return; }
     if (enterChainPos(h, h.cpos + 1)) return;
+    if (h.chainLoop) { if (!enterChainPos(h, 0)) h.active = false; return; }      // a looping chain starts over
     if (enterRow(h, h.row + 1)) return;
     // past the last row: loop to the first row
     h.looped = true;

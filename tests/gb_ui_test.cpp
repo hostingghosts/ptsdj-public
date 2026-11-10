@@ -311,7 +311,7 @@ TEST(project_screen_saves_names_and_exports) {
     tap(gb::Key::A);
     CHECK(std::strcmp(r.app.lsdj.status(), "SAVED") == 0);
     CHECK(st.files.count("GB/Saves/A.srm") == 1);              // the song went into Game Boy A's bank under its project name
-    tap(gb::Key::Down); tap(gb::Key::Down); tap(gb::Key::A);   // EXPORT WAV
+    tap(gb::Key::Down); tap(gb::Key::Down); tap(gb::Key::Down); tap(gb::Key::A);   // EXPORT WAV (after LOAD and NEW SONG)
     CHECK(std::strcmp(r.app.lsdj.status(), "WAV DONE") == 0);
     CHECK(st.files["GB/Export/SONG.wav"].size() > 44u);
     tap(gb::Key::Down); tap(gb::Key::A);                       // EXPORT LSDJ
@@ -401,14 +401,16 @@ TEST(synth_edit_regenerates_frames_when_the_rom_is_available) {
     CHECK_EQ(int(r.app.song.wave(5)[1]), 0x54);
 }
 
-TEST(boot_loads_autoload_songs_in_steps_and_clears_the_banner) {
+TEST(boot_loads_the_song_each_console_saved_last_in_steps_and_clears_the_banner) {
     MemStorage st;
     {
         Rig a(true, &st);
         oneNote(a.app.song, 0, 25, 3);
         oneNote(a.app.songB, 1, 30, 3);
-        CHECK(a.app.saveSong("GB/AUTOLOAD.LSDSNG", "A", 0));
-        CHECK(a.app.saveSong("GB/AUTOLOAD_B.LSDSNG", "B", 1));
+        a.app.lsdj.setName("A");
+        a.app.lsdjB.setName("B");
+        CHECK(a.app.saveToBank(0));
+        CHECK(a.app.saveToBank(1));
     }
     Rig r(true, &st);                                     // boot() only announces; nothing is loaded yet
     CHECK_EQ(int(r.app.songB.songCell(0, 1)), 0xFF);
@@ -429,7 +431,8 @@ TEST(file_screen_lists_songs_and_loads_one_into_the_console) {
     for (int i = 0; i < 11; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG
     tapKey(l, gb::Key::A);
     CHECK(l.screen() == gb::Scr::File);
-    CHECK_EQ(l.fileCount, 2);
+    CHECK_EQ(l.fileCount, 3);                                 // NEW SONG, then the two loose files
+    tapKey(l, gb::Key::Down);
     tapKey(l, gb::Key::Down);                                 // sorted: ALPHA, BETA -> BETA (note on channel 0)
     tapKey(l, gb::Key::A);
     CHECK(l.screen() == gb::Scr::Project);
@@ -654,14 +657,14 @@ TEST(save_song_files_it_in_the_consoles_own_bank_and_load_lists_it) {
     CHECK(r.app.saveToBank(0));                                 // the same name replaces
     gb::Lsdj& l = r.app.lsdj;
     l.openFiles();
-    CHECK_EQ(l.fileCount, 2);                                   // TUNE and TUNE2; DRUMS is on the other Game Boy
+    CHECK_EQ(l.fileCount, 3);                                   // NEW SONG, TUNE and TUNE2; DRUMS is on the other Game Boy
     r.app.song.note(0, 0) = 1;
-    l.fileSel = 0;
+    l.fileSel = 1;
     keyTap(r, ot::btn::Insert);                                 // load the first entry into this console
     CHECK_EQ(int(r.app.song.note(0, 0)), 31);
     CHECK(std::strcmp(l.name(), "TUNE") == 0);
     r.app.lsdjB.openFiles();
-    CHECK_EQ(r.app.lsdjB.fileCount, 1);
+    CHECK_EQ(r.app.lsdjB.fileCount, 2);
 }
 
 TEST(loose_lsdsng_files_are_listed_after_the_bank_and_saved_into_it) {
@@ -673,15 +676,15 @@ TEST(loose_lsdsng_files_are_listed_after_the_bank_and_saved_into_it) {
     r.app.lsdj.setName("NEW");
     CHECK(r.app.saveToBank(0));
     r.app.lsdj.openFiles();
-    CHECK_EQ(r.app.lsdj.fileCount, 2);                          // NEW (bank) then +OLD (file)
+    CHECK_EQ(r.app.lsdj.fileCount, 3);                          // NEW SONG, NEW (bank) then +OLD (file)
     r.app.song.note(0, 0) = 1;
-    r.app.lsdj.fileSel = 1;
+    r.app.lsdj.fileSel = 2;
     keyTap(r, ot::btn::Insert);
     CHECK_EQ(int(r.app.song.note(0, 0)), 25);
     CHECK(std::strcmp(r.app.lsdj.name(), "OLD") == 0);
     CHECK(r.app.saveToBank(0));                                 // now it is in the bank too
     r.app.lsdj.openFiles();
-    CHECK_EQ(r.app.lsdj.fileCount, 3);
+    CHECK_EQ(r.app.lsdj.fileCount, 4);
 }
 
 TEST(a_bank_song_can_be_erased_with_select_delete_and_a_second_insert) {
@@ -694,19 +697,21 @@ TEST(a_bank_song_can_be_erased_with_select_delete_and_a_second_insert) {
     CHECK(r.app.saveToBank(0));
     gb::Lsdj& l = r.app.lsdj;
     l.openFiles();
-    CHECK_EQ(l.fileCount, 2);
+    CHECK_EQ(l.fileCount, 3);
+    l.fileSel = 1;
     r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
     keyTap(r, ot::btn::Delete);
     r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
-    CHECK_EQ(l.fileCount, 2);                                   // asked first
+    CHECK_EQ(l.fileCount, 3);                                   // asked first
     keyTap(r, ot::btn::Insert);
-    CHECK_EQ(l.fileCount, 1);
+    CHECK_EQ(l.fileCount, 2);
     CHECK(std::strcmp(l.status(), "ERASED") == 0);
 }
 
 TEST(a_full_bank_says_so_and_changes_nothing) {
     MemStorage st;
     Rig r(true, &st);
+    r.loop(10);                                                 // the start-up steps first (nothing is saved yet)
     oneNote(r.app.song, 0, 25, 3);
     for (int i = 0; i < 32; ++i) {
         char nm[16];
@@ -847,7 +852,7 @@ TEST(project_name_is_typed_and_names_the_saved_file) {
     l.key(gb::Key::A, true); l.key(gb::Key::A, false);
     CHECK_EQ(int(st.files["GB/Saves/A.srm"].size()), 0x20000);
     l.openFiles();
-    CHECK_EQ(l.fileCount, 1);
+    CHECK_EQ(l.fileCount, 2);
 }
 
 TEST(shift_insert_arrows_select_cells_copy_and_shift_copy_paste_on_the_same_page_only) {
@@ -1163,7 +1168,7 @@ TEST(export_lsdj_can_write_song_a_song_b_or_both) {
     CHECK_EQ(int(st.files.count("GB/Export/Y_A.srm")), 0);
     gb::Lsdj& l = r.app.lsdj;
     keyTap(r, ot::btn::Config);
-    l.projRow = 13;
+    l.projRow = 14;
     CHECK_EQ(l.exportSel, 2);                                   // A + B by default
         l.encoder(-1);                                              // the jog wheel picks it, like every other value
     CHECK_EQ(l.exportSel, 1);
@@ -1303,38 +1308,44 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     tap(r, ot::btn::SampleLoader);
     CHECK(l.screen() == gb::Scr::Loader);
     CHECK_EQ(l.smpCount, 2);                                    // KICK.wav and SNARE.wav
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // load KICK: the editor opens with it
-    CHECK(l.screen() == gb::Scr::Editor);
-    CHECK(l.smpLen > 1000);
-    CHECK(std::strcmp(l.sampleName(), "KIC") == 0);
-    const int len = l.smpEnd;
-    l.encoder(0);
-    l.smpRow = 1;                                               // END: the jog wheel trims it
-    l.encoder(-3);
-    CHECK_EQ(l.smpEnd, len - 3);
-    l.smpRow = 4;                                               // ADD TO KIT (kit 1A)
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    keyTap(r, ot::btn::Insert);                                 // Insert adds KICK to kit 1A at once
+    CHECK(l.screen() == gb::Scr::Loader);
     CHECK(std::strstr(l.status(), "ADDED") != nullptr);
     CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.kit")), 1);     // saved at once for console A
     CHECK_EQ(int(st.files["GB/Kits/A/1A_KIT1A.kit"].size()), 0x4000);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.src")), 1);     // it remembers where the sample came from (the check mark)
+    CHECK(std::string(st.files["GB/Kits/A/1A_KIT1A.src"].begin(), st.files["GB/Kits/A/1A_KIT1A.src"].end()).find("KICK.wav") != std::string::npos);
     CHECK(r.app.kits.kit(0x1A).data != nullptr);                // console A plays it
     CHECK(r.app.kitsB.kit(0x1A).data == nullptr);               // console B does not
-    // a second sample into the same kit, from the other file
-    tap(r, ot::btn::SampleLoader);
-    l.smpSel = 1;
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
-    l.smpRow = 4;
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    gb::Lcd lcd0;
+    l.draw(lcd0);
+    keyTap(r, ot::btn::Insert);
+    CHECK(std::strstr(l.status(), "ALREADY") != nullptr);       // not twice
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 1);
+    // SNARE: Shift + Insert opens it in the editor to cut it, then ADD TO KIT
+    keyTap(r, ot::btn::Down);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Insert);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    CHECK(l.screen() == gb::Scr::Editor);
+    CHECK(l.smpLen > 1000);
+    CHECK(std::strcmp(l.sampleName(), "SNA") == 0);
+    const int len = l.smpEnd;
+    l.smpRow = 1;                                               // END: the jog wheel trims it
+    l.encoder(-3);
+    CHECK_EQ(l.smpEnd, len - 3);
+    l.smpRow = 5;                                               // ADD TO KIT
+    keyTap(r, ot::btn::Insert);
+    CHECK(std::strstr(l.status(), "ADDED") != nullptr);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 2);
     // the kit page lists both
     tap(r, ot::btn::SamplePlayback);
     CHECK(l.screen() == gb::Scr::Kit);
     CHECK_EQ(l.kitSlot, 0x1A);
     gb::Lcd lcd;
     l.draw(lcd);
-    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 2);
-    // a pad on this page plays a sample: the wave channel starts
     padEvent(r, ot::InputEvent::kPadDown, 1);
-    CHECK(r.app.player.voiceOn(2) || true);
     // exporting: console A's ROM has the kit in bank 34, console B's does not
     oneNote(r.app.song, 0, 25, 3);
     CHECK(r.app.exportFiles("Q", 2));
@@ -1343,15 +1354,67 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     CHECK_EQ(int(a.size()), 1 << 20);
     CHECK_EQ(int(a[34 * 0x4000]), 0x60);
     CHECK_EQ(int(b[34 * 0x4000]), 0xFF);
-    // erasing the samples removes the kit's file
+    // Delete on the loader takes KICK out again (the check mark goes), the second sample moves up
+    tap(r, ot::btn::SampleLoader);
+    l.smpSel = 0;
+    keyTap(r, ot::btn::Delete);
+    CHECK(std::strstr(l.status(), "REMOVED") != nullptr);
+    CHECK_EQ(gb::KitBank::count(r.app.kits.kit(0x1A).data), 1);
+    keyTap(r, ot::btn::Delete);
+    CHECK(std::strstr(l.status(), "NOT IN") != nullptr);
+    // erasing the last sample on the kit page removes the kit's files
+    tap(r, ot::btn::SamplePlayback);
     l.kitRow = 2;
-    l.key(gb::Key::B, true); l.key(gb::Key::B, false);
+    keyTap(r, ot::btn::Delete);
     CHECK(std::strstr(l.status(), "ERASE") != nullptr);
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
-    l.kitRow = 2;
-    l.key(gb::Key::B, true); l.key(gb::Key::B, false);
-    l.key(gb::Key::A, true); l.key(gb::Key::A, false);
+    keyTap(r, ot::btn::Insert);
     CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.kit")), 0);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/1A_KIT1A.src")), 0);
+}
+
+TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_after_asking) {
+    MemStorage st;
+    putWav(st, "GB/Samples/KICK.wav", 44100, 80, 0.5);
+    putWav(st, "GB/Samples/SNARE.wav", 22050, 300, 0.3);
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    tap(r, ot::btn::SampleLoader);
+    keyTap(r, ot::btn::Insert);                                 // KICK into kit 1A
+    keyTap(r, ot::btn::Down);
+    keyTap(r, ot::btn::Insert);                                 // SNARE too
+    const uint8_t* kit = r.app.kits.kit(0x1A).data;
+    CHECK_EQ(gb::KitBank::count(kit), 2);
+    const int kickLen = gb::KitBank::length(kit, 0);
+    const int snareLen = gb::KitBank::length(kit, 1);
+    tap(r, ot::btn::SampleEditor);
+    CHECK(l.screen() == gb::Scr::Editor);
+    l.smpRow = 4;                                               // the X/15 SAMPLES row: the jog wheel scrolls the kit
+    l.encoder(1);
+    CHECK_EQ(l.smpEditIdx, 0);
+    CHECK_EQ(l.smpLen, kickLen - 16);                           // the kick, without its silent end chunk
+    l.encoder(1);
+    CHECK_EQ(l.smpEditIdx, 1);
+    CHECK_EQ(l.smpLen, snareLen - 16);
+    l.encoder(-1);                                              // back to the kick
+    CHECK_EQ(l.smpEditIdx, 0);
+    l.smpRow = 1;                                               // trim its end
+    const int end = l.smpEnd;
+    l.encoder(-10);
+    CHECK_EQ(l.smpEnd, end - 10);
+    l.smpRow = 5;                                               // REPLACE: asks first, nothing changes yet
+    keyTap(r, ot::btn::Insert);
+    gb::Lcd lcd;
+    l.draw(lcd);
+    CHECK_EQ(gb::KitBank::length(r.app.kits.kit(0x1A).data, 0), kickLen);
+    keyTap(r, ot::btn::Delete);                                 // BKSP says no
+    CHECK_EQ(gb::KitBank::length(r.app.kits.kit(0x1A).data, 0), kickLen);
+    keyTap(r, ot::btn::Insert);
+    keyTap(r, ot::btn::Insert);                                 // yes
+    CHECK(std::strstr(l.status(), "REPLACED") != nullptr);
+    kit = r.app.kits.kit(0x1A).data;
+    CHECK_EQ(gb::KitBank::count(kit), 2);                       // replaced, not added
+    CHECK(gb::KitBank::length(kit, 0) < kickLen);
+    CHECK_EQ(gb::KitBank::length(kit, 1), snareLen);            // the next one is untouched
 }
 
 TEST(a_kit_instruments_kit_number_is_edited_on_the_instr_page) {
@@ -1445,4 +1508,132 @@ TEST(on_the_kit_page_insert_opens_a_sample_in_the_editor_and_shift_insert_rename
     CHECK_EQ(l.smpLen, 160);
     CHECK(std::strcmp(l.sampleName(), "ABC") == 0);
     CHECK_EQ(l.kitSlot, 0x1A);                                  // a ROM sample goes to the first kit of your own
+}
+
+TEST(play_on_the_chain_phrase_and_table_pages_plays_just_that_and_shift_play_plays_the_song) {
+    Rig r;
+    gb::Song& s = r.app.song;
+    gb::Lsdj& l = r.app.lsdj;
+    for (int row = 0; row < 256; ++row) for (int c = 0; c < 4; ++c) s.songCell(row, c) = 0xFF;
+    s.songCell(0, 0) = 1; s.songCell(0, 1) = 1;                  // the song plays chain 1 on tracks 1 and 2
+    for (int i = 0; i < 16; ++i) s.chainPhrase(1, i) = 0xFF;
+    s.chainPhrase(1, 0) = 5;
+    for (int i = 0; i < 16; ++i) s.chainPhrase(3, i) = 0xFF;
+    s.chainPhrase(3, 0) = 7; s.chainPhrase(3, 1) = 8;            // the chain on screen: two phrases
+    s.note(5, 0) = 25; s.phraseInstr(5, 0) = 0;
+    s.note(7, 0) = 25; s.phraseInstr(7, 0) = 0;
+    s.note(8, 0) = 30; s.phraseInstr(8, 0) = 0;
+    l.songCh = 2;                                                // the cursor track
+    l.chain = 3;
+    keyTap(r, ot::btn::Pattern);                                 // the Chain page
+    keyTap(r, ot::btn::Play);
+    r.loop(3);
+    CHECK(r.app.dual.running());
+    CHECK(r.app.player.seq().active(2));                         // only the cursor track plays
+    CHECK(!r.app.player.seq().active(0));
+    CHECK(!r.app.player.seq().active(1));
+    CHECK_EQ(r.app.player.seq().chain(2), 3);
+    CHECK_EQ(r.app.player.seq().phrase(2), 7);
+    keyTap(r, ot::btn::Play);                                    // Play again stops it
+    r.loop(3);
+    CHECK(!r.app.dual.running());
+    l.phrase = 7;
+    keyTap(r, ot::btn::Note);                                    // the Phrase page
+    keyTap(r, ot::btn::Play);
+    r.loop(3);
+    CHECK(r.app.player.seq().active(2));
+    CHECK(!r.app.player.seq().active(0));
+    CHECK_EQ(r.app.player.seq().phrase(2), 7);
+    keyTap(r, ot::btn::Play);
+    r.loop(3);
+    CHECK(!r.app.dual.running());
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);         // Shift + Play: the whole song
+    keyTap(r, ot::btn::Play);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    r.loop(3);
+    CHECK(r.app.player.seq().active(0));
+    CHECK(r.app.player.seq().active(1));
+    keyTap(r, ot::btn::Play);
+    r.loop(3);
+    // a table: the instrument that uses it is played, Play again stops it
+    uint8_t* in = s.instrument(6);
+    in[0] = 0; in[1] = 0xF0; in[6] = 0x20 | 4;                   // a pulse sound using table 4
+    s.at(uint16_t(gb::off::kTblEnv + 4 * 16)) = 0x5F;
+    l.table = 4;
+    l.instr = 0;
+    keyTap(r, ot::btn::InstrParams);                             // the Table page
+    keyTap(r, ot::btn::Play);
+    r.loop(40);
+    CHECK(r.app.player.voiceOn(0));
+    keyTap(r, ot::btn::Play);
+    r.loop(3);
+    CHECK(!r.app.player.voiceOn(0));
+}
+
+TEST(new_song_asks_for_a_name_and_starts_empty_from_the_load_page_and_the_project_page) {
+    MemStorage st;
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    oneNote(r.app.song, 1, 25, 3);
+    CHECK_EQ(int(r.app.song.songCell(0, 1)), 0);
+    l.openFiles();
+    CHECK(l.screen() == gb::Scr::File);
+    CHECK_EQ(l.fileSel, 0);                                     // NEW SONG is the first entry
+    keyTap(r, ot::btn::Insert);
+    CHECK(l.nameEditing());
+    l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
+    l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);
+    l.key(gb::Key::A, true); l.key(gb::Key::A, false);          // a letter
+    l.key(gb::Key::Start, true); l.key(gb::Key::Start, false);   // OK
+    CHECK(!l.nameEditing());
+    CHECK_EQ(int(r.app.song.songCell(0, 1)), 0xFF);             // empty (a fresh song has chain 00 on the first row of track 1 only)
+    CHECK_EQ(int(r.app.song.songCell(0, 0)), 0);
+    CHECK(l.name()[0] != 0);
+    CHECK(l.screen() == gb::Scr::Song);
+    oneNote(r.app.song, 2, 25, 3);                              // the same from the Project page: the NEW SONG row
+    keyTap(r, ot::btn::Config);
+    l.projRow = 12;
+    keyTap(r, ot::btn::Insert);
+    CHECK(l.nameEditing());
+    l.key(gb::Key::B, true); l.key(gb::Key::B, false);          // Delete = NO: nothing changes
+    CHECK_EQ(int(r.app.song.songCell(0, 2)), 0);
+}
+
+TEST(the_project_pages_technical_line_shows_only_while_shift_is_held) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    static const char kInfo[] = "P1K L0 R1024K1";
+    l.setAudioInfo(kInfo);
+    keyTap(r, ot::btn::Config);
+    gb::Lcd a;
+    l.draw(a);
+    auto row16 = [](const gb::Lcd& lcd) { int on = 0; for (int y = 128; y < 136; ++y) for (int x = 0; x < 150; ++x) on += lcd.at(x, y) != 0; return on; };
+    CHECK_EQ(row16(a), 0);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    r.loop(3);
+    gb::Lcd b;
+    l.draw(b);
+    CHECK(row16(b) > 0);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+}
+
+TEST(the_library_lists_hundreds_of_presets_and_left_right_turn_a_page) {
+    MemStorage st;
+    for (int i = 0; i < 300; ++i) {
+        char n[48];
+        std::snprintf(n, sizeof n, "GB/Instruments/P%03d.gbi", i);
+        st.files[n] = std::vector<uint8_t>(26, 0);
+    }
+    st.dirs.insert("GB/Instruments");
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    l.openLibrary();
+    CHECK_EQ(l.libCount, 300);
+    l.libSel = 0;
+    keyTap(r, ot::btn::Right);
+    CHECK_EQ(l.libSel, 13);
+    keyTap(r, ot::btn::Left);
+    CHECK_EQ(l.libSel, 0);
+    gb::Lcd lcd;
+    l.draw(lcd);
 }

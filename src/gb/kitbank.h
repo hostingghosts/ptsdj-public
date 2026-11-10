@@ -28,6 +28,8 @@ struct KitBank {
     static int freeBytes(const uint8_t* b) { return kKitCapacity - used(b); }
     // Appends a sample of `n` bytes of packed nibbles (padded to whole chunks plus a silent chunk). False if the kit is full (15 samples or no room).
     static bool add(uint8_t* b, const char* nm, const uint8_t* bytes, int n);
+    // Swaps sample i for new data and a new name (padded as add does); the samples after it move. False if the kit has no room for the difference.
+    static bool replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, int n);
     static bool remove(uint8_t* b, int i);                           // the samples after it move up
     static int paddedSize(int n) { return (n + 15) / 16 * 16 + 16; }
 };

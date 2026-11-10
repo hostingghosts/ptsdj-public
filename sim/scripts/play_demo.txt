@@ -1,4 +1,8 @@
 wait 300
+tap FILE
+tap DOWN
+tap INSERT
+wait 200
 tap PLAY
 wait 6000
 tap PLAY

@@ -216,7 +216,7 @@ void GbScreen::drawPageTab(ot::Gfx& g) {
     g.roundRect(17, 431, 186, 54, 8, kLensDark);
     g.text(50, 444, ui::kText, 0xFFFFFF, "<", ot::IDisplay::kOptCenterX);
     g.text(150, 444, ui::kText, 0xFFFFFF, ">", ot::IDisplay::kOptCenterX);
-    g.text(100, 462, ui::kSmall, kLensLight, "PAGE", ot::IDisplay::kOptCenterX);
+    g.text(100, 444, ui::kText, kLensLight, "PAGE", ot::IDisplay::kOptCenterX);      // the word sits level with the arrows, midway between them
 }
 
 // F1..F8 sit under the screen: song A, its level, the four tracks of the active song (mute, solo with Shift), song B's level, song B.

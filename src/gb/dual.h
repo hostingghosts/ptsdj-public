@@ -19,6 +19,7 @@ public:
     // Rec + Play: the console's channel `ch` loops `phrase` while the songs play behind it from rowA / rowB. master >= 0 links the consoles
     // (the other console starts too and follows the master's tempo); otherwise only `console` plays.
     void startOverdub(int console, int ch, int phrase, int rowA, int rowB, int master);
+    void startSolo(int console, int ch, int phrase, int chain);   // only this console, only this track: one phrase (chain < 0) or one chain, looping
     void setVolume(int console, int v) { vol_[console ? 1 : 0] = v < 0 ? 0 : v > 15 ? 15 : v; }   // 0-15, the Master page
     int volume(int console) const { return vol_[console ? 1 : 0]; }
     void setFollow(int master) { follow_ = master; }

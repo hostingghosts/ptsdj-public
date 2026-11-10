@@ -20,6 +20,8 @@ struct Transport {
     virtual void start(int console, int row) = 0;   // the console whose Start was pressed and its row
     // Rec + Play: this console's channel loops one phrase while the song plays behind it from `row` (and the linked console from its own row).
     virtual void startLoop(int console, int ch, int phrase, int row) = 0;
+    // Play on the Chain / Phrase page: just that chain (chain >= 0) or phrase on one track, looping, on this console only.
+    virtual void startSolo(int console, int ch, int phrase, int chain) { (void)console; (void)ch; (void)phrase; (void)chain; }
     virtual void stop() = 0;
     virtual bool running() const = 0;
     enum Action { kSavePair, kLoadPair, kExportWav, kExportFiles, kSaveSong };
@@ -29,7 +31,8 @@ struct Transport {
     virtual int listSongs(int console) = 0;
     virtual const char* songName(int i) = 0;          // slot name, or "+" and the file name
     virtual bool loadSongFile(int i, int console) = 0;               // session actions from the Project screen; false = failed
-    virtual bool deleteSongFile(int i, int console) = 0;             // removes a bank slot (not a loose file); false = failed
+    virtual bool deleteSongFile(int i, int console) = 0;
+    virtual bool newSong(int console, const char* name) { (void)console; (void)name; return false; }   // an empty song named `name` replaces this console's             // removes a bank slot (not a loose file); false = failed
     virtual const char* errorText() { return nullptr; }              // why the last action failed, if it knows (e.g. "BANK FULL")
     virtual const char* doneText() { return nullptr; }               // what to say instead of the usual success text, if there is more to tell
     // The virtual link cable: 0 off, 1 master, 2 slave. The slave follows the master's tempo.
@@ -45,6 +48,9 @@ struct Transport {
     virtual uint8_t* kitBuf(int console) { (void)console; return nullptr; }          // the kit being edited: 16 KB
     virtual bool kitOpen(int console, int slot) { (void)console; (void)slot; return false; }   // copies that kit into the edit buffer (an empty kit if there is none)
     virtual bool kitSave(int console, int slot) { (void)console; (void)slot; return false; }   // writes the edit buffer as the kit's file and makes it live; an empty kit erases it
+    virtual const char* kitSource(int console, int i) { (void)console; (void)i; return ""; }   // the WAV file sample i of the kit being edited came from ("" if none)
+    virtual void setKitSource(int console, int i, const char* wav) { (void)console; (void)i; (void)wav; }
+    virtual void removeKitSource(int console, int i) { (void)console; (void)i; }              // sample i left the kit: the ones after it move up
     virtual int listSamples() { return 0; }                                           // GB/Samples/*.wav
     virtual const char* sampleName(int i) { (void)i; return ""; }
     virtual uint8_t* sampleBuf() { return nullptr; }                                  // the sample being prepared: packed 4-bit, up to 16 KB
@@ -127,6 +133,7 @@ public:
     int waveNo = 0, waveCol = 0;                 // Wave screen: wave 00-FF and the cursor column 0-31 (column c shows sample (c + 1) & 31)
     int helpPage = 0;
     // Sample kits: Sample Loader (WAV files), Sample Editor (trim, name, add to a kit) and Sample Playback (the kit's samples). The 16 KB buffers live in the Transport.
+    void newSongView();                          // cursors back to the top and the Song page, for a new or loaded song
     void openLoader();
     void openEditor();
     void openKit();
@@ -134,8 +141,11 @@ public:
     int fwSel = 0, fwCount = 0;                 // Firmware window: the update images in /Firmware
     int smpSel = 0, smpCount = 0;               // Loader: the WAV list
     int smpLen = 0, smpStart = 0, smpEnd = 0, smpRow = 0;   // Editor: bytes in the prepared sample, trim in chunks of 16 bytes, cursor row
+    int smpEditIdx = -1;                        // Editor: -1 a new sample, else the kit's sample being changed (ADD TO KIT replaces it)
     int kitSlot = 0x1A, kitRow = 0;             // Kit: the kit number 00-37 and the cursor row (0 number, 1 name, 2.. the samples)
     const char* sampleName() const { return smpName_; }
+    int packInstrument(uint8_t* out) const;      // 'GBI1', flags, name[5], instrument[16], optional table[96] (the instrument on screen)
+    bool unpackInstrument(const uint8_t* in, int n);
     int libSel = 0, libCount = 0;               // Library screen: row 0 saves the current instrument, rows 1.. are the files
     const char* status() const { return status_; }   // result of the last Project action, shown on the Project screen
     int exportSel = 2;                           // Project: EXPORT LSDJ writes A (0), B (1) or both (2)
@@ -185,8 +195,6 @@ private:
     void nameKey(Key k);
     void nameCommit();
     void drawLibrary(Lcd& l) const;
-    int packInstrument(uint8_t* out) const;      // 'GBI1', flags, name[5], instrument[16], optional table[96]
-    bool unpackInstrument(const uint8_t* in, int n);
     const char* instrName(int i, char out[6]) const;
 
     // selection and clipboard
@@ -238,6 +246,9 @@ private:
     void kitEdit(Key k);
     void kitPress();
     void kitAudition();
+    void tableAudition();
+    bool tableHeld_ = false;                 // a table playback is sounding
+    int tableCh_ = 0;
     void kitToEditor();
     void kitRename();
     void kitSelect(int slot);
@@ -246,6 +257,14 @@ private:
     bool sampleLoad(bool toEditor);
     void kitAdd();
     void kitErase();
+    void loaderAdd();
+    void kitReplace();
+    void editorSelectSample(int idx);
+    void kitSampleToBuffer(int i);
+    char smpLoaderSrc_[28] = {};             // the WAV last loaded from the loader
+    void loaderRemove();
+    bool inKit(const char* wav) const;
+    char smpSrc_[28] = {};                   // the WAV the prepared sample came from
     bool fullPage() const { return scr_ == Scr::File || scr_ == Scr::Library || scr_ == Scr::Loader || scr_ == Scr::Editor || scr_ == Scr::Kit || scr_ == Scr::Firmware; }
     char smpName_[4] = "SMP";
     int smpLoaded_ = -1;

@@ -5,6 +5,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 #include "atw/ui/ui.h"
 #include "gb/dual.h"
@@ -70,6 +72,8 @@ public:
     // Each Game Boy has one bank file with its 32 songs: GB/Saves/A.srm (song A) and B.srm (song B), the same 128 KB layout as a cartridge save.
     bool saveToBank(int console);              // the song on screen goes into its slot (same name replaces, else the first free one) and the working song is updated
     bool loadFromBank(int slot, int console);
+    bool loadLastSaved(int console);           // at start: the song each console saved last, or an empty one
+    bool newSong(int console, const char* name);   // an empty song (the template LSDJ starts from) with this project name
     const char* bankPath(int console) const { return console ? "GB/Saves/B.srm" : "GB/Saves/A.srm"; }
     // A linked session is two files, BASE_A.lsdsng and BASE_B.lsdsng in GB/Songs.
     bool loadLinked(const char* base);
@@ -127,6 +131,8 @@ private:
     char fwNames_[kMaxFirmware][40] = {};
     int fwCount_ = 0;
     static constexpr int kMaxSamples = 40;
+    char kitSrc_[2][15][28] = {};              // the WAV file each sample of the kit being edited came from (the loader's check marks)
+    void srcPath(int console, int slot, char* out, size_t n) const;
     char sampleNames_[kMaxSamples][28] = {};
     int sampleCount_ = 0;
     uint8_t* fileBuf() const;
@@ -160,8 +166,9 @@ private:
     int syncRole_[2] = {1, 2};                 // 1 master, 2 slave; only matters while both projects have SYNC on
     int look_ = 0;
     uint32_t progressAt_ = 0;
-    static constexpr int kMaxInst = 64;
-    char instNames_[kMaxInst][24] = {};
+    static constexpr int kMaxInst = 400;                                   // the library lists the presets too
+    static constexpr uint32_t kInstOffset = kWorkOffset + 3 * gb::kKitBankSize;   // the names live in SDRAM after the edit buffers
+    char (*instNames() const)[24] { return p_.bigMem && p_.bigMemSize >= kInstOffset + kMaxInst * 24 ? reinterpret_cast<char (*)[24]>(p_.bigMem + kInstOffset) : nullptr; }
     int instCount_ = 0;
     bool linked() const { return song.at(gb::off::kSync) == 1 && songB.at(gb::off::kSync) == 1; }
     int masterConsole() const { return syncRole_[0] == 1 || syncRole_[1] != 1 ? 0 : 1; }
@@ -170,6 +177,7 @@ private:
         App* app = nullptr;
         void start(int console, int row) override;
         void startLoop(int console, int ch, int phrase, int row) override;
+        void startSolo(int console, int ch, int phrase, int chain) override { app->dual.startSolo(console, ch, phrase, chain); app->flushRing(); }
         void stop() override { app->dual.stop(); }
         bool running() const override { return app->dual.running(); }
         bool action(Action a, int slot) override;
@@ -177,12 +185,20 @@ private:
         const char* songName(int i) override { return app->songNames_[i]; }
         bool loadSongFile(int i, int console) override;
         bool deleteSongFile(int i, int console) override;
+        bool newSong(int console, const char* name) override { return app->newSong(console, name); }
         uint8_t* kitBuf(int console) override { return app->workBuf(console); }
         bool kitOpen(int console, int slot) override { return app->kitOpen(console, slot); }
         bool kitSave(int console, int slot) override { return app->kitSave(console, slot); }
         int listFirmware() override;
         const char* firmwareName(int i) override { return i >= 0 && i < app->fwCount_ ? app->fwNames_[i] : ""; }
         bool flashFirmware(int i) override;
+        const char* kitSource(int console, int i) override { return i >= 0 && i < 15 ? app->kitSrc_[console ? 1 : 0][i] : ""; }
+        void setKitSource(int console, int i, const char* wav) override { if (i >= 0 && i < 15) std::snprintf(app->kitSrc_[console ? 1 : 0][i], sizeof app->kitSrc_[0][0], "%s", wav); }
+        void removeKitSource(int console, int i) override {
+            char (*k)[28] = app->kitSrc_[console ? 1 : 0];
+            for (int j = i; j >= 0 && j < 14; ++j) std::memcpy(k[j], k[j + 1], 28);
+            if (i >= 0 && i < 15) k[14][0] = 0;
+        }
         int listSamples() override;
         const char* sampleName(int i) override { return i >= 0 && i < app->sampleCount_ ? app->sampleNames_[i] : ""; }
         uint8_t* sampleBuf() override { return app->workBuf(2); }
@@ -193,7 +209,7 @@ private:
         void setSyncMode(int console, int mode) override;
         void tempoChanged(int console) override;
         int listInstruments() override;
-        const char* instrumentFile(int i) override { return app->instNames_[i]; }
+        const char* instrumentFile(int i) override { return app->instNames() && i >= 0 && i < app->instCount_ ? app->instNames()[i] : ""; }
         bool saveInstrumentFile(const char* name, const uint8_t* data, int n) override;
         int loadInstrumentFile(int i, uint8_t* out, int max) override;
         bool linked() override { return app->linked(); }

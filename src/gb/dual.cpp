@@ -22,6 +22,12 @@ void Dual::startLoop(int console, int ch, int phrase) {
     (console ? a_ : b_).stop();
 }
 
+void Dual::startSolo(int console, int ch, int phrase, int chain) {
+    follow_ = -1;
+    (console ? b_ : a_).start(0, ch, phrase, false, chain);
+    (console ? a_ : b_).stop();
+}
+
 void Dual::startOverdub(int console, int ch, int phrase, int rowA, int rowB, int master) {
     Player& me = console ? b_ : a_;
     Player& other = console ? a_ : b_;

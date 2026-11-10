@@ -32,4 +32,8 @@ Checks, in order (stop at the first failure and report what the screen showed):
 23. EXPORT LSDJ now also writes `GB/Export/PTSDJ_A.gb` / `PTSDJ_B.gb`; run one with the matching `.srm` renamed; the kit should sound the same as on the Tracker.
 24. Instrument library: Shift + the Instr key (it is not a row on the Instr page). Play on the kit page and the Sample Loader now sounds the whole sample, not one blip. On the kit page Insert on a sample of a ROM kit opens it in the Sample Editor.
 25. Firmware loader: Config key (Project page), hold Shift: ? over F8 turns into FIRMWARE; press F8: the window lists the images in /Firmware. Insert twice flashes: try it with the same image first. Delete backs out.
+26. New in 0.6.0: Play on the Chain page plays only that chain on the cursor track and loops; Play again stops; Shift + Play plays the song. Same on the Phrase page. On the Table page Play sounds a note with the instrument using that table.
+27. NEW SONG: Load Song list, first entry (and the NEW SONG row on the Project page): name it, the song empties. Quit and restart: each console opens the song it saved last. The Project page's bottom line shows only while Shift is held.
+28. Sample Loader: Insert adds a WAV to kit 1A and a check mark appears; Delete removes it. Sample Editor: SAMPLES row + jog wheel steps through the kit; REPLACE SAMPLE asks before it replaces. Kicks should sound smoother than before; tell me if they are still harsh.
+29. Copy `presets/instruments` (or the zip) to `GB/Instruments`; the library (Shift + Instr) lists them, Left/Right turn a page.
 20. Back to stock: Config > Firmware update, or the `ot_restore.txt` route, or the Polyend tool.

@@ -129,3 +129,71 @@ TEST(the_demo_amen_kits_are_read_as_kits) {
     CHECK_EQ(KitBank::length(b.data(), 0), 0x4530 - 0x4060);
     CHECK(KitBank::freeBytes(b.data()) < 200);                               // the last sample runs to the end of the bank
 }
+
+TEST(replacing_a_sample_keeps_the_others_and_gives_back_or_takes_room) {
+    std::vector<uint8_t> b(kKitBytes);
+    KitBank::clear(b.data());
+    std::vector<uint8_t> a(100, 0x91), m(300, 0x72), z(60, 0x63);
+    CHECK(KitBank::add(b.data(), "AAA", a.data(), int(a.size())));
+    CHECK(KitBank::add(b.data(), "MMM", m.data(), int(m.size())));
+    CHECK(KitBank::add(b.data(), "ZZZ", z.data(), int(z.size())));
+    const int freeBefore = KitBank::freeBytes(b.data());
+    std::vector<uint8_t> bigger(500, 0x55);
+    CHECK(KitBank::replace(b.data(), 1, "NEW", bigger.data(), int(bigger.size())));      // the middle one grows
+    CHECK_EQ(KitBank::count(b.data()), 3);
+    CHECK_EQ(KitBank::data(b.data(), 0)[0], 0x91);
+    CHECK_EQ(KitBank::data(b.data(), 1)[0], 0x55);
+    CHECK_EQ(KitBank::data(b.data(), 2)[0], 0x63);
+    CHECK_EQ(KitBank::length(b.data(), 1), KitBank::paddedSize(500));
+    char nm[4];
+    KitBank::name(b.data(), 1, nm);
+    CHECK(std::strcmp(nm, "NEW") == 0);
+    CHECK_EQ(KitBank::freeBytes(b.data()), freeBefore - (KitBank::paddedSize(500) - KitBank::paddedSize(300)));
+    std::vector<uint8_t> tiny(32, 0x44);
+    CHECK(KitBank::replace(b.data(), 2, "ZIP", tiny.data(), int(tiny.size())));         // the last one shrinks
+    CHECK_EQ(KitBank::data(b.data(), 2)[0], 0x44);
+    CHECK_EQ(KitBank::length(b.data(), 2), KitBank::paddedSize(32));
+    std::vector<uint8_t> huge(kKitCapacity, 0x11);
+    CHECK(!KitBank::replace(b.data(), 0, "BIG", huge.data(), int(huge.size())));        // no room: nothing changes
+    CHECK_EQ(KitBank::data(b.data(), 0)[0], 0x91);
+}
+
+TEST(rounding_error_is_pushed_away_from_the_bass_so_a_kick_is_less_gritty) {
+    MemReader r = sine(44100, 1, 80, 0.4, 0.8);
+    WavInfo w;
+    CHECK(wavOpen(r, w));
+    std::vector<int16_t> tmp(kKitCapacity * 2);
+    std::vector<uint8_t> out(kKitCapacity);
+    bool cut;
+    const int n = wavToNibbles(r, w, tmp.data(), int(tmp.size()), out.data(), int(out.size()), cut);
+    CHECK(n > 0);
+    const int samples = int(0.4 * kKitRate) - 8;
+    std::vector<double> shaped(samples), plain(samples);
+    for (int k = 0; k < samples; ++k) {
+        shaped[k] = ((k & 1) ? (out[k >> 1] & 15) : (out[k >> 1] >> 4)) - 8.0;
+        plain[k] = std::floor(8.0 + std::sin(6.2831853 * 80 * (k + 0.5) / kKitRate) * 7.0 + 0.5) - 8.0;
+    }
+    // take away the best sine at 80 Hz (its amplitude and phase), then look at what is left below about 700 Hz (an average over 16 samples)
+    auto lowError = [&](const std::vector<double>& v) {
+        double ss = 0, cc = 0, sc = 0, vs = 0, vc = 0;
+        for (int k = 0; k < samples; ++k) {
+            const double sn = std::sin(6.2831853 * 80 * (k + 0.5) / kKitRate), cs = std::cos(6.2831853 * 80 * (k + 0.5) / kKitRate);
+            ss += sn * sn; cc += cs * cs; sc += sn * cs; vs += v[k] * sn; vc += v[k] * cs;
+        }
+        const double det = ss * cc - sc * sc, A = (vs * cc - vc * sc) / det, B = (vc * ss - vs * sc) / det;
+        std::vector<double> res(samples);
+        for (int k = 0; k < samples; ++k) res[k] = v[k] - A * std::sin(6.2831853 * 80 * (k + 0.5) / kKitRate) - B * std::cos(6.2831853 * 80 * (k + 0.5) / kKitRate);
+        double sum = 0;
+        int cnt = 0;
+        for (int k = 64; k + 16 < samples - 64; k += 16) {
+            double a2 = 0;
+            for (int j = 0; j < 16; ++j) a2 += res[k + j];
+            sum += a2 * a2 / 256.0;
+            ++cnt;
+        }
+        return std::sqrt(sum / cnt);
+    };
+    const double e1 = lowError(shaped), e0 = lowError(plain);
+    std::printf("  low-frequency error: shaped %.3f plain %.3f\n", e1, e0);
+    CHECK(e1 < e0 * 0.8);
+}

@@ -22,6 +22,8 @@ Instr page: move up onto the instrument number, then Left/Right or the jog wheel
 the name keyboard (Insert types, the < key erases, Play = OK, Delete = NO); the project name works the same way.
 Help: the Help key opens the pages (Left/Right turn them, Delete leaves). Hold F8 (outside the side by side view, a ? shows above it) for a pop-up that explains the
 page you are on; Left/Right turn its pages, or F1 (back) and F2 (forward) with the free hand: a tab with < and > grows out of the bezel above them. Hold Shift + Note for the Phrase page's command cheat sheet, Shift + Instr params for the Table page's; they go away on release.
+Play on the Chain, Phrase and Table pages plays just that chain / phrase / table on the cursor track and loops (the Table page plays a note on the instrument that uses it, or a plain pulse); Play again stops; Shift + Play plays the song. The Song page's Play is unchanged.
+NEW SONG (first entry of the Load Song list, and the NEW SONG row below LOAD SONG on the Project page): asks for a name, then replaces that console's song with the empty template. The Project page's technical line (callback cost, late blocks, ROM size, kits) only shows while Shift is held, with FIRMWARE over F8.
 Project: NAME, TEMPO, TRANSPOSE, SYNC (OFF / MASTER / SLAVE), CLONE, LOOK (display colours), PRELISTEN, HELP, CLEAN SONG DATA / CLEAN INSTR DATA (Insert twice),
 SAVE SONG, LOAD SONG, EXPORT WAV, EXPORT LSDJ (A, B or A + B; pick with the jog wheel). Saving and exporting show a progress bar.
 Songs live in one bank file per Game Boy, like a real LSDJ cartridge: `GB/Saves/A.srm` (song A) and `GB/Saves/B.srm` (song B), 128 KB each with up to 32 songs
@@ -38,11 +40,11 @@ SYNC: with both projects on, Play on either console starts both; the slave follo
 Master key (while linked) shows both consoles side by side. An A sits above F1 and a B above F8; hold either to raise a dock that names every F key. F1 / F8 pick
 the console the keys control, F2 / F7 held + jog = level A / B, F3-F6 mute (Shift: solo) the four tracks of the active console.
 Recording from the pads is placed by what you hear: the sequencer's lead over the speakers (the audio queue) is taken off the step position.
-Instrument library (`GB/Instruments/*.gbi`): Shift + the Instr key. The first row saves the current instrument
+Instrument library (`GB/Instruments/*.gbi`): Shift + the Instr key; up to 400 files, Left / Right turn a page of 13. `presets/instruments/` holds 272 pulse and noise presets made from the demo songs by `tools/make_presets.cpp` (named for what they sound like, see the README in `build/presets/PTSDJ_instrument_presets.zip`); copy them to `GB/Instruments` on the card. The first row saves the current instrument
 (name keyboard), the others load into it (its table too).
 Sample kits (per console): drum kits are banks of the LSDJ ROM, up to 15 samples and about 2.8 s of 4-bit sound at 11.46 kHz. Put WAV files (PCM 8/16/24 bit, any rate) in `GB/Samples`.
-Sample Loader key: pick a file, Insert converts it (resampled, normalised, 4 bits) and opens the Sample Editor; Play hears it. Sample Editor key: START and END trim it (the jog wheel or Insert + Left/Right;
-Insert + Up/Down moves 16 times as far), NAME (3 letters), KIT (1A to 37, the slots that are empty in a stock ROM), ADD TO KIT saves the kit at once. Sample Playback key: the
+Sample Loader key: the kit number is at the top (jog wheel); pick a file, Insert converts it (resampled, normalised, noise-shaped to 4 bits) and adds it to the kit at once; a check mark shows files already in it (remembered in `<slot>_<name>.src` beside the kit file); Delete takes that file's sample out again; Shift + Insert opens it in the Sample Editor to cut first; Play hears it. Sample Editor key: START and END trim it (the jog wheel or Insert + Left/Right;
+Insert + Up/Down moves 16 times as far), NAME (3 letters), KIT (1A to 37, the slots that are empty in a stock ROM), ADD TO KIT saves the kit at once. The SAMPLES row steps through the kit's samples with the jog wheel: cut or rename one and REPLACE SAMPLE (after a yes/no question: it can't be undone) writes it over that sample. Sample Playback key: the
 kit page, kit number at the top (Left/Right or jog; ROM kits can be heard, not changed), kit NAME, the 15 samples (Insert opens a sample of any kit, ROM kits too, in the Sample Editor to cut and add to a kit of
 your own; Shift + Insert renames one of yours, Delete then Insert erases it, Play or a pad hears one).
 Kits are saved as `GB/Kits/A/<slot>_<name>.kit` and `GB/Kits/B/...` (LSDJ kit files); `.kit` files in `GB/Kits` itself serve both consoles. A KIT instrument's KIT 1 / KIT 2 on the Instr page
@@ -64,7 +66,7 @@ make CROSS=<path>/arm-none-eabi-  # build/PolyendTracGBTrkv010.ptf (24 chars, ch
 ```
 Two consoles: the Song key switches the screen between tracks 1-4 (A) and 5-8 (B); Play starts and stops both together, each keeping its own
 tempo and L/R panning. Project screen: SAVE SONG (into `GB/Saves/A.srm` or `B.srm`), LOAD SONG, EXPORT WAV (`GB/Export/<name>.wav`, one pass until every channel loops).
-Songs: `GB/Saves/A.srm` and `B.srm` (the banks); loose `GB/Songs/*.lsdsng` can be loaded too (`GB/AUTOLOAD.LSDSNG` and `GB/AUTOLOAD_B.LSDSNG` open at start). `demos/` holds sample songs and kits.
+Songs: `GB/Saves/A.srm` and `B.srm` (the banks); loose `GB/Songs/*.lsdsng` can be loaded too. At power-on each console opens the song it saved last (the bank's active slot), or an empty one if it never saved. `demos/` holds sample songs and kits.
 Docs: `LEARNINGS.md`, `docs/LSDJ_FORMAT.md`, `docs/HARDWARE_MAP.md`, `UPSTREAM.md`. `tools/oracle/` checks against an LSDJ ROM.
 
 Extra sample kits: put 16 KB LSDJ `.kit` files in `GB/Kits` on the card. The first two characters of the name (hex, 00-3F) are the kit slot the file replaces, e.g. `0A_808.kit` replaces kit 0A (the number a song's kit instrument shows); up to 16 files, read at boot. The Project readout ends with `K<n>`, the number of kit files loaded.

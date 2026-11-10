@@ -35,7 +35,8 @@ void Lsdj::openLoader() {
 void Lsdj::openEditor() {
     if (!tr_) return;
     kitSelect(kitSlot);
-    smpRow = std::min(smpRow, 4);
+    smpRow = std::min(smpRow, 5);
+    if (kitBuf() && smpEditIdx >= KitBank::count(kitBuf())) smpEditIdx = -1;
     status_ = "";
     scr_ = Scr::Editor;
 }
@@ -58,6 +59,9 @@ bool Lsdj::sampleLoad(bool toEditor) {
     smpStart = 0;
     smpEnd = n / 16;
     const char* f = tr_->sampleName(smpSel);
+    std::snprintf(smpSrc_, sizeof smpSrc_, "%s", f);
+    std::snprintf(smpLoaderSrc_, sizeof smpLoaderSrc_, "%s", f);
+    smpEditIdx = -1;
     int k = 0;
     for (; *f && k < 3; ++f) { const char c = *f >= 'a' && *f <= 'z' ? char(*f - 32) : *f; if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) smpName_[k++] = c; }
     for (; k < 3; ++k) smpName_[k] = '-';
@@ -87,7 +91,7 @@ void Lsdj::kitAudition() {
 void Lsdj::kitMove(Key k) {
     const int dy = k == Key::Down ? 1 : k == Key::Up ? -1 : 0;
     if (scr_ == Scr::Loader) smpSel = clampi(smpSel + dy, 0, std::max(0, smpCount - 1));
-    else if (scr_ == Scr::Editor) smpRow = clampi(smpRow + dy, 0, 4);
+    else if (scr_ == Scr::Editor) smpRow = clampi(smpRow + dy, 0, 5);
     else kitRow = clampi(kitRow + dy, 0, 16);
 }
 
@@ -98,16 +102,17 @@ void Lsdj::kitEdit(Key k) {
         const int chunks = smpLen / 16, d = sgn * (big ? 16 : 1);
         if (smpRow == 0) smpStart = clampi(smpStart + d, 0, std::max(0, smpEnd - 2));
         else if (smpRow == 1) smpEnd = clampi(smpEnd + d, std::min(chunks, smpStart + 2), chunks);
-        else if (smpRow == 3) kitSelect(kitSlot + sgn * (big ? 8 : 1));
-    } else if (scr_ == Scr::Kit && kitRow == 0) kitSelect(kitSlot + sgn * (big ? 8 : 1));
+        else if (smpRow == 3) { kitSelect(kitSlot + sgn * (big ? 8 : 1)); smpEditIdx = -1; }
+        else if (smpRow == 4) editorSelectSample(smpEditIdx + sgn);                  // the kit's samples, one by one
+    } else if (scr_ == Scr::Loader || (scr_ == Scr::Kit && kitRow == 0)) kitSelect(kitSlot + sgn * (big ? 8 : 1));
 }
 
 // Insert: load the WAV, name something, add the sample to the kit.
 void Lsdj::kitPress() {
-    if (scr_ == Scr::Loader) { sampleLoad(true); return; }
+    if (scr_ == Scr::Loader) { loaderAdd(); return; }
     if (scr_ == Scr::Editor) {
         if (smpRow == 2) openName(3);
-        else if (smpRow == 4) kitAdd();
+        else if (smpRow == 5) { if (smpEditIdx >= 0 && smpLen) confirm_ = 13; else kitAdd(); }     // changing a sample of the kit asks first
         return;
     }
     if (kitRow == 1) { if (kitEditable()) openName(4); else status_ = "ROM KIT: NO RENAME"; }
@@ -120,18 +125,57 @@ void Lsdj::kitToEditor() {
     uint8_t* sb = tr_ ? tr_->sampleBuf() : nullptr;
     const int i = kitRow - 2;
     if (!kb || !sb || i < 0 || i >= KitBank::count(kb)) { status_ = "NO SAMPLE HERE"; return; }
+    kitSampleToBuffer(i);
+    if (!kitEditable()) { kitSelect(kKitFirstUserSlot); smpEditIdx = -1; }   // a ROM sample goes into your first kit by default, as a new sample
+    smpRow = 0;
+    status_ = "COPIED TO THE EDITOR";
+    scr_ = Scr::Editor;
+}
+
+// Copies sample i of the kit on screen into the sample buffer to be cut; ADD TO KIT then replaces it in its kit.
+void Lsdj::kitSampleToBuffer(int i) {
+    uint8_t* kb = kitBuf();
+    uint8_t* sb = tr_ ? tr_->sampleBuf() : nullptr;
+    if (!kb || !sb || i < 0 || i >= KitBank::count(kb)) return;
     int n = KitBank::length(kb, i);
-    if (n >= 48) n -= 16;                                            // the silent chunk that ends it comes back when it is added
+    if (n >= 48) n -= 16;                                            // the silent chunk that ends it comes back when it is written
     std::memcpy(sb, KitBank::data(kb, i), size_t(n));
     smpLen = n;
     smpLoaded_ = -1;
     smpStart = 0;
     smpEnd = n / 16;
     KitBank::name(kb, i, smpName_);
-    if (!kitEditable()) kitSelect(kKitFirstUserSlot);                // a ROM sample goes into your first kit by default
-    smpRow = 0;
-    status_ = "COPIED TO THE EDITOR";
-    scr_ = Scr::Editor;
+    std::snprintf(smpSrc_, sizeof smpSrc_, "%s", kitEditable() && tr_ ? tr_->kitSource(console_, i) : "");
+    smpEditIdx = kitEditable() ? i : -1;
+}
+
+// The Sample Editor's samples row: the jog wheel steps through the kit's samples (-1 is the sample from the loader).
+void Lsdj::editorSelectSample(int idx) {
+    uint8_t* kb = kitBuf();
+    if (!kb || !tr_) return;
+    idx = clampi(idx, -1, KitBank::count(kb) - 1);
+    if (idx == smpEditIdx) return;
+    if (idx >= 0) { kitSampleToBuffer(idx); return; }
+    smpEditIdx = -1;                                                  // back to what the loader brought
+    smpLen = 0;
+    for (int i = 0; i < smpCount && smpLoaderSrc_[0]; ++i)
+        if (!std::strcmp(tr_->sampleName(i), smpLoaderSrc_)) { smpSel = i; sampleLoad(false); break; }
+}
+
+// ADD TO KIT on a sample of the kit, once the player has said yes: the cut sound takes its place.
+void Lsdj::kitReplace() {
+    uint8_t* kb = kitBuf();
+    uint8_t* sb = tr_ ? tr_->sampleBuf() : nullptr;
+    const int n = (smpEnd - smpStart) * 16;
+    if (!kb || !sb || smpEditIdx < 0 || smpEditIdx >= KitBank::count(kb) || !kitEditable()) { status_ = "NOTHING TO REPLACE"; return; }
+    if (n < 32) { status_ = "SAMPLE TOO SHORT"; return; }
+    if (!KitBank::replace(kb, smpEditIdx, smpName_, sb + smpStart * 16, n)) { status_ = "NO ROOM FOR THAT"; return; }
+    if (tr_->kitSave(console_, kitSlot)) {
+        std::snprintf(statusBuf_, sizeof statusBuf_, "REPLACED SAMPLE %X", unsigned(smpEditIdx + 1));
+        status_ = statusBuf_;
+        const int i = smpEditIdx;
+        kitSampleToBuffer(i);                                         // what is in the kit now
+    } else status_ = tr_->errorText() ? tr_->errorText() : "SAVE FAILED";
 }
 
 void Lsdj::kitRename() {
@@ -152,16 +196,48 @@ void Lsdj::kitAdd() {
     char kn[9];
     KitBank::kitName(kb, kn);
     if (kn[0] == ' ') { std::snprintf(kn, sizeof kn, "KIT%02X", unsigned(kitSlot)); KitBank::setKitName(kb, kn); }
+    if (smpSrc_[0]) tr_->setKitSource(console_, KitBank::count(kb) - 1, smpSrc_);
     if (tr_->kitSave(console_, kitSlot)) {
         std::snprintf(statusBuf_, sizeof statusBuf_, "ADDED: NOTE %X IN KIT %02X", unsigned(KitBank::count(kb)), unsigned(kitSlot));
         status_ = statusBuf_;
     } else status_ = tr_->errorText() ? tr_->errorText() : "SAVE FAILED";
 }
 
+bool Lsdj::inKit(const char* wav) const {
+    const uint8_t* kb = kitBuf();
+    if (!kb || !tr_) return false;
+    for (int i = 0; i < KitBank::count(kb); ++i) if (!std::strcmp(tr_->kitSource(console_, i), wav)) return true;
+    return false;
+}
+
+// Insert on the Sample Loader: the listed WAV goes into the kit as it is (Shift + Insert opens it in the Sample Editor first, to cut it).
+void Lsdj::loaderAdd() {
+    if (!tr_ || !smpCount) { status_ = "NO WAV FILES"; return; }
+    if (!kitEditable()) { status_ = "KITS 1A TO 37 ONLY"; return; }
+    if (inKit(tr_->sampleName(smpSel))) { status_ = "ALREADY IN THE KIT"; return; }
+    if (!sampleLoad(false)) return;
+    kitAdd();
+}
+
+// Delete on the Sample Loader: takes that WAV's sample out of the kit again.
+void Lsdj::loaderRemove() {
+    uint8_t* kb = kitBuf();
+    if (!tr_ || !kb || !smpCount || !kitEditable()) { status_ = "KITS 1A TO 37 ONLY"; return; }
+    for (int i = 0; i < KitBank::count(kb); ++i)
+        if (!std::strcmp(tr_->kitSource(console_, i), tr_->sampleName(smpSel))) {
+            KitBank::remove(kb, i);
+            tr_->removeKitSource(console_, i);
+            status_ = tr_->kitSave(console_, kitSlot) ? "REMOVED FROM THE KIT" : "SAVE FAILED";
+            return;
+        }
+    status_ = "NOT IN THE KIT";
+}
+
 void Lsdj::kitErase() {
     uint8_t* kb = kitBuf();
     const int i = kitRow - 2;
     if (!kb || !kitEditable() || i < 0 || !KitBank::remove(kb, i)) { status_ = "NOTHING TO ERASE"; return; }
+    tr_->removeKitSource(console_, i);
     status_ = tr_->kitSave(console_, kitSlot) ? "ERASED" : (tr_->errorText() ? tr_->errorText() : "SAVE FAILED");
 }
 
@@ -177,13 +253,19 @@ void Lsdj::openFirmware() {
 
 void Lsdj::drawLoader(Lcd& l) const {
     l.boldText(0, 0, console_ ? "SAMPLE LOADER B" : "SAMPLE LOADER A");
-    l.text(0, 1, status_[0] ? status_ : "INSERT=LOAD  PLAY=HEAR");
+    char b[40];
+    std::snprintf(b, sizeof b, "KIT %02X", unsigned(kitSlot));
+    l.text(17, 0, b);
+    l.text(0, 1, status_);
+    l.text(0, 2, "INSERT=ADD  BKSP=REMOVE");                                  // the note on how it works stays on screen
     if (!smpCount) { l.text(1, 3, "NO WAV FILES YET."); l.text(1, 4, "PUT THEM IN GB/SAMPLES"); l.text(1, 5, "ON THE SD CARD."); return; }
     const int rows = 15, top = std::max(0, std::min(smpSel - rows / 2, smpCount - rows));
     for (int r = 0; r < rows && top + r < smpCount; ++r) {
+        const char* nm = tr_ ? tr_->sampleName(top + r) : "";
         char s[40];
-        std::snprintf(s, sizeof s, " %-23.23s", tr_ ? tr_->sampleName(top + r) : "");
+        std::snprintf(s, sizeof s, "  %-22.22s", nm);
         l.text(0, 3 + r, s, top + r == smpSel);
+        if (inKit(nm)) l.glyphAt(0, (3 + r) * 8, '\x06', top + r == smpSel, 3, 0);      // a check mark: it is in the kit
     }
 }
 
@@ -219,14 +301,25 @@ void Lsdj::drawEditor(Lcd& l) const {
     std::snprintf(b, sizeof b, "NAME  %s", smpName_);
     l.text(0, 12, b, smpRow == 2);
     const uint8_t* kb = kitBuf();
-    std::snprintf(b, sizeof b, "KIT   %02X %s", unsigned(kitSlot), kitEditable() ? "" : "(ROM KIT)");
+    std::snprintf(b, sizeof b, "KIT   %02X %s", unsigned(kitSlot), kitEditable() ? "" : kitSlot > 0x12 && kitSlot < kKitFirstUserSlot && kitSlot != 0x18 && kitSlot != 0x19 ? "(ROM CODE)" : "(ROM KIT)");
     l.text(0, 13, b, smpRow == 3);
     if (kb && kitEditable()) {
-        std::snprintf(b, sizeof b, "%d/15 SAMPLES %.1fS FREE", KitBank::count(kb), double(nibbleSeconds(KitBank::freeBytes(kb))));
-        l.text(0, 14, b);
+        if (smpEditIdx < 0) std::snprintf(b, sizeof b, "%d/15 SAMPLES %.1fS FREE", KitBank::count(kb), double(nibbleSeconds(KitBank::freeBytes(kb))));
+        else std::snprintf(b, sizeof b, "SAMPLE %X OF %d  %.1fS FREE", unsigned(smpEditIdx + 1), KitBank::count(kb), double(nibbleSeconds(KitBank::freeBytes(kb))));
+        l.text(0, 14, b, smpRow == 4);
     }
-    l.text(0, 15, "ADD TO KIT", smpRow == 4);
+    if (smpEditIdx < 0) l.text(0, 15, "ADD TO KIT", smpRow == 5);
+    else { std::snprintf(b, sizeof b, "REPLACE SAMPLE %X", unsigned(smpEditIdx + 1)); l.text(0, 15, b, smpRow == 5); }
     l.text(0, 17, status_[0] ? status_ : "PLAY=HEAR  JOG=CHANGE");
+    if (confirm_ == 13) {                                              // the question before a sample of the kit is changed for good
+        l.rect(8, 40, 184, 72, 3);
+        l.rect(10, 42, 180, 68, 0);
+        std::snprintf(b, sizeof b, "REPLACE SAMPLE %X", unsigned(smpEditIdx + 1));
+        l.text(2, 6, b);
+        l.text(2, 7, "IN THE KIT FOR GOOD?");
+        l.text(2, 9, "THIS CAN'T BE UNDONE.");
+        l.text(2, 11, "INSERT=YES  BKSP=NO");
+    }
 }
 
 // The firmware loader window: the images in /Firmware that the bootloader accepts. Insert picks one, a second Insert flashes it.
@@ -258,7 +351,8 @@ void Lsdj::drawKit(Lcd& l) const {
     std::snprintf(b, sizeof b, "%02X", unsigned(kitSlot));
     l.text(4, 0, b, kitRow == 0);
     l.text(7, 0, console_ ? "B" : "A");
-    if (!kitEditable()) l.text(10, 0, "ROM KIT");
+    const bool code = kitSlot > 0x12 && kitSlot < kKitFirstUserSlot && kitSlot != 0x18 && kitSlot != 0x19;   // the stock ROM keeps program code in 13-17
+    if (!kitEditable()) l.text(10, 0, code ? "ROM CODE" : "ROM KIT");
     char kn[9] = "        ";
     if (kb && KitBank::hasSamples(kb)) KitBank::kitName(kb, kn);
     std::snprintf(b, sizeof b, "NAME %s", kn);
@@ -273,7 +367,7 @@ void Lsdj::drawKit(Lcd& l) const {
         l.text(0, 2 + i, b, kitRow == 2 + i);
     }
     if (kb && count && kitEditable()) { std::snprintf(b, sizeof b, "FREE %.1fS", double(nibbleSeconds(KitBank::freeBytes(kb)))); l.text(15, 17, b); }
-    l.text(0, 17, status_[0] ? status_ : count ? "PLAY=HEAR" : "NO KIT HERE");
+    l.text(0, 17, status_[0] ? status_ : count ? "PLAY=HEAR" : code ? "ROM CODE: NOT A KIT SLOT" : "NO KIT HERE");
 }
 
 }  // namespace gb

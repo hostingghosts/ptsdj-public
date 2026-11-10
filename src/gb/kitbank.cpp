@@ -77,6 +77,22 @@ bool KitBank::add(uint8_t* b, const char* nm, const uint8_t* bytes, int n) {
     return true;
 }
 
+bool KitBank::replace(uint8_t* b, int i, const char* nm, const uint8_t* bytes, int n) {
+    const int c = count(b);
+    if (i < 0 || i >= c || n <= 0) return false;
+    const int u = used(b);
+    const int from = offsetOf(b, i), to = i + 1 < c ? offsetOf(b, i + 1) : u;
+    const int size = paddedSize(n), delta = size - (to - from);
+    if (u + delta > kKitBytes) return false;
+    std::memmove(b + to + delta, b + to, size_t(u - to));
+    std::memcpy(b + from, bytes, size_t(n));
+    std::memset(b + from + n, 0x88, size_t(size - n));
+    if (delta < 0) std::memset(b + u + delta, 0x88, size_t(-delta));            // the end of the kit is silence again
+    for (int k = i + 1; k < c; ++k) setOffset(b, k, offsetOf(b, k) + delta);
+    setName(b, i, nm);
+    return true;
+}
+
 bool KitBank::remove(uint8_t* b, int i) {
     const int c = count(b);
     if (i < 0 || i >= c) return false;
