@@ -175,15 +175,12 @@ void Player::kitChunk() {
     }
     uint8_t w[16];
     for (int i = 0; i < 16; ++i) {
-        int nib[2] = {8, 8};
-        int hi = 8, lo = 8;
         auto fetch = [&](int k, int byte) -> uint8_t { return (v.kHas[k] && byte < len[k]) ? v.kit[k].data[v.kBeg[k] + byte] : 0x88; };
         const uint8_t x = fetch(0, v.kPos + i), y = fetch(1, v.kPos + i);
         if (v.kHas[0] && v.kHas[1]) {
-            hi = std::clamp((x >> 4) + (y >> 4) - 8, 0, 15); lo = std::clamp((x & 15) + (y & 15) - 8, 0, 15);
+            const int hi = std::clamp((x >> 4) + (y >> 4) - 8, 0, 15), lo = std::clamp((x & 15) + (y & 15) - 8, 0, 15);
             w[i] = uint8_t(hi << 4 | lo);
         } else w[i] = v.kHas[0] ? x : y;
-        (void)nib;
     }
     v.kPos += 16;
     ++v.kChunks;

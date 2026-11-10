@@ -6,7 +6,10 @@ State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (close 
 screens (Song, Chain, Phrase, Instrument, Table, Groove, Project), 8 channels (two linked Game Boys, tracks 1-4 = song A, 5-8 = song B,
 summed stereo), WAV export. Synth and Wave screens (Select+Up from Phrase = Synth, then Right = Wave; the ROM's own generator rebuilds a synth's 16 frames after each edit,
 so they need `GB/LSDJ.GB` on the card, like the kits). Project > LOAD SONG FILE A/B lists `GB/Songs` and loads a song into that console. Drawing on the Wave page marks the synth hand-drawn; editing that synth then asks "OVERWRITE HAND-DRAWN WAVES?" (NO preselected, as in the ROM). The Synth page's WAVE 00-0F row is display only in the ROM, so there is no range select to build.
-Desktop simulator first; nothing tested on the Tracker.
+Version 1.0.0: runs on the Tracker (line and mic recorder, firmware loader, kit export and layering checked on hardware, exports run on a real Game Boy with
+the original LSDJ ROM). Built desktop-first: every feature has host tests (`make -C tests`) and runs in the simulator (`make -C sim check`).
+Known limits: a few effects differ from LSDJ in small ways (see `docs/LSDJ_FORMAT.md`, "How close the player is"); the Game Boy hardware is the final word for how a
+song sounds. Back to stock: reflash a stock Polyend firmware (`docs/HARDWARE_TEST.md`, last item).
 
 Controls on the Tracker: arrows = D-pad, Insert = A, Delete (the backspace key) = B, Shift = Select, Play = Start. Jog wheel = A + left/right (Shift: A + up/down).
 Page keys: Song = Song, Pattern = Chain, Note = Phrase, Instr = Instr, Instr params = Table, Fx1 = Synth, Fx2 = Wave, Config = Project, File = song files,
@@ -54,7 +57,7 @@ pick the kits; a kit note is two sample numbers: the low digit n plays sample n 
 put into their slots (only into empty or kit banks).
 Firmware loader: on the Project page hold Shift, the ? over F8 turns into FIRMWARE; press F8 for a window listing `Firmware/*.ptf` (what the bootloader accepts), Insert twice flashes it,
 Delete goes back. The `Firmware/ot_restore.txt` route still works.
-Sample Recorder key (0.8.0): records the line or mic input into a kit sample. Rows: INPUT (LINE / MIC LOW / MIC HIGH, jog wheel), TRIGGER (AT ONCE, or wait until the input passes LOW / MEDIUM / HIGH), START / STOP (Insert or Play); a level meter shows the input. It records up to 3 s (a kit holds 2.8 s), converts like a WAV (4 bits, normalised, noise-shaped) and opens the Sample Editor with the sound called REC. Delete while recording throws it away. The audio callback copies the input block into SDRAM (`App::recFeed`); the codec input is only switched (`hal::selectInput`) when the recorder page is opened or its input changed, never at boot. The simulator feeds it a made-up tone (`simLine`); on the device it uses the existing I2S receive path, which has not been tried on hardware.
+Sample Recorder key (0.8.0): records the line or mic input into a kit sample. Rows: INPUT (LINE / MIC LOW / MIC HIGH, jog wheel), TRIGGER (AT ONCE, or wait until the input passes LOW / MEDIUM / HIGH), START / STOP (Insert or Play); a level meter shows the input. It records up to 3 s (a kit holds 2.8 s), converts like a WAV (4 bits, normalised, noise-shaped) and opens the Sample Editor with the sound called REC. Delete while recording throws it away. The audio callback copies the input block into SDRAM (`App::recFeed`); the codec input is only switched (`hal::selectInput`) when the recorder page is opened or its input changed, never at boot. The simulator feeds it a made-up tone (`simLine`); on the device it uses the existing I2S receive path (line and mic input and the monitor were checked on a Tracker). While the page is open MONITOR plays the input through the output so the level can be set by ear.
 At power-on the PTSDJ block letters drop onto the display and the Game Boy chime plays (a recording of `assets/boot_chime.wav`, built into the firmware with
 `tools/make_chime.py`).
 Help pages (Help key, F8 pop-ups, the cheat sheets) are left aligned: the name of each key or function is bold, with a blank line between entries; the text is

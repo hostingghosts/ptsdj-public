@@ -88,8 +88,6 @@ public:
     void padDown(int pad);                   // a pad plays the current instrument on the cursor channel (and enters/records the note)
     void padUp(int pad);                     // releasing it cuts the note
     void setPadOctave(int o) { padOct_ = o < -2 ? -2 : o > 3 ? 3 : o; }
-    int padOctave() const { return padOct_; }
-    void setRecord(bool on) { rec_ = on; }
     // Phrase page Rec mode: pads audition the selected instrument (jog wheel picks it) and, only while Rec + Play loops this phrase, write into it.
     bool recMode() const { return recMode_; }
     void toggleRecMode() { if (scr_ == Scr::Phrase) { recMode_ = !recMode_; if (!recMode_ && !playing()) rec_ = false; } }
@@ -131,7 +129,6 @@ public:
     void adjustVolume(int d) { if (tr_) tr_->setVolume(console_, tr_->volume(console_) + d); }
     const char* name() const { return name_; }       // the project name (up to 8 characters), used for saves and exports
     void setName(const char* n);
-    bool prelisten() const { return prelisten_; }
     // Absolute cursor access for tests and the simulator scripts.
     int songRow = 0, songCh = 0;
     int chain = 0, chainPos = 0, chainCol = 0;
@@ -180,7 +177,6 @@ public:
     const char* nameBuffer() const { return nameBuf_; }
     // Selection (Shift + Insert + arrows) and the clipboard.
     bool selecting() const { return selOn_; }
-    void clipboardInfo(int& rows, int& cols) const { rows = clipRows_; cols = clipCols_; }
 
 private:
     void press(Key k);
@@ -333,6 +329,7 @@ private:
     uint8_t lastChain_ = 0, lastPhrase_ = 0, lastNote_ = 25, lastInstr_ = 0, lastCmd_ = 0, lastVal_ = 0;
 };
 
+inline int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 const char* noteName(int n, char out[4]);
 char cmdLetter(int c);
 

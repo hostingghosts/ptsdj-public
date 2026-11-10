@@ -10,10 +10,6 @@
 
 namespace gb {
 
-namespace {
-int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
-}  // namespace
-
 uint8_t* Lsdj::kitBuf() const { return tr_ ? tr_->kitBuf(console_) : nullptr; }
 bool Lsdj::kitEditable() const { return kitSlot >= kKitFirstUserSlot && kitSlot <= kKitLastUserSlot; }
 
