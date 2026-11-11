@@ -1,0 +1,17 @@
+wait 200
+tap SAMPLEPLAYBACK
+wait 50
+tap UP
+tap UP
+tap UP
+tap UP
+tap RIGHT
+tap RIGHT
+tap RIGHT
+tap RIGHT
+tap RIGHT
+tap DOWN
+tap DOWN
+tap DOWN
+wait 50
+screenshot ../build/sim/kitpage.png
