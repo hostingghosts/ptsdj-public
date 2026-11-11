@@ -223,7 +223,7 @@ has the same rows and values, and Left / Right pick the value just as in the ROM
 Found and fixed in 1.0.0: the editor used to write AUTOMATE to b9 bit 7 (the second envelope stage on pulse and noise, the kit number on kits; it is now the STEP mode of the TABLE row),
 TUNING to b8 as a 12T/FIX/DRM choice (b8 is CMD/RATE, and FINETUNE on kits), and on wave instruments SYNTH to b2 (the ROM's LOOP POS) and LENGTH to b3 (the wave number itself: one press
 turned 20 into 40, synth 2 into synth 4). Songs saved before the fix with AUTOMATE ON carry a stray bit in b9; real songs can have that bit legitimately (an envelope stage of 8 or more),
-so it cannot be repaired. Still different: the kit lines are in the other order and counted from 00 where the ROM counts from 01; the ENV and PITCH values are shown as hex, not as
+so it cannot be repaired. Kit numbers are shown counted from 01 as in the ROM (the instrument page, the kit pages, messages and the default name KIT16 for slot 15; the bytes and the kit file names still count from 00). Still different: the two kit lines are in the other order; the ENV and PITCH values are shown as hex, not as
 pictures; the player ignores CMD/RATE, the second OFFSET and LEN values, the first LOOP flag and CLIP (only HARD is played).
 
 ## Notes in the phrase column, and there is no OFF note (measured on the LSDJ 9.4.2 ROM)

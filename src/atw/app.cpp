@@ -446,7 +446,7 @@ bool App::kitOpen(int console, int slot) {
 bool App::kitSave(int console, int slot) {
     error_ = nullptr;
     uint8_t* w = workBuf(console);
-    if (!w || !p_.storage || slot < gb::kKitFirstUserSlot || slot > gb::kKitLastUserSlot) { error_ = "KITS 15 TO 32 ONLY"; return false; }
+    if (!w || !p_.storage || slot < gb::kKitFirstUserSlot || slot > gb::kKitLastUserSlot) { error_ = "KITS 16 TO 33 ONLY"; return false; }
     int at = -1;
     for (int i = 0; i < kitFiles_; ++i) if (kitFile_[i].console == console && kitFile_[i].idx == slot) at = i;
     if (!gb::KitBank::hasSamples(w)) {                                   // an empty kit: forget the file
@@ -884,7 +884,7 @@ bool App::exportFiles(const char* name, int which) {
             std::snprintf(path, sizeof path, "%s/%s_%c.gb", kExportDir, name ? name : "PTSDJ", 'A' + c);
             if (exportRom(path, c)) {
                 if (romSkipped_ == 0xFF) { if (!done_) done_ = "EXPORT DONE + ROM"; }
-                else { std::snprintf(doneBuf_, sizeof doneBuf_, "KIT %02X: USE 15-32", romSkipped_); done_ = doneBuf_; }
+                else { std::snprintf(doneBuf_, sizeof doneBuf_, "KIT %02X: USE 16-33", romSkipped_ + 1); done_ = doneBuf_; }
             } else ok = false;
         }
     }

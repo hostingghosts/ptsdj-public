@@ -165,6 +165,8 @@ public:
     int smpLen = 0, smpStart = 0, smpEnd = 0, smpRow = 0;   // Editor: bytes in the prepared sample, trim in chunks of 16 bytes, cursor row
     int smpLevel = 0;                           // Editor: how loud the sample is stored (0 100%, 1 75%, 2 50%, 3 25%)
     int smpEditIdx = -1;                        // Editor: -1 a new sample, else the kit's sample being changed (ADD TO KIT replaces it)
+    // Kit numbers are counted from 01 on screen, as in the LSDJ ROM (byte 00 reads 01); everything inside, and the kit file names, count from 00.
+    static int kitShown(int slot) { return slot + 1; }
     int kitSlot = 0x15, kitRow = 0;             // Kit: the kit number 00-32 and the cursor row (0 number, 1 name, 2.. the samples)
     const char* sampleName() const { return smpName_; }
     int packInstrument(uint8_t* out) const;      // 'GBI1', flags, name[5], instrument[16], optional table[96] (the instrument on screen)

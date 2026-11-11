@@ -43,7 +43,7 @@ const char* const kClip[] = {"HARD", "SOFT", "FOLD", "WRAP"};
 //       6 wave frame: all of byte 3 while PLAY is MANUAL, its high nibble (the synth) otherwise, 7 frame speed (byte 11 as a signed number, shown + 4),
 //       8 frame count (15 minus the low nibble), 9 loop position (byte 2's low nibble counted from byte 10's, F = none), 10 the table's mode (OFF, ON, STEP: byte 6
 //       bit 5 and byte 5 bit 3), 11 the table number (byte 6, -- while OFF), 12 hex where 0 reads ALL, 14 FREE / SAFE (byte non-zero), 15 pitch: the low three bits,
-//       a big step flips bit 4 (bits 3 and 5 belong to STEP and TRANSP, and a kit's bits 5 and 6 to LOOP).
+//       a big step flips bit 4 (bits 3 and 5 belong to STEP and TRANSP, and a kit's bits 5 and 6 to LOOP), 16 a kit number (hex, shown one higher: the ROM counts from 01).
 #define ENV3 {1, 0xFF, 0, 0, nullptr}, {9, 0xFF, 0, 0, nullptr}, {10, 0xFF, 0, 0, nullptr}
 #define TABLE_ROW {"TABLE", 17, 2, ' ', {{6, 0, 0, 10, kTableMode}, {6, 0x1F, 0, 11, nullptr}}}
 const Row kPulse[] = {{"ENV.", 5, 3, '/', {ENV3}},
@@ -56,7 +56,7 @@ const Row kWave[] = {{"VOLUME", 5, 2, '/', {{1, 0xFF, 0, 5, nullptr}, {7, 3, 0, 
                      {"CMD/RATE", 9, 1, '/', {{8, 0xFF, 0, 0, nullptr}}}, {"PLAY", 11, 1, '/', {{9, 3, 0, 1, kPlay}}},
                      {"WAVE", 12, 1, '/', {{3, 0xFF, 0, 6, nullptr}}}, {"SPEED", 13, 1, '/', {{11, 0xFF, 0, 7, nullptr}}},
                      {"LENGTH", 14, 1, '/', {{10, 0x0F, 0, 8, nullptr}}}, {"LOOP POS", 15, 1, '/', {{2, 0x0F, 0, 9, nullptr}}}, TABLE_ROW};
-const Row kKit[] = {{"KIT 1", 5, 1, '/', {{9, 0x7F, 0, 0, nullptr}}}, {"KIT 2", 6, 1, '/', {{2, 0x3F, 0, 0, nullptr}}},
+const Row kKit[] = {{"KIT 1", 5, 1, '/', {{9, 0x7F, 0, 16, nullptr}}}, {"KIT 2", 6, 1, '/', {{2, 0x3F, 0, 16, nullptr}}},
                     {"VOLUME", 7, 2, '/', {{1, 0xFF, 0, 5, nullptr}, {7, 3, 0, 1, kOut}}}, {"PITCH", 8, 1, '/', {{5, 0x17, 0, 15, nullptr}}},
                     {"FINETUNE", 9, 1, '/', {{8, 0xFF, 0, 0, nullptr}}}, {"OFFSET", 10, 2, '/', {{12, 0xFF, 0, 0, nullptr}, {13, 0xFF, 0, 0, nullptr}}},
                     {"LEN", 11, 2, '/', {{3, 0xFF, 0, 12, nullptr}, {11, 0xFF, 0, 12, nullptr}}},
@@ -96,6 +96,7 @@ void subText(const uint8_t* in, const Sub& f, char* v) {
         case 12: if (b) std::snprintf(v, 12, "%02X", b); else std::strcpy(v, "ALL"); break;
         case 14: std::snprintf(v, 12, "%s", f.names[b != 0]); break;
         case 15: std::snprintf(v, 12, "%02X", b & f.mask); break;
+        case 16: std::snprintf(v, 12, "%02X", ((b & f.mask) + 1) & 0xFF); break;
         default: std::snprintf(v, 12, "%02X", raw & 0xFF); break;
     }
 }

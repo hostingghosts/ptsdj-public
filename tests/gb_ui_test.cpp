@@ -1328,10 +1328,10 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     keyTap(r, ot::btn::Insert);                                 // Insert adds KICK to kit 1A at once
     CHECK(l.screen() == gb::Scr::Loader);
     CHECK(std::strstr(l.status(), "ADDED") != nullptr);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.kit")), 1);     // saved at once for console A
-    CHECK_EQ(int(st.files["GB/Kits/A/15_KIT15.kit"].size()), 0x4000);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.src")), 1);     // it remembers where the sample came from (the check mark)
-    CHECK(std::string(st.files["GB/Kits/A/15_KIT15.src"].begin(), st.files["GB/Kits/A/15_KIT15.src"].end()).find("KICK.wav") != std::string::npos);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT16.kit")), 1);     // saved at once for console A
+    CHECK_EQ(int(st.files["GB/Kits/A/15_KIT16.kit"].size()), 0x4000);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT16.src")), 1);     // it remembers where the sample came from (the check mark)
+    CHECK(std::string(st.files["GB/Kits/A/15_KIT16.src"].begin(), st.files["GB/Kits/A/15_KIT16.src"].end()).find("KICK.wav") != std::string::npos);
     CHECK(r.app.kits.kit(0x15).data != nullptr);                // console A plays it
     CHECK(r.app.kitsB.kit(0x15).data == nullptr);               // console B does not
     gb::Lcd lcd0;
@@ -1390,8 +1390,8 @@ TEST(sample_loader_editor_and_kit_make_a_kit_that_the_console_plays_and_exports)
     keyTap(r, ot::btn::Delete);
     CHECK(std::strstr(l.status(), "ERASE") != nullptr);
     keyTap(r, ot::btn::Insert);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.kit")), 0);
-    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT15.src")), 0);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT16.kit")), 0);
+    CHECK_EQ(int(st.files.count("GB/Kits/A/15_KIT16.src")), 0);
 }
 
 TEST(the_editors_samples_row_scrolls_the_kit_and_add_to_kit_replaces_a_sample_after_asking) {
@@ -2320,4 +2320,54 @@ TEST(phrase_notes_stop_at_the_roms_top_note_and_an_octave_step_that_would_leave_
         holdTap(l, gb::Key::A, t.key);
         CHECK_EQ(int(r.app.song.note(3, 0)), t.want);
     }
+}
+
+// ---- kit numbers are counted from 01 on screen, as in the LSDJ ROM ------------------------------------------------------------------------
+
+namespace {
+// True when the 8 px cells at (col, row), as many as `text` has characters, look like `text` drawn there.
+bool cellsShow(const gb::Lcd& lcd, int col, int row, const char* text) {
+    gb::Lcd ref;
+    ref.text(col, row, text);
+    for (int y = row * 8; y < row * 8 + 8; ++y)
+        for (int x = col * 8; x < (col + int(std::strlen(text))) * 8; ++x)
+            if (lcd.at(x, y) != ref.at(x, y)) return false;
+    return true;
+}
+}  // namespace
+
+TEST(the_instrument_page_shows_kit_numbers_one_higher_than_the_byte) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    uint8_t* in = r.app.song.instrument(0);
+    std::memcpy(in, kKitBase.data(), 16);
+    in[9] = 0x15; in[2] = 0x00;                                   // bytes 15 and 00
+    r.app.song.markInstrument(0);
+    l.show(gb::Scr::Instr); l.instr = 0; l.instrRow = -1;
+    gb::Lcd lcd;
+    l.draw(lcd);
+    CHECK(cellsShow(lcd, 9, 5, "16"));                            // KIT 1: byte 15 reads 16
+    CHECK(cellsShow(lcd, 9, 6, "01"));                            // KIT 2: byte 00 reads 01, the ROM's first kit
+    in[9] = 0x32;
+    gb::Lcd lcd2;
+    l.draw(lcd2);
+    CHECK(cellsShow(lcd2, 9, 5, "33"));                           // the last of your own kits
+    // the number still edits the byte one step at a time
+    l.instrRow = 2;
+    holdTap(l, gb::Key::A, gb::Key::Left);
+    CHECK_EQ(int(in[9]), 0x31);
+}
+
+TEST(the_sample_loader_and_kit_page_show_the_same_numbers_and_new_kits_are_named_after_them) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    l.openLoader();
+    l.kitSlot = 0x15;                                             // the first of your kits: slot 15 inside, 16 on screen
+    gb::Lcd lcd;
+    l.draw(lcd);
+    CHECK(cellsShow(lcd, 17, 0, "KIT 16"));
+    l.kitSlot = 0x01;
+    gb::Lcd lcd2;
+    l.draw(lcd2);
+    CHECK(cellsShow(lcd2, 17, 0, "KIT 02"));                      // a ROM kit: 01 inside, 02 on screen
 }

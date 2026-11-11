@@ -89,7 +89,7 @@ def build():
           P('A kit instrument plays short recorded sounds, such as drums. It plays on the WAV track. Chapter 11 has the full story.'),
           fig('31-instr-kit', 'A kit instrument. KIT 1 and KIT 2 name the drum kits. The kit name shows next to each number.', 4.2 * inch)]
     s += table([['Row', 'What it does'],
-                ['KIT 1', 'The first drum kit (00 to 32 in hex). The step\'s note picks a sample from this kit.'],
+                ['KIT 1', 'The first drum kit (01 to 33 in hex, counting from 01 like a real Game Boy). The step\'s note picks a sample from this kit.'],
                 ['KIT 2', 'A second kit. It plays at the same time as KIT 1 when a step picks a KIT 2 sample.'],
                 ['VOLUME / OUTPUT', 'Two values. VOLUME is 3 (full), 2 (half), 1 (a quarter) or 0 (silent). Next to it is the speaker choice.'],
                 ['PITCH, TABLE', 'Work like on the other instruments.'],

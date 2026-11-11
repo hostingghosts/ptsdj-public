@@ -133,12 +133,12 @@ const Entry kSavingTxt[] = {
     {"EXPORT WAV", "Makes an audio file."},
     {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as PTSDJ_A.SRM or PTSDJ_B.SRM."},
     {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's own kits in. Each one goes with the save file of the same name, PTSDJ_A.SRM."},
-    {"KIT SLOTS", "Use kit 15 to 32 for your own kits: 30 slots. Kits 00 to 14 are the ROM's own."},
+    {"KIT SLOTS", "Use kits 16 to 33 for your own: 30 slots. Kits 01 to 15 are the ROM's own. Kit numbers count from 01, like on a real Game Boy."},
     {"ON A GAME BOY", "Put PTSDJ_A.GB and PTSDJ_A.SRM together on the cartridge or emulator. The save file has to have the same name as the ROM."},
 };
 const Entry kSamplesTxt[] = {
     {"", "Drum kits are sets of up to 15 short sounds. The WAV track plays them with a KIT instrument."},
-    {"KIT NUMBERS", "Kits 00 to 14 are in the ROM. Make your own in 15 to 32. Each Game Boy has its own kits."},
+    {"KIT NUMBERS", "Kits 01 to 15 are in the ROM. Make your own in 16 to 33. Each Game Boy has its own kits."},
     {"STEP 1", "Put WAV files in the GB/Samples folder on the SD card."},
     {"STEP 2", "Press the SAMPLE LOADER key. The kit number is at the top: the jog wheel changes it. Pick a file and press Insert. It is changed to Game Boy sound quality and added to the kit. A check mark shows the files already in it."},
     {"REMOVE IT", "On the loader, BKSP takes the file's sample out of the kit again."},
@@ -375,7 +375,7 @@ const Entry kEditorTxt[] = {
     {"", "Cut a sample, name it and add it to a kit."},
     {"START, END", "Where the sound begins and ends. The jog wheel, or Insert + < >, moves it a little. Insert + UP/DOWN moves it a lot."},
     {"NAME", "Press Insert, then pick 3 new letters with Insert. The keyboard starts empty. Start ends it. BKSP closes it and keeps the old name."},
-    {"KIT", "The kit number to add to: 15 to 32."},
+    {"KIT", "The kit number to add to: 16 to 33."},
     {"SAMPLES", "Turn the jog wheel to step through the kit's samples and change one."},
     {"DELETE", "Throws the sample away. A new sample is dropped at once. A sample from the kit asks first, then is erased from the kit and gives its space back."},
     {"RED LIGHT", "While a sound plays, the red light in the frame flickers when it is loud enough to crackle if layered. Lower LEVEL until it stays dark."},
@@ -387,7 +387,7 @@ const Entry kEditorTxt[] = {
 };
 const Entry kKitTxt[] = {
     {"", "This page shows the samples in a kit."},
-    {"TOP NUMBER", "The kit. Left / Right or the jog wheel changes it. Kits 15 to 32 are yours."},
+    {"TOP NUMBER", "The kit. Left / Right or the jog wheel changes it. Kits 16 to 33 are yours."},
     {"NAME", "Press Insert to name the kit."},
     {"A SAMPLE", "Insert opens it in the Sample Editor, in any kit. Shift + Insert renames it (your kits only). BKSP erases it: press Insert to say yes."},
     {"PLAY OR A PAD", "Hears the sample. A pad plays the sample with the same number."},

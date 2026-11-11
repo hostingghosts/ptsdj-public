@@ -189,7 +189,7 @@ void Lsdj::kitAdd() {
     uint8_t* kb = kitBuf();
     uint8_t* sb = tr_ ? tr_->sampleBuf() : nullptr;
     if (!kb || !sb || !smpLen) { status_ = "LOAD A SAMPLE FIRST"; return; }
-    if (!kitEditable()) { status_ = "KITS 15 TO 32 ONLY"; return; }
+    if (!kitEditable()) { status_ = "KITS 16 TO 33 ONLY"; return; }
     const int n = (smpEnd - smpStart) * 16;
     if (n < 32) { status_ = "SAMPLE TOO SHORT"; return; }
     if (KitBank::count(kb) >= kKitMaxSamples) { status_ = "KIT HAS 15 SAMPLES"; return; }
@@ -197,10 +197,10 @@ void Lsdj::kitAdd() {
     smpLevel = 0;
     char kn[9];
     KitBank::kitName(kb, kn);
-    if (kn[0] == ' ') { std::snprintf(kn, sizeof kn, "KIT%02X", unsigned(kitSlot)); KitBank::setKitName(kb, kn); }
+    if (kn[0] == ' ') { std::snprintf(kn, sizeof kn, "KIT%02X", unsigned(kitShown(kitSlot))); KitBank::setKitName(kb, kn); }
     if (smpSrc_[0]) tr_->setKitSource(console_, KitBank::count(kb) - 1, smpSrc_);
     if (tr_->kitSave(console_, kitSlot)) {
-        std::snprintf(statusBuf_, sizeof statusBuf_, "ADDED: NOTE %X IN KIT %02X", unsigned(KitBank::count(kb)), unsigned(kitSlot));
+        std::snprintf(statusBuf_, sizeof statusBuf_, "ADDED: NOTE %X IN KIT %02X", unsigned(KitBank::count(kb)), unsigned(kitShown(kitSlot)));
         status_ = statusBuf_;
     } else status_ = tr_->errorText() ? tr_->errorText() : "SAVE FAILED";
 }
@@ -215,7 +215,7 @@ bool Lsdj::inKit(const char* wav) const {
 // Insert on the Sample Loader: the listed WAV goes into the kit as it is (Shift + Insert opens it in the Sample Editor first, to cut it).
 void Lsdj::loaderAdd() {
     if (!tr_ || !smpCount) { status_ = "NO WAV FILES"; return; }
-    if (!kitEditable()) { status_ = "KITS 15 TO 32 ONLY"; return; }
+    if (!kitEditable()) { status_ = "KITS 16 TO 33 ONLY"; return; }
     if (inKit(tr_->sampleName(smpSel))) { status_ = "ALREADY IN THE KIT"; return; }
     if (!sampleLoad(false)) return;
     kitAdd();
@@ -224,7 +224,7 @@ void Lsdj::loaderAdd() {
 // Delete on the Sample Loader: takes that WAV's sample out of the kit again.
 void Lsdj::loaderRemove() {
     uint8_t* kb = kitBuf();
-    if (!tr_ || !kb || !smpCount || !kitEditable()) { status_ = "KITS 15 TO 32 ONLY"; return; }
+    if (!tr_ || !kb || !smpCount || !kitEditable()) { status_ = "KITS 16 TO 33 ONLY"; return; }
     for (int i = 0; i < KitBank::count(kb); ++i)
         if (!std::strcmp(tr_->kitSource(console_, i), tr_->sampleName(smpSel))) {
             KitBank::remove(kb, i);
@@ -369,7 +369,7 @@ void Lsdj::drawRecorder(Lcd& l) const {
 void Lsdj::drawLoader(Lcd& l) const {
     l.boldText(0, 0, console_ ? "SAMPLE LOADER B" : "SAMPLE LOADER A");
     char b[40];
-    std::snprintf(b, sizeof b, "KIT %02X", unsigned(kitSlot));
+    std::snprintf(b, sizeof b, "KIT %02X", unsigned(kitShown(kitSlot)));
     l.text(17, 0, b);
     l.text(0, 1, status_);
     l.text(0, 2, "INSERT=ADD  BKSP=REMOVE");                                  // the note on how it works stays on screen
@@ -416,7 +416,7 @@ void Lsdj::drawEditor(Lcd& l) const {
     std::snprintf(b, sizeof b, "NAME  %s", smpName_);
     l.text(0, 11, b, smpRow == 2);
     const uint8_t* kb = kitBuf();
-    std::snprintf(b, sizeof b, "KIT   %02X %s", unsigned(kitSlot), kitEditable() ? "" : "(ROM KIT)");
+    std::snprintf(b, sizeof b, "KIT   %02X %s", unsigned(kitShown(kitSlot)), kitEditable() ? "" : "(ROM KIT)");
     l.text(0, 12, b, smpRow == 3);
     if (kb && kitEditable()) {
         if (smpEditIdx < 0) std::snprintf(b, sizeof b, "%d/15 SAMPLES %d.%dS FREE", KitBank::count(kb), secHundredths(KitBank::freeBytes(kb)) / 100, secHundredths(KitBank::freeBytes(kb)) / 10 % 10);
@@ -475,7 +475,7 @@ void Lsdj::drawKit(Lcd& l) const {
     const uint8_t* kb = kitBuf();
     l.boldText(0, 0, "KIT");
     char b[40];
-    std::snprintf(b, sizeof b, "%02X", unsigned(kitSlot));
+    std::snprintf(b, sizeof b, "%02X", unsigned(kitShown(kitSlot)));
     l.text(4, 0, b, kitRow == 0);
     l.text(7, 0, console_ ? "B" : "A");
     if (!kitEditable()) l.text(10, 0, "ROM KIT");

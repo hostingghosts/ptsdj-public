@@ -107,10 +107,10 @@ def build():
     s += [P('The WAV track can play short recorded sounds, like drums. A set of these sounds is called a <b>kit</b>. A kit holds up to <b>15 sounds</b> and about <b>2.8 seconds</b> in total.'),
           P('Game Boy sound is very rough. PTSDJ changes your sounds into the Game Boy style (4-bit, about 11,000 samples a second). This gives that crunchy retro sound.'),
           H2('Kit numbers'),
-          P('Each kit has a number (hex):')]
+          P('Each kit has a number (hex). The numbers count from 01, just like on a real Game Boy.')]
     s += table([['Kits', 'What they are'],
-                ['00 to 14', 'Built into the LSDJ ROM. You can hear them, but not change them.'],
-                ['15 to 32', '<b>Yours.</b> There are 30 free slots. Each Game Boy has its own set.']], [1.4 * inch, BODY_W - 1.4 * inch])
+                ['01 to 15', 'Built into the LSDJ ROM. You can hear them, but not change them.'],
+                ['16 to 33', '<b>Yours.</b> There are 30 free slots. Each Game Boy has its own set.']], [1.4 * inch, BODY_W - 1.4 * inch])
     s += [H2('Making a kit from WAV files'),
           steps(['Copy WAV files into <b>GB/Samples</b> on the SD card. Use plain WAV files (8, 16 or 24 bit). Short sounds (under 2 seconds) work best. Any sample rate is fine.',
                  'Press [Sample Loader]. The kit number is at the top. Turn the jog wheel to pick a kit between 15 and 32.',
@@ -131,7 +131,7 @@ def build():
     s += table([['Row', 'What it does'],
                 ['START and END', 'Where the sound begins and ends. Turn the jog wheel to move a little. Hold [Insert] and press Up or Down to move a lot.'],
                 ['NAME', 'Three letters. Press [Insert]. The keyboard starts empty. Pick three letters with [Insert], then press [Play] for OK. [Delete] cancels and keeps the old name.'],
-                ['KIT', 'Which kit to add to (15 to 32).'],
+                ['KIT', 'Which kit to add to (16 to 33).'],
                 ['SAMPLES', 'Shows how many sounds the kit has and how much time is free. Turn the jog wheel to step through the sounds already in the kit so you can change one.'],
                 ['LEVEL', 'How loud the sound is stored: 100%, 75%, 50% or 25%. Use a lower level for sounds you will layer. It goes back to 100% after each add.'],
                 ['ADD TO KIT', 'Press [Insert] to add the sound as a new one. The kit is saved at once. When you are on one of the kit\'s own sounds, this row says REPLACE SAMPLE instead.'],
@@ -151,9 +151,9 @@ def build():
                 ['[Delete]', 'Erase the sound. Press [Insert] to say yes.'],
                 ['NAME row', 'Press [Insert] to name the kit (up to 8 letters).']], [1.9 * inch, BODY_W - 1.9 * inch])
     s += [H2('Using a kit in a song'),
-          steps(['Go to the Instrument page. Set TYPE to <b>KIT</b>.', 'Set <b>KIT 1</b> to your kit number (for example 15).', 'Go to the Phrase page. Press [Insert]. The NOTE box shows the <b>name of a sample</b>, like KIC or HAT.',
+          steps(['Go to the Instrument page. Set TYPE to <b>KIT</b>.', 'Set <b>KIT 1</b> to your kit number (for example 16).', 'Go to the Phrase page. Press [Insert]. The NOTE box shows the <b>name of a sample</b>, like KIC or HAT.',
                  'Hold [Insert] and press Left or Right to pick another sound from the kit.'])]
-    s += [fig('60-kit-layer-instr', 'A kit instrument with KIT 1 and KIT 2 both set to kit 15.', 4.0 * inch)]
+    s += [fig('60-kit-layer-instr', 'A kit instrument with KIT 1 and KIT 2 both set to kit 16.', 4.0 * inch)]
     s += [H2('Layering two sounds'),
           P('A step can play a sound from KIT 1 and a sound from KIT 2 <b>at the same time</b>. This makes bigger drums. Do it like this:'),
           steps(['On the Instrument page, set both KIT 1 and KIT 2.', 'On the Phrase page, put in a note. Hold [Insert] and press Left or Right to pick the KIT 1 sound.', 'Hold [Insert] and press Up or Down to add a KIT 2 sound. The step shows both names with a plus, like BAS+HAT.']),
@@ -192,7 +192,7 @@ def build():
                  'Start the ROM. Open your song in LSDJ. Press Start.'])]
     s += [callout('care', 'Always use the .srm with the .gb that has the same name. The .gb holds your drum kits. Without it, your kit sounds are missing.'),
           H2('Why a new ROM?'),
-          P('In LSDJ the drum kits are part of the ROM. They are not part of the song. So PTSDJ builds a ROM that has <b>your kits</b> in the empty kit slots 15 to 32. It also fixes the ROM\'s check numbers so flash carts accept it. Only the kit parts and those numbers change. The rest of the ROM is exactly your LSDJ.'),
+          P('In LSDJ the drum kits are part of the ROM. They are not part of the song. So PTSDJ builds a ROM that has <b>your kits</b> in the empty kit slots 16 to 33. It also fixes the ROM\'s check numbers so flash carts accept it. Only the kit parts and those numbers change. The rest of the ROM is exactly your LSDJ.'),
           H2('Songs that sound a little different'),
           P('PTSDJ copies LSDJ very closely. But the real Game Boy is the final word. A few small things can sound a little different, like the timing of a vibrato or a sweep. If a sound is not what you expected, trust the Game Boy and adjust the song.'),
           H2('Checklist'),
