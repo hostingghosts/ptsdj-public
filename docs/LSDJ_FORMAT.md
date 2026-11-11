@@ -201,3 +201,27 @@ Mismatches are counted per tick and per register field against the ROM running t
 - The wave channel sounds one octave below a pulse for the same note number (note 34 = 440 Hz on a pulse, 220 Hz on the wave channel). The bell and bass are written an octave higher for that reason.
 - A wave instrument keeps its synth number in the high nibble of byte 3 (i'mpuzzled's WBAS1/2/3 hold 00, 10, 20). The demo draws its waves straight into the synth's 16 frames and sets the hand-drawn bit, so it plays without the ROM's synth routine.
 - Oracle run (tools/oracle compare.py, the LSDJ 9.4.2 ROM against gb::Player) over a full pass, 1530 ticks, 4 channels, 5 fields: song A differs in 4 places and song B in 286 of 6120 channel-ticks, every one the envelope level off by one step at a single tick. Enabled, frequency, duty and pan agree on every tick, so notes, chords, the kick's table, the bell's table and the noise hits are the same in the ROM.
+
+## Instrument pages in the ROM (measured by driving the LSDJ 9.4.2 ROM: DOWN to a row, A+Right / A+Left, diff the instrument bytes)
+Each page lists its rows from the top; a row with two values lists both bytes. The editor (kPulse, kWave, kKit, kNoise in src/gb/ui/lsdj.cpp) uses these.
+* **Pulse:** TYPE b0; ENV b1 / b9 / b10 (three stages, shown as three bytes); WAVE b7 bits 6-7; OUTPUT b7 bits 0-1; LENGTH b3; SWEEP b4; PITCH b5; TRANSP b5 bit 5;
+  PU2 TSP b2; FINETUNE b11; CMD/RATE b8; TABLE b5 bit 3 (STEP) and b6 (bit 5 on, bits 0-4 the table).
+* **Wave:** VOLUME b1 (3 = 20, 2 = 40, 1 = 60, 0 = 00; 0xA8 as in real songs also reads as 3) and OUTPUT b7 on one row; PITCH b5; TRANSP b5 bit 5; FINETUNE b12;
+  CMD/RATE b8; PLAY b9 & 3 (MANUAL, ONCE, LOOP, PINGPONG; stepping up clears the low nibble of b3); **WAVE b3** (all of it in MANUAL, one step at a time;
+  the row reads SYNTH in the other modes and moves the high nibble, 25 > 35); SPEED b11 (signed, shown + 4); LENGTH b10 (shown 15 - low nibble);
+  LOOP POS b2 low nibble (F shows as a dash); TABLE as above. LOOP POS has a lower limit I did not work out (it would not go below 3 from 3).
+* **Kit:** the top kit line is b2 (low 6 bits; bit 6 is the SPEED flag) and the bottom line b9; the ROM shows kit numbers from 1 (byte 00 reads 01). VOLUME b1 and OUTPUT b7;
+  PITCH b5; FINETUNE b8; OFFSET b12 / b13; LEN b3 / b11; LOOP b5 bit 6 / bit 5; SPEED b2 bit 6; CLIP b10; TABLE as above.
+* **Noise:** ENV b1 / b9 / b10; OUTPUT b7; LENGTH b3; PITCH b2 (0 or 1 in the ROM); VIBRATO b5; TRANSP b5 bit 5; CMD/RATE b8; TABLE as above.
+* AUTOMATE in the editor is the TABLE row's STEP mode: byte 5 bit 3, the same on all four types (the player already reads it that way).
+
+Found and fixed in 1.0.0: the editor used to write AUTOMATE to b9 bit 7 (the second envelope stage on pulse and noise, the kit number on kits), TUNING to b8 as a
+12T/FIX/DRM choice (b8 is CMD/RATE, and FINETUNE on kits), and on wave instruments SYNTH to b2 (the ROM's LOOP POS) and LENGTH to b3 (the wave number itself:
+one press turned 20 into 40, synth 2 into synth 4). Not in the editor yet: the pulse and noise envelope's second and third stage, TRANSP as its own row, the kit's
+SPEED, CLIP, second OFFSET and LEN values and first LOOP flag, and the noise PITCH row's meaning. The kit number display still counts from 00 where the ROM counts from 01.
+
+## Notes in the phrase column, and there is no OFF note (measured on the LSDJ 9.4.2 ROM)
+- Notes run 01 (C-2) to 6C (108). A+Left / A+Right clamp to that range; A+Up / A+Down move an octave only if the result stays inside it (05 A+Down stays 05, 0D goes to 01,
+  60 A+Up goes to 6C, 61 and 64 A+Up stay). Any byte above 6C shows as ??? and no byte shows OFF; 00 is the empty ---.
+- No key combination makes an off note: Select+B and Select+A leave a note alone, A+B (or B then A) clears the cell to empty (note 00, instrument FF), a second A on an empty cell
+  does nothing new. LSDJ silences a note with the K (kill) command, so PTSDJ has no OFF note either.

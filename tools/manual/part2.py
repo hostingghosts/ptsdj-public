@@ -58,7 +58,7 @@ def build():
                 ['LENGTH', 'UNLIM lets the note ring until the next one. A number makes the note stop by itself. Small numbers are short.'],
                 ['SWEEP', 'Makes the pitch slide at the start of each note. 7F means no sweep. Only works on PU1.'],
                 ['P+L+VIB', 'Two digits that set the style of pitch bend, slide and vibrato. The usual value is fine to start.'],
-                ['TUNING', '12T is the normal tuning. FIX makes every key play the same pitch. DRM is made for drum sounds.'],
+                ['CMD/RATE', 'A setting LSDJ keeps for each instrument. PTSDJ stores it so your songs stay the same on a real Game Boy, but it does not use it yet. Leave it as it is.'],
                 ['PU2 TUNE', 'Moves the pitch of PU2 up or down in half steps. 0C is one octave.'],
                 ['PU FINE', 'A tiny pitch nudge. Two pulse tracks with a tiny nudge sound thick and wide.'],
                 ['AUTOMATE', 'OFF: the table runs by itself as time passes. ON: the table moves one row for each new note.'],
@@ -67,21 +67,32 @@ def build():
     s += [H3('Wave instruments (track WAV)'),
           P('A wave instrument plays a little repeating shape that you design on the Synth and Wave pages.')]
     s += table([['Row', 'What it does'],
-                ['VOLUME', 'A8 is the usual full volume. 40 is half. 60 is a quarter. 00 is silent.'],
-                ['SYNTH', 'Which synth shape (0 to F) the sound uses.'],
-                ['OUTPUT, LENGTH, P+L+VIB, TUNING, AUTOMATE, TABLE', 'Work like on the pulse instrument.']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['VOLUME', '3 is full volume. 2 is half. 1 is a quarter. 0 is silent.'],
+                ['OUTPUT, P+L+VIB, AUTOMATE, TABLE', 'Work like on the pulse instrument.'],
+                ['FINETUNE', 'A tiny pitch nudge.'],
+                ['CMD/RATE', 'Stored but not used yet, like on the pulse instrument.'],
+                ['PLAY', 'MANUAL plays one wave all the time. ONCE, LOOP and PINGPONG step through the 16 waves of a synth by themselves: once, round and round, or back and forth.'],
+                ['WAVE (or SYNTH)', 'Which wave to play. With PLAY on MANUAL it is a two-digit wave number: the first digit is the synth (0 to F) and the second is which of its 16 waves. With the other PLAY settings the row is called SYNTH and you pick only the synth, 0 to F.'],
+                ['SPEED', 'How many ticks each wave stays, when PLAY steps through them. Small numbers are fast.'],
+                ['LENGTH', 'How many of the 16 waves are used when PLAY steps through them. F uses all 16.'],
+                ['LOOP POS', 'Where a LOOP starts again. A dash means from the first wave.']], [2.0 * inch, BODY_W - 2.0 * inch])
     s += [H3('Noise instruments (track NOI)')]
     s += table([['Row', 'What it does'],
                 ['ENVELOPE', 'Loudness and fade, like the pulse instrument.'],
                 ['SHAPE', 'The colour of the noise. Different numbers sound like hiss, rumble or crunch. Try some!'],
-                ['OUTPUT, LENGTH, AUTOMATE, TABLE', 'Work like on the pulse instrument.']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['OUTPUT, LENGTH, P+L+VIB, CMD/RATE, AUTOMATE, TABLE', 'Work like on the pulse instrument.']], [2.0 * inch, BODY_W - 2.0 * inch])
     s += [H3('Kit instruments (track WAV)'),
           P('A kit instrument plays short recorded sounds, such as drums. It plays on the WAV track. Chapter 11 has the full story.'),
           fig('31-instr-kit', 'A kit instrument. KIT 1 and KIT 2 name the drum kits. The kit name shows next to each number.', 4.2 * inch)]
     s += table([['Row', 'What it does'],
                 ['KIT 1', 'The first drum kit (00 to 32 in hex). The step\'s note picks a sample from this kit.'],
                 ['KIT 2', 'A second kit. It plays at the same time as KIT 1 when a step picks a KIT 2 sample.'],
-                ['OUTPUT, LENGTH, P+L+VIB, TUNING, AUTOMATE, TABLE', 'Work like on the other instruments.']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['VOLUME', '3 is full volume. 2 is half. 1 is a quarter. 0 is silent.'],
+                ['OUTPUT, P+L+VIB, AUTOMATE, TABLE', 'Work like on the other instruments.'],
+                ['FINETUNE', 'A tiny pitch nudge for every sample.'],
+                ['OFFSET', 'Where in the sample the sound starts. Bigger numbers skip more of the beginning.'],
+                ['LEN', 'How much of the sample plays. 00 plays all of it. A number cuts it short.'],
+                ['LOOP', 'ON repeats the sample.']], [2.0 * inch, BODY_W - 2.0 * inch])
     s += [H3('Naming an instrument'),
           P('On the NAME row, press [Insert]. A little keyboard opens. Move with the arrows. Press [Insert] to type the letter. The &lt; key erases. Press [Play] for OK. Press [Delete] to cancel.'),
           fig('33-name-keyboard', 'The name keyboard.', 3.8 * inch)]

@@ -1,6 +1,8 @@
 // GB app + UI host tests over fake HALs: boot, the blank first screen, the power-hold bar, the silent audio callback and the
 // FT81x display-list budget (2048 words per frame; a 100-word margin below the hardware limit is kept free).
+#include <array>
 #include <cstdio>
+#include <string>
 #include <cstring>
 #include <vector>
 #include <deque>
@@ -2126,4 +2128,125 @@ TEST(the_demo_is_listed_with_a_star_loads_and_cannot_be_erased) {
     CHECK(std::strcmp(l.name(), gb::kDemoNameA) == 0);
     CHECK_EQ(int(r.app.song.at(gb::off::kSync)), 1);
     CHECK(r.app.song.songCell(1, 0) != 0xFF);                     // the melody: the lead plays from the verse on
+}
+
+// ---- instrument pages: every row edits the byte the LSDJ 9.4.2 ROM edits (docs/LSDJ_FORMAT.md, "Instrument pages in the ROM") ------------------
+
+namespace {
+// The instrument after one Insert + Right (or Left) on row `row` (0 = the first row under TYPE) of an instrument that starts as `start`.
+std::array<uint8_t, 16> editRow(const std::array<uint8_t, 16>& start, int row, gb::Key k) {
+    static gb::Song s; static gb::Player p(s); static gb::Lsdj l(s, p);
+    std::memcpy(s.instrument(0), start.data(), 16);
+    s.markInstrument(0);
+    l.show(gb::Scr::Instr); l.instr = 0; l.instrRow = 2 + row;
+    holdTap(l, gb::Key::A, k);
+    std::array<uint8_t, 16> out;
+    std::memcpy(out.data(), s.instrument(0), 16);
+    return out;
+}
+// Which bytes differ, as "bN XX>YY" text, so a failure shows what was edited.
+std::string diff(const std::array<uint8_t, 16>& a, const std::array<uint8_t, 16>& b) {
+    std::string r;
+    for (int i = 0; i < 16; ++i)
+        if (a[i] != b[i]) { char t[24]; std::snprintf(t, sizeof t, "b%d %02X>%02X ", i, a[i], b[i]); r += t; }
+    return r;
+}
+// Compares the edit with what the ROM does and says what was edited when it differs.
+bool same(const std::string& got, const char* want) {
+    if (got == want) return true;
+    std::printf("       edited \"%s\", the ROM edits \"%s\"\n", got.c_str(), want);
+    return false;
+}
+const std::array<uint8_t, 16> kPulseBase = {0, 0xA8, 0x03, 0x00, 0xFF, 0x04, 0, 0x43, 0x01, 0x01, 0x05, 0x05, 0x02, 0, 0, 0};
+const std::array<uint8_t, 16> kKitBase = {2, 0xA8, 0x04, 0x00, 0xFF, 0x04, 0, 0x03, 0x01, 0x05, 0xD0, 0x05, 0x02, 0, 0xF3, 0};
+const std::array<uint8_t, 16> kNoiseBase = {3, 0xA8, 0x04, 0x00, 0xFF, 0x04, 0, 0x03, 0x01, 0x01, 0xD0, 0x05, 0x02, 0, 0xF3, 0};
+const std::array<uint8_t, 16> kWaveBase = {1, 0xA8, 0x0F, 0x25, 0xFF, 0x04, 0, 0x03, 0x01, 0x01, 0x05, 0x05, 0x02, 0, 0, 0};
+}  // namespace
+
+TEST(pulse_rows_edit_the_rom_bytes_and_automate_leaves_the_envelope_alone) {
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 0, gb::Key::Right)), "b1 A8>A9 "));      // ENVELOPE
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 1, gb::Key::Right)), "b7 43>83 "));      // WAVE (duty)
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 3, gb::Key::Right)), "b3 00>40 "));      // LENGTH
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 6, gb::Key::Right)), "b8 01>02 "));      // CMD/RATE (this row used to be TUNING)
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 7, gb::Key::Right)), "b2 03>04 "));      // PU2 TUNE
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 8, gb::Key::Right)), "b11 05>06 "));     // PU FINE
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 9, gb::Key::Right)), "b5 04>0C "));      // AUTOMATE = the table's STEP mode, byte 5 bit 3
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 10, gb::Key::Right)), "b6 00>20 "));     // TABLE
+}
+
+TEST(automate_is_byte_5_bit_3_on_every_type_and_never_touches_byte_9) {
+    struct { const std::array<uint8_t, 16>* base; int row; } c[] = {{&kPulseBase, 9}, {&kKitBase, 9}, {&kNoiseBase, 6}, {&kWaveBase, 10}};
+    for (auto& t : c) {
+        const auto after = editRow(*t.base, t.row, gb::Key::Right);
+        CHECK_EQ(int(after[9]), int((*t.base)[9]));                       // the envelope's second stage (pulse, noise) or the kit number (kit) is not part of it
+        CHECK_EQ(int(after[5]), int((*t.base)[5] | 8));
+    }
+}
+
+TEST(kit_rows_edit_the_rom_bytes) {
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 1, gb::Key::Right)), "b2 04>05 "));          // the second kit (its bit 6 is the speed flag, left alone)
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 2, gb::Key::Right)), "b1 A8>20 "));          // VOLUME 3
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 2, gb::Key::Left)), "b1 A8>40 "));           // VOLUME 2
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 5, gb::Key::Right)), "b8 01>02 "));          // FINETUNE (used to be the 12T/FIX/DRM TUNING)
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 6, gb::Key::Right)), "b13 00>01 "));         // OFFSET
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 7, gb::Key::Right)), "b11 05>06 "));         // LEN
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 8, gb::Key::Right)), "b5 04>24 "));          // LOOP
+    std::array<uint8_t, 16> fast = kKitBase;
+    fast[2] = 0x44;                                                                                    // kit 4 with the speed flag
+    CHECK_EQ(int(editRow(fast, 1, gb::Key::Right)[2]), 0x45);                                          // the kit number moves, the flag stays
+}
+
+TEST(noise_rows_edit_the_rom_bytes) {
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 0, gb::Key::Right)), "b1 A8>A9 "));
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 3, gb::Key::Right)), "b3 00>40 "));
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 4, gb::Key::Right)), "b5 04>05 "));      // P+L+VIB
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 5, gb::Key::Right)), "b8 01>02 "));      // CMD/RATE
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 7, gb::Key::Right)), "b6 00>20 "));
+}
+
+TEST(wave_rows_edit_the_rom_bytes_and_the_wave_row_follows_the_play_mode) {
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 0, gb::Key::Right)), "b1 A8>20 "));        // VOLUME 3 (stored as the NR32 code)
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 0, gb::Key::Left)), "b1 A8>40 "));         // VOLUME 2
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 3, gb::Key::Right)), "b12 02>03 "));       // FINETUNE
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 4, gb::Key::Right)), "b8 01>02 "));        // CMD/RATE
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 7, gb::Key::Right)), "b11 05>06 "));       // SPEED
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 8, gb::Key::Right)), "b10 05>04 "));       // LENGTH counts the other way: bigger shown, smaller stored
+    // PLAY ONCE: the WAVE row is the SYNTH row and moves the high nibble of byte 3 (the ROM: 25 > 35)
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 6, gb::Key::Right)), "b3 25>35 "));
+    // PLAY MANUAL: the row is the whole byte, one step at a time (the ROM: 20 > 21)
+    std::array<uint8_t, 16> manual = kWaveBase;
+    manual[9] = 0; manual[3] = 0x20;
+    CHECK(same(diff(manual, editRow(manual, 6, gb::Key::Right)), "b3 20>21 "));
+    // PLAY steps up: the frame (low nibble of byte 3) goes back to 0; stepping down leaves it
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 5, gb::Key::Right)), "b3 25>20 b9 01>02 "));
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 5, gb::Key::Left)), "b9 01>00 "));
+    // the old rows are gone: nothing on this page writes byte 3 as a length, and byte 2 is only the loop position
+    for (int r = 0; r < 12; ++r) {
+        const auto a = editRow(manual, r, gb::Key::Right);
+        if (r != 6) CHECK_EQ(int(a[3]), int(manual[3]));
+    }
+}
+
+TEST(wave_volume_runs_3_2_1_0_like_the_rom) {
+    std::array<uint8_t, 16> w = kWaveBase;
+    const int want[4] = {0x40, 0x60, 0x00, 0x00};                // from 3 down: 2, 1, 0, and 0 stays
+    for (int i = 0; i < 4; ++i) { w = editRow(w, 0, gb::Key::Left); CHECK_EQ(int(w[1]), want[i]); }
+    w = editRow(w, 0, gb::Key::Right);
+    CHECK_EQ(int(w[1]), 0x60);                                   // back up to 1
+}
+
+TEST(phrase_notes_stop_at_the_roms_top_note_and_an_octave_step_that_would_leave_the_range_does_nothing) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    l.show(gb::Scr::Phrase);
+    l.phrase = 3; l.step = 0; l.phraseCol = 0;
+    struct { int start; gb::Key key; int want; } c[] = {        // measured on LSDJ 9.4.2: note 05 A+Down stays 05, 0D goes to 01, 60 A+Up goes to 6C, 61 and 64 stay, 6C A+Right stays
+        {5, gb::Key::Down, 5}, {12, gb::Key::Down, 12}, {13, gb::Key::Down, 1}, {100, gb::Key::Up, 100}, {97, gb::Key::Up, 97}, {96, gb::Key::Up, 108},
+        {107, gb::Key::Right, 108}, {108, gb::Key::Right, 108}, {2, gb::Key::Left, 1}, {1, gb::Key::Left, 1}};
+    for (auto& t : c) {
+        r.app.song.note(3, 0) = uint8_t(t.start);
+        r.app.song.phraseInstr(3, 0) = 0;
+        holdTap(l, gb::Key::A, t.key);
+        CHECK_EQ(int(r.app.song.note(3, 0)), t.want);
+    }
 }

@@ -24,25 +24,33 @@ char cmdLetter(int c) {
 
 namespace {
 constexpr int kCmdCount = 20;
+constexpr int kMaxNote = 108;                 // the highest note the ROM lets you enter (0x6C)
 struct Field { const char* label; int row, byte, mask, shift, kind; const char* const* names; };
 const char* const kDuty[] = {"12.5", "25", "50", "75"};
 const char* const kOut[] = {"OFF", "L", "R", "LR"};
-const char* const kTune[] = {"12T", "FIX", "DRM", "12T"};
 const char* const kOnOff[] = {"OFF", "ON"};
 const char* const kTypes[] = {"PULSE", "WAVE", "KIT", "NOISE"};
-// kind: 0 hex, 1 enum, 2 length, 3 table, 4 sweep (xor 80)
+const char* const kPlay[] = {"MANUAL", "ONCE", "LOOP", "PINGPONG"};
+// Rows and the bytes behind them, measured by driving the LSDJ 9.4.2 ROM's instrument pages (docs/LSDJ_FORMAT.md, "Instrument pages in the ROM").
+// kind: 0 hex, 1 enum, 2 length, 3 table, 4 sweep (xor 80), 5 volume 0-3 (the NR32 code in bits 6-5: 3 = 20, 2 = 40, 1 = 60, 0 = 00),
+//       6 wave frame: all of byte 3 while PLAY is MANUAL, its high nibble (the synth) otherwise, 7 frame speed (byte 11 as a signed number, shown + 4),
+//       8 frame count (15 minus the low nibble of the byte), 9 loop position (low nibble, F = none)
+// AUTOMATE is the table's STEP mode (byte 5 bit 3: one table row per note instead of one per tick), the same on every type.
 const Field kPulse[] = {{"ENVELOPE", 5, 1, 0xFF, 0, 0, nullptr}, {"WAVE", 6, 7, 0xC0, 6, 1, kDuty}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
                         {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"SWEEP", 9, 4, 0xFF, 0, 4, nullptr}, {"P+L+VIB", 10, 5, 0xFF, 0, 0, nullptr},
-                        {"TUNING", 11, 8, 3, 0, 1, kTune}, {"PU2 TUNE", 13, 2, 0xFF, 0, 0, nullptr}, {"PU FINE", 14, 11, 0xFF, 0, 0, nullptr},
-                        {"AUTOMATE", 16, 9, 0x80, 7, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
-const Field kWave[] = {{"VOLUME", 5, 1, 0xFF, 0, 0, nullptr}, {"SYNTH", 6, 2, 0x0F, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
-                       {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"P+L+VIB", 10, 5, 0xFF, 0, 0, nullptr}, {"TUNING", 11, 8, 3, 0, 1, kTune},
-                       {"AUTOMATE", 16, 9, 0x80, 7, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
-const Field kKit[] = {{"KIT 1", 5, 9, 0x7F, 0, 0, nullptr}, {"KIT 2", 6, 2, 0x7F, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
-                      {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"P+L+VIB", 10, 5, 0xFF, 0, 0, nullptr}, {"TUNING", 11, 8, 3, 0, 1, kTune},
-                      {"AUTOMATE", 16, 9, 0x80, 7, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
+                        {"CMD/RATE", 11, 8, 0xFF, 0, 0, nullptr}, {"PU2 TUNE", 13, 2, 0xFF, 0, 0, nullptr}, {"PU FINE", 14, 11, 0xFF, 0, 0, nullptr},
+                        {"AUTOMATE", 16, 5, 0x08, 3, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
+const Field kWave[] = {{"VOLUME", 5, 1, 0xFF, 0, 5, nullptr}, {"OUTPUT", 6, 7, 3, 0, 1, kOut}, {"P+L+VIB", 7, 5, 0xFF, 0, 0, nullptr},
+                       {"FINETUNE", 8, 12, 0xFF, 0, 0, nullptr}, {"CMD/RATE", 9, 8, 0xFF, 0, 0, nullptr}, {"PLAY", 11, 9, 3, 0, 1, kPlay},
+                       {"WAVE", 12, 3, 0xFF, 0, 6, nullptr}, {"SPEED", 13, 11, 0xFF, 0, 7, nullptr}, {"LENGTH", 14, 10, 0x0F, 0, 8, nullptr},
+                       {"LOOP POS", 15, 2, 0x0F, 0, 9, nullptr}, {"AUTOMATE", 16, 5, 0x08, 3, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
+const Field kKit[] = {{"KIT 1", 5, 9, 0x7F, 0, 0, nullptr}, {"KIT 2", 6, 2, 0x3F, 0, 0, nullptr}, {"VOLUME", 7, 1, 0xFF, 0, 5, nullptr},
+                      {"OUTPUT", 8, 7, 3, 0, 1, kOut}, {"P+L+VIB", 9, 5, 0xFF, 0, 0, nullptr}, {"FINETUNE", 10, 8, 0xFF, 0, 0, nullptr},
+                      {"OFFSET", 11, 13, 0xFF, 0, 0, nullptr}, {"LEN", 12, 11, 0xFF, 0, 0, nullptr}, {"LOOP", 13, 5, 0x20, 5, 1, kOnOff},
+                      {"AUTOMATE", 16, 5, 0x08, 3, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
 const Field kNoise[] = {{"ENVELOPE", 5, 1, 0xFF, 0, 0, nullptr}, {"SHAPE", 6, 2, 0xFF, 0, 0, nullptr}, {"OUTPUT", 7, 7, 3, 0, 1, kOut},
-                        {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"AUTOMATE", 16, 9, 0x80, 7, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
+                        {"LENGTH", 8, 3, 0x7F, 0, 2, nullptr}, {"P+L+VIB", 9, 5, 0xFF, 0, 0, nullptr}, {"CMD/RATE", 10, 8, 0xFF, 0, 0, nullptr},
+                        {"AUTOMATE", 16, 5, 0x08, 3, 1, kOnOff}, {"TABLE", 17, 6, 0x3F, 0, 3, nullptr}};
 struct FieldSet { const Field* f; int n; };
 FieldSet fieldsFor(int type) {
     switch (type & 3) {
@@ -229,7 +237,7 @@ void Lsdj::tableAudition() {
         ch = previewChannel(ins);
         if ((s_.instrument(ins)[0] & 3) == 2) note = 1;                  // a kit instrument: sample 1
     }
-    p_.previewOn(ch, clampi(note, 1, 127), ins);
+    p_.previewOn(ch, clampi(note, 1, kMaxNote), ins);
     tableHeld_ = true;
     tableCh_ = ch;
 }
@@ -287,7 +295,7 @@ void Lsdj::padDown(int pad) {
         if (!libPreview_) return;
         const int pch = previewChannel(Player::kScratch);
         const bool kitSound = (p_.scratchInstr()[0] & 3) == 2;
-        const int pnote = kitSound ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, 127);
+        const int pnote = kitSound ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, kMaxNote);
         padCh_[pad] = int8_t(pch);
         p_.previewOn(pch, pnote, Player::kScratch);
         return;
@@ -311,7 +319,7 @@ void Lsdj::padDown(int pad) {
     }
     const int ch = previewChannel(ins);
     const bool kit = !scratch && (s_.instrument(ins & 63)[0] & 3) == 2;
-    note = kit ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, 127);
+    note = kit ? 1 + pad % 15 : clampi(13 + pad + 12 * padOct_, 1, kMaxNote);
     if (scr_ == Scr::Phrase && !recMode_) {            // Rec mode off: the phrase cursor takes the note (step mode), as before
         s_.note(phrase, step) = uint8_t(note);
         lastNote_ = uint8_t(note);
@@ -504,7 +512,11 @@ void Lsdj::editKey(Key k) {
                     else if (big) b = clampi(b + sgn, 0, 15); else a = clampi(a + sgn, 0, 15);
                     n = uint8_t(b << 4 | a);
                 } else {
-                    if (!n) n = lastNote_; else n = uint8_t(clampi(n + (big ? sgn * 12 : sgn), 1, 127));
+                    if (!n) n = lastNote_;
+                    else {                                    // the ROM's notes run 1..108 (C-2 to 0x6C); an octave step that would leave them changes nothing (measured)
+                        const int t = n + (big ? sgn * 12 : sgn);
+                        if (!big) n = uint8_t(clampi(t, 1, kMaxNote)); else if (t >= 1 && t <= kMaxNote) n = uint8_t(t);
+                    }
                     lastNote_ = n;
                 }
                 if (s_.phraseInstr(phrase, step) == 0xFF) s_.phraseInstr(phrase, step) = lastInstr_;
@@ -530,6 +542,19 @@ void Lsdj::editKey(Key k) {
             int v = (in[f.byte] & f.mask) >> f.shift;
             const int maxv = f.mask >> f.shift;
             if (f.kind == 4) { v = ((in[f.byte] ^ 0x80) & 0xFF); v = (v + d) & 0xFF; in[f.byte] = uint8_t(v ^ 0x80); break; }
+            if (f.kind == 5) {                         // volume 0-3 stored as the NR32 code: 3 = 20, 2 = 40, 1 = 60, 0 = 00
+                const int vol = clampi(((4 - ((in[f.byte] >> 5) & 3)) & 3) + sgn, 0, 3);
+                in[f.byte] = vol ? uint8_t(0x20 * (4 - vol)) : 0;
+                break;
+            }
+            if (f.kind == 6) {                         // the wave: all of byte 3 by hand, only the synth (its high nibble) when the instrument plays the frames itself
+                if (in[9] & 3) in[f.byte] = uint8_t((clampi((in[f.byte] >> 4) + sgn, 0, 15) << 4) | (in[f.byte] & 15));
+                else in[f.byte] = uint8_t(in[f.byte] + d);
+                break;
+            }
+            if (f.kind == 7) { in[f.byte] = uint8_t(clampi(int8_t(in[f.byte]) + d, -3, 127)); break; }                  // shown + 4: at least 1 tick a frame
+            if (f.kind == 8) { in[f.byte] = uint8_t((in[f.byte] & 0xF0) | (15 - clampi(15 - (in[f.byte] & 15) + d, 0, 15))); break; }
+            if (f.kind == 9) { in[f.byte] = uint8_t((in[f.byte] & 0xF0) | clampi((in[f.byte] & 15) + d, 0, 15)); break; }
             if (f.kind == 3) {                         // table: off, or 0x20 | n
                 int t = (in[f.byte] & 0x20) ? (in[f.byte] & 0x1F) : -1;
                 t = clampi(t + d, -1, kTables - 1);
@@ -542,8 +567,10 @@ void Lsdj::editKey(Key k) {
                 in[f.byte] = len < 0 ? uint8_t(in[f.byte] & ~0x7F) : uint8_t((in[f.byte] & ~0x7F) | 0x40 | len);
                 break;
             }
+            const int before = v;
             v = f.kind == 1 ? clampi(v + sgn, 0, maxv) : clampi(v + d, 0, maxv);
             in[f.byte] = uint8_t((in[f.byte] & ~f.mask) | (v << f.shift));
+            if ((in[0] & 3) == 1 && f.byte == 9 && v > before) in[3] &= 0xF0;      // a wave's PLAY steps up: the ROM starts from frame 0 of the synth (measured)
             break;
         }
         case Scr::Table: {
@@ -1444,7 +1471,7 @@ void Lsdj::drawInstr(Lcd& l) const {
     const FieldSet fs = fieldsFor(in[0]);
     for (int i = 0; i < fs.n; ++i) {
         const Field& f = fs.f[i];
-        l.text(0, f.row, f.label);
+        l.text(0, f.row, f.kind == 6 && (in[9] & 3) ? "SYNTH" : f.label);       // the wave row names the synth once the instrument is not played by hand
         char v[12];
         const int raw = (in[f.byte] & f.mask) >> f.shift;
         switch (f.kind) {
@@ -1452,6 +1479,11 @@ void Lsdj::drawInstr(Lcd& l) const {
             case 2: if (in[f.byte] & 0x40) std::snprintf(v, sizeof v, "%02X", in[f.byte] & 0x3F); else std::strcpy(v, "UNLIM"); break;
             case 3: if (in[f.byte] & 0x20) std::snprintf(v, sizeof v, "%02X", in[f.byte] & 0x1F); else std::strcpy(v, "OFF"); break;
             case 4: std::snprintf(v, sizeof v, "%02X", in[f.byte] ^ 0x80); break;
+            case 5: std::snprintf(v, sizeof v, "%d", (4 - ((in[f.byte] >> 5) & 3)) & 3); break;
+            case 6: if (in[9] & 3) std::snprintf(v, sizeof v, "%X", in[f.byte] >> 4); else std::snprintf(v, sizeof v, "%02X", in[f.byte]); break;
+            case 7: std::snprintf(v, sizeof v, "%02X", (int8_t(in[f.byte]) + 4) & 0xFF); break;
+            case 8: std::snprintf(v, sizeof v, "%X", 15 - (in[f.byte] & 15)); break;
+            case 9: if ((in[f.byte] & 15) == 15) std::strcpy(v, "-"); else std::snprintf(v, sizeof v, "%X", in[f.byte] & 15); break;
             default: v[0] = hx16[(raw >> 4) & 15]; v[1] = hx16[raw & 15]; v[2] = 0; break;
         }
         l.text(9, f.row, v, instrRow == 2 + i);

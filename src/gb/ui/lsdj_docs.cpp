@@ -222,6 +222,11 @@ const Entry kInstrTxt[] = {
     {"TABLE", "A list of extra steps for this sound."},
     {"OUTPUT", "Left, right or both speakers."},
     {"LENGTH", "How long a note lasts."},
+    {"VOLUME", "On wave and kit sounds. 3 is full, 2 is half, 1 is a quarter, 0 is silent."},
+    {"PLAY", "On a wave sound. MANUAL keeps one wave. ONCE, LOOP and PINGPONG step through the waves by themselves."},
+    {"WAVE / SYNTH", "Which wave to play. With MANUAL it is a wave number. With the other PLAY settings it is the synth number."},
+    {"AUTOMATE", "ON moves the table one row for each new note. OFF moves it as time passes."},
+    {"LEN, OFFSET, LOOP", "On a kit sound. LEN cuts the sample short (00 plays all of it). OFFSET skips the start. LOOP repeats it."},
     {"SHIFT + INSTR KEY", "Opens the library: save this sound to the card, or load one."},
     {"KIT 1 AND KIT 2", "On a KIT sound: the two kits. Their names show beside the numbers. A phrase note picks a sample from each, and the two play together."},
 };
