@@ -1,3 +1,4 @@
+# Screens for the manual. Run by tools/manual/make_shots.sh on a fresh copy of a card with no songs: both consoles start with the built-in demo (DEMO_A, DEMO_B).
 wait 120
 screenshot @/01-boot.png
 wait 400

@@ -98,8 +98,9 @@ def build():
     s += callout('tip', 'If PTSDJ is already installed you can also update from inside it. Open the Project page, hold [Shift], and press F8. The ? changes to FIRMWARE. Pick a file and press [Insert] twice. Chapter 13 has the details.')
     s += [H2('Going back to the normal Tracker'), P('Put the stock Polyend .ptf file in the Firmware folder and use the same steps. Your PTSDJ files stay on the SD card. Normal Tracker projects are never touched by PTSDJ.'),
           H2('The first start'),
-          P('Each Game Boy opens the song you saved last. If you never saved, it opens an empty song. The first screen is the Song page.'),
-          fig('10-song-empty', 'An empty song. Everything shows -- until you put something in.', 3.8 * inch)]
+          P('The first time, there is no saved song, so both Game Boys open with a <b>demo song</b>. DEMO_A is a melody. DEMO_B is a beat. Press [Play] to hear them together. After that, each Game Boy opens the song you saved last. The first screen is the Song page.'),
+          fig('20-song', 'The Song page of DEMO_A. The numbers are chains. A -- is an empty spot.', 3.8 * inch),
+          P('To start a song of your own, press the [File] key and pick <b>NEW SONG</b>. Chapter 9 shows how.')]
 
     # ---------------------------------------------------------------- 4
     s += H1('4. Editing basics')

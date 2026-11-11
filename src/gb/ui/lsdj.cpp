@@ -1395,7 +1395,7 @@ void Lsdj::drawWave(Lcd& l) const {
 void Lsdj::drawFile(Lcd& l) const {
     l.boldText(0, 0, console_ ? "LOAD SONG B" : "LOAD SONG A");
     l.text(0, 1, status_[0] ? status_ : "SHIFT+BKSP=ERASE");
-    // a blank row, then NEW SONG and the songs: a space and a dash before each title (a plus for a loose file from GB/Songs)
+    // a blank row, then NEW SONG and the songs: a space and a dash before each title (a plus for a loose file from GB/Songs, a star for the built-in demo)
     const int rows = 15, top = std::max(0, std::min(fileSel - rows / 2, fileCount - rows));
     for (int r = 0; r < rows && top + r < fileCount; ++r) {
         const int i = top + r;
@@ -1403,6 +1403,7 @@ void Lsdj::drawFile(Lcd& l) const {
         const char* nm = tr_ ? tr_->songName(i - 1) : "";
         char s[32];
         if (nm[0] == '+') std::snprintf(s, sizeof s, " +%-17.17s", nm + 1);
+        else if (nm[0] == '*') std::snprintf(s, sizeof s, " *%-17.17s", nm + 1);
         else std::snprintf(s, sizeof s, " -%-17.17s", nm);
         l.text(0, 3 + r, s, i == fileSel);
     }

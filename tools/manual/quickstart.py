@@ -15,7 +15,7 @@ def cover(canv, doc):
 
 story = []
 story += [Spacer(1, 0.55 * inch), Paragraph('PTSDJ', S['cover1']), Spacer(1, 6), Paragraph('Quick Start', S['cover2']), Spacer(1, 2.1 * inch)]
-story += [fig('82-first-song-page', 'Your first screen: an empty song, ready for music.', 3.6 * inch)]
+story += [fig('82-first-song-page', 'A new song, ready for music.', 3.6 * inch)]
 story += [Spacer(1, 10), Paragraph('A Game Boy-style music maker for the Polyend Tracker', S['cover2']), Spacer(1, 6),
           Paragraph('Version 1.0.0 &nbsp;-&nbsp; for the original Polyend Tracker. Read this first. The full Manual has all the details.', S['cover3'])]
 story += [PageBreak()]
@@ -61,6 +61,7 @@ story += table([['Key', 'What it does'],
                 ['Jog wheel', 'Turn it to change a number up or down. It does the same as holding [Insert] and pressing Left or Right.']], [1.3 * inch, BODY_W - 1.3 * inch])
 
 story += [PageBreak(), Paragraph('Step 3: Your first song', S['h1']), Rule(), Spacer(1, 6)]
+story += callout('tip', 'The first time you start PTSDJ, both Game Boys open with a demo song. Press [Play] to hear it: DEMO_A is a melody and DEMO_B is a beat, and they play together. Then make your own song with the steps below.')
 story += [steps(['Press the [File] key. The first line is <b>NEW SONG</b>. Press [Insert].',
                  'Type a name. Use the arrows to move over a letter. Press [Insert] to type it. When you finish, press [Play] for OK.'])]
 story += [fig2('80-newsong-name-empty', 'The name box. The arrows move. Insert types a letter.', '81-newsong-name-typed', 'Typing the name DEMO. Press Play when you are done.')]

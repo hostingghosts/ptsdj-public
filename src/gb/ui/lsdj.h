@@ -29,7 +29,7 @@ struct Transport {
     // The songs this console can load: first the 32 slots of its bank file (GB/Saves/A.srm or B.srm), then loose .lsdsng files in GB/Songs
     // (shown with a leading "+", they are filed into the bank by the next save).
     virtual int listSongs(int console) = 0;
-    virtual const char* songName(int i) = 0;          // slot name, or "+" and the file name
+    virtual const char* songName(int i) = 0;          // slot name, "+" and the file name, or "*" and the name of the built-in demo
     virtual bool loadSongFile(int i, int console) = 0;               // session actions from the Project screen; false = failed
     virtual bool deleteSongFile(int i, int console) = 0;
     virtual bool newSong(int console, const char* name) { (void)console; (void)name; return false; }   // an empty song named `name` replaces this console's             // removes a bank slot (not a loose file); false = failed

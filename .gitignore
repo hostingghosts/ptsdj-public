@@ -3,3 +3,5 @@ reference/
 __pycache__/
 *.pyc
 demos/*.lsdsng
+!demos/DEMO_A.lsdsng
+!demos/DEMO_B.lsdsng

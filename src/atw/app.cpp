@@ -1,5 +1,6 @@
 #include "atw/app.h"
 #include "gb/bank.h"
+#include "gb/demo.h"
 #include "gb/kitbank.h"
 #include "gb/wavconv.h"
 #include "atw/chime_pcm.h"
@@ -274,6 +275,15 @@ bool App::loadLastSaved(int console) {
     gb::Bank bank;
     if (!io.ok() || !bank.load(io) || !bank.used(bank.active)) return false;
     return loadFromBank(bank.active, console);
+}
+
+// The built-in demo: song A is the melody, song B the beat; both are built in memory (src/gb/demo.cpp), so no file and no ROM is needed.
+bool App::loadDemo(int console) {
+    dual.stop();
+    gb::Song& s = console ? songB : song;
+    if (console) gb::buildDemoB(s); else gb::buildDemoA(s);
+    (console ? lsdjB : lsdj).setName(console ? gb::kDemoNameB : gb::kDemoNameA);
+    return true;
 }
 
 bool App::loadFromBank(int slot, int console) {
@@ -659,6 +669,10 @@ int App::LinkedTransport::listSongs(int console) {
                     app->songSlot_[app->songCount_++] = uint8_t(s);
                 }
     }
+    if (app->songCount_ < kMaxSongs) {                                  // the built-in demo of this console, after the bank's own songs
+        std::snprintf(app->songNames_[app->songCount_], sizeof app->songNames_[0], "*%s", console ? gb::kDemoNameB : gb::kDemoNameA);
+        app->songSlot_[app->songCount_++] = kDemoSlot;
+    }
     const int files = app->songCount_;
     st->listDir(kSongDir, [](const ot::IStorage::DirEntry& e, void* ctx) {
         App* a = static_cast<App*>(ctx);
@@ -678,6 +692,7 @@ int App::LinkedTransport::listSongs(int console) {
 
 bool App::LinkedTransport::loadSongFile(int i, int console) {
     if (i < 0 || i >= app->songCount_) return false;
+    if (app->songSlot_[i] == kDemoSlot) return app->loadDemo(console);
     if (app->songSlot_[i] != 0xFF) return app->loadFromBank(app->songSlot_[i], console);
     char path[64];
     std::snprintf(path, sizeof path, "%s/%s.lsdsng", kSongDir, app->songNames_[i] + 1);
@@ -686,7 +701,7 @@ bool App::LinkedTransport::loadSongFile(int i, int console) {
 
 bool App::LinkedTransport::deleteSongFile(int i, int console) {
     ot::IStorage* st = app->platform().storage;
-    if (!st || i < 0 || i >= app->songCount_ || app->songSlot_[i] == 0xFF) return false;
+    if (!st || i < 0 || i >= app->songCount_ || app->songSlot_[i] >= kDemoSlot) return false;   // loose files and the demo cannot be erased here
     CardIO io(st, app->bankPath(console), ot::IStorage::kReadWrite);
     gb::Bank bank;
     if (!io.ok() || !bank.load(io)) return false;
@@ -980,8 +995,13 @@ void App::boot() {
 // unit ever stops, the last banner says where.
 void App::bootTick() {
     switch (bootStep_) {
-        case 0: loadLastSaved(0); setBanner("LOADING SONG B"); ++bootStep_; break;
-        case 1: loadLastSaved(1); setBanner("LOADING ROM"); ++bootStep_; break;
+        case 0: bootLoaded_[0] = loadLastSaved(0); setBanner("LOADING SONG B"); ++bootStep_; break;
+        case 1:
+            bootLoaded_[1] = loadLastSaved(1);
+            if (demoAtStart && !bootLoaded_[0] && !bootLoaded_[1]) { loadDemo(0); loadDemo(1); }   // a card with no saved song starts with the demo pair
+            setBanner("LOADING ROM");
+            ++bootStep_;
+            break;
         case 2: {
             const bool done = romStep();
             if (!done) { char b[24]; std::snprintf(b, sizeof b, "LOADING ROM %u%%", unsigned(romGot_ * 100 / kRomBytes)); setBanner(b); }

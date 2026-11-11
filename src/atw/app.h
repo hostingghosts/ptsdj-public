@@ -79,6 +79,7 @@ public:
     void recStop(bool keep);
     int recStateNow() const { return recState_.load(std::memory_order_acquire); }   // 0 idle, 1 waiting for sound, 2 recording, 3 done
     bool loadLastSaved(int console);           // at start: the song each console saved last, or an empty one
+    bool loadDemo(int console);                // the built-in demo song of this console (A: the melody, B: the beat), built in memory; SYNC is on in both
     bool newSong(int console, const char* name);   // an empty song (the template LSDJ starts from) with this project name
     const char* bankPath(int console) const { return console ? "GB/Saves/B.srm" : "GB/Saves/A.srm"; }
     // A linked session is two files, BASE_A.lsdsng and BASE_B.lsdsng in GB/Songs.
@@ -112,7 +113,12 @@ public:
 private:
     static constexpr int kMaxSongs = 96;
     char songNames_[kMaxSongs][24] = {};
-    uint8_t songSlot_[kMaxSongs] = {};         // bank slot of each listed song, 0xFF = a loose file
+    uint8_t songSlot_[kMaxSongs] = {};         // bank slot of each listed song, 0xFF = a loose file, kDemoSlot = the built-in demo
+    static constexpr uint8_t kDemoSlot = 0xFE;
+    bool bootLoaded_[2] = {};                  // each console found a saved song at start
+public:
+    bool demoAtStart = true;                   // a card with no saved song starts with the demo pair (tests that want an empty start turn it off)
+private:
     const char* error_ = nullptr;
     const char* done_ = nullptr;               // success text when the export also wrote a ROM
     char doneBuf_[24] = {};

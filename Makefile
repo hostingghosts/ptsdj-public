@@ -5,6 +5,7 @@
 #   make host-test  -> host unit tests (ASan/UBSan)
 #   make sim        -> desktop simulator (SDL2)
 #   make check      -> host tests + simulator smoke run + device image
+#   make demo       -> the two demo songs as demos/DEMO_A.lsdsng and DEMO_B.lsdsng, and build/demo/DEMO_A+B.wav (both playing together)
 VERSION   ?= 0.1.0
 BUILD     := build
 DIAG_N    ?= 1
@@ -85,9 +86,18 @@ sim:
 check: host-test all
 	$(MAKE) -C sim check
 
+# The demo songs are built in code (src/gb/demo.cpp); this writes them as files and renders a WAV of the pair with the firmware's own mixer.
+demo:
+	$(MAKE) -C tests ../build/host-tests/libgb.a
+	mkdir -p build/demo
+	g++ -std=c++17 -Wall -Wextra -Werror -O1 -fsanitize=address,undefined -DGB_BUILD -Isrc -Isrc/platform -Isrc/platform/core \
+	    tools/make_demo.cpp build/host-tests/libgb.a -o build/demo/make_demo
+	build/demo/make_demo build/demo
+	cp build/demo/DEMO_A.lsdsng build/demo/DEMO_B.lsdsng demos/
+
 clean:
 	rm -rf build
 
 -include $(OBJS:.o=.d)
 
-.PHONY: all clean host-test sim check
+.PHONY: all clean host-test sim check demo

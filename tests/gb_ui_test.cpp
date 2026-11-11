@@ -6,6 +6,7 @@
 #include <deque>
 
 #include "atw/app.h"
+#include "gb/demo.h"
 #include "gb/ui/lsdj.h"
 #include "atw/midi_in.h"
 #include "mem_storage.h"
@@ -112,6 +113,7 @@ struct Rig {
         p.lineIn = &fakeLine;
         p.selectInput = &fakeSelect;
         gMuted = false;
+        app.demoAtStart = false;                    // most tests start from an empty song; the demo tests turn it on
         CHECK(app.init(p));
         app.boot();
     }
@@ -441,7 +443,8 @@ TEST(file_screen_lists_songs_and_loads_one_into_the_console) {
     for (int i = 0; i < 11; ++i) tapKey(l, gb::Key::Down);    // LOAD SONG
     tapKey(l, gb::Key::A);
     CHECK(l.screen() == gb::Scr::File);
-    CHECK_EQ(l.fileCount, 3);                                 // NEW SONG, then the two loose files
+    CHECK_EQ(l.fileCount, 4);                                 // NEW SONG, the built-in demo, then the two loose files
+    tapKey(l, gb::Key::Down);
     tapKey(l, gb::Key::Down);
     tapKey(l, gb::Key::Down);                                 // sorted: ALPHA, BETA -> BETA (note on channel 0)
     tapKey(l, gb::Key::A);
@@ -667,14 +670,14 @@ TEST(save_song_files_it_in_the_consoles_own_bank_and_load_lists_it) {
     CHECK(r.app.saveToBank(0));                                 // the same name replaces
     gb::Lsdj& l = r.app.lsdj;
     l.openFiles();
-    CHECK_EQ(l.fileCount, 3);                                   // NEW SONG, TUNE and TUNE2; DRUMS is on the other Game Boy
+    CHECK_EQ(l.fileCount, 4);                                   // NEW SONG, TUNE, TUNE2 and the built-in demo; DRUMS is on the other Game Boy
     r.app.song.note(0, 0) = 1;
     l.fileSel = 1;
     keyTap(r, ot::btn::Insert);                                 // load the first entry into this console
     CHECK_EQ(int(r.app.song.note(0, 0)), 31);
     CHECK(std::strcmp(l.name(), "TUNE") == 0);
     r.app.lsdjB.openFiles();
-    CHECK_EQ(r.app.lsdjB.fileCount, 2);
+    CHECK_EQ(r.app.lsdjB.fileCount, 3);                         // NEW SONG, DRUMS, the demo
 }
 
 TEST(loose_lsdsng_files_are_listed_after_the_bank_and_saved_into_it) {
@@ -686,15 +689,15 @@ TEST(loose_lsdsng_files_are_listed_after_the_bank_and_saved_into_it) {
     r.app.lsdj.setName("NEW");
     CHECK(r.app.saveToBank(0));
     r.app.lsdj.openFiles();
-    CHECK_EQ(r.app.lsdj.fileCount, 3);                          // NEW SONG, NEW (bank) then +OLD (file)
+    CHECK_EQ(r.app.lsdj.fileCount, 4);                          // NEW SONG, NEW (bank), the demo, then +OLD (file)
     r.app.song.note(0, 0) = 1;
-    r.app.lsdj.fileSel = 2;
+    r.app.lsdj.fileSel = 3;
     keyTap(r, ot::btn::Insert);
     CHECK_EQ(int(r.app.song.note(0, 0)), 25);
     CHECK(std::strcmp(r.app.lsdj.name(), "OLD") == 0);
     CHECK(r.app.saveToBank(0));                                 // now it is in the bank too
     r.app.lsdj.openFiles();
-    CHECK_EQ(r.app.lsdj.fileCount, 4);
+    CHECK_EQ(r.app.lsdj.fileCount, 5);
 }
 
 TEST(a_bank_song_can_be_erased_with_select_delete_and_a_second_insert) {
@@ -707,14 +710,14 @@ TEST(a_bank_song_can_be_erased_with_select_delete_and_a_second_insert) {
     CHECK(r.app.saveToBank(0));
     gb::Lsdj& l = r.app.lsdj;
     l.openFiles();
-    CHECK_EQ(l.fileCount, 3);
+    CHECK_EQ(l.fileCount, 4);                                   // NEW SONG, ONE, TWO, the demo
     l.fileSel = 1;
     r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
     keyTap(r, ot::btn::Delete);
     r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
-    CHECK_EQ(l.fileCount, 3);                                   // asked first
+    CHECK_EQ(l.fileCount, 4);                                   // asked first
     keyTap(r, ot::btn::Insert);
-    CHECK_EQ(l.fileCount, 2);
+    CHECK_EQ(l.fileCount, 3);
     CHECK(std::strcmp(l.status(), "ERASED") == 0);
 }
 
@@ -862,7 +865,7 @@ TEST(project_name_is_typed_and_names_the_saved_file) {
     l.key(gb::Key::A, true); l.key(gb::Key::A, false);
     CHECK_EQ(int(st.files["GB/Saves/A.srm"].size()), 0x20000);
     l.openFiles();
-    CHECK_EQ(l.fileCount, 2);
+    CHECK_EQ(l.fileCount, 3);                                   // NEW SONG, the saved song, the demo
 }
 
 TEST(shift_insert_arrows_select_cells_copy_and_shift_copy_paste_on_the_same_page_only) {
@@ -2069,4 +2072,58 @@ TEST(the_recorder_waits_for_sound_records_it_and_opens_it_in_the_editor) {
     keyTap(r, ot::btn::Delete);
     CHECK_EQ(r.app.recStateNow(), int(0));
     CHECK(l.screen() == gb::Scr::Recorder);
+}
+
+// ---- the built-in demo songs ----------------------------------------------------------------------------------------------
+
+TEST(a_card_with_no_saved_song_starts_with_the_demo_pair) {
+    MemStorage st;
+    Rig r(true, &st);
+    r.app.demoAtStart = true;
+    r.loop(10);
+    CHECK(std::strcmp(r.app.lsdj.name(), gb::kDemoNameA) == 0);
+    CHECK(std::strcmp(r.app.lsdjB.name(), gb::kDemoNameB) == 0);
+    CHECK_EQ(int(r.app.song.at(gb::off::kTempo)), gb::kDemoTempo);
+    CHECK_EQ(int(r.app.songB.at(gb::off::kTempo)), gb::kDemoTempo);
+    CHECK_EQ(int(r.app.song.at(gb::off::kSync)), 1);
+    CHECK_EQ(int(r.app.songB.at(gb::off::kSync)), 1);
+    CHECK(r.app.song.note(0, 0) == 0);                            // the first phrase of the song is the quiet one ...
+    CHECK(r.app.song.songCell(0, 1) != 0xFF);                     // ... but the pad plays from the first bar
+    keyTap(r, ot::btn::Play);                                     // SYNC is on in both: Play on A starts both consoles
+    CHECK(r.app.player.running());
+    CHECK(r.app.playerB.running());
+}
+
+TEST(a_saved_song_keeps_the_demo_away) {
+    MemStorage st;
+    Rig r(true, &st);
+    oneNote(r.app.song, 0, 25, 3);
+    r.app.lsdj.setName("MINE");
+    CHECK(r.app.saveToBank(0));
+    r.app.demoAtStart = true;
+    r.loop(10);
+    CHECK(std::strcmp(r.app.lsdj.name(), "MINE") == 0);
+    CHECK(std::strcmp(r.app.lsdjB.name(), gb::kDemoNameB) != 0);  // B never saved one: it opens as it was, not with the demo
+    CHECK_EQ(int(r.app.songB.at(gb::off::kSync)), 0);
+}
+
+TEST(the_demo_is_listed_with_a_star_loads_and_cannot_be_erased) {
+    MemStorage st;
+    Rig r(true, &st);
+    gb::Lsdj& l = r.app.lsdj;
+    l.openFiles();
+    CHECK_EQ(l.fileCount, 2);                                     // NEW SONG and the demo (the bank is empty)
+    l.fileSel = 1;
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Shift);
+    keyTap(r, ot::btn::Delete);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Shift);
+    keyTap(r, ot::btn::Insert);
+    CHECK(std::strcmp(l.status(), "CAN'T ERASE") == 0);
+    CHECK_EQ(l.fileCount, 2);
+    l.fileSel = 1;
+    keyTap(r, ot::btn::Insert);                                   // load it into console A
+    CHECK(l.screen() == gb::Scr::Project);
+    CHECK(std::strcmp(l.name(), gb::kDemoNameA) == 0);
+    CHECK_EQ(int(r.app.song.at(gb::off::kSync)), 1);
+    CHECK(r.app.song.songCell(1, 0) != 0xFF);                     // the melody: the lead plays from the verse on
 }

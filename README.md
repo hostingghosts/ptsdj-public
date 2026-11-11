@@ -71,7 +71,7 @@ make CROSS=<path>/arm-none-eabi-  # build/PolyendTracGBTrkv010.ptf (24 chars, ch
 ```
 Two consoles: the Song key switches the screen between tracks 1-4 (A) and 5-8 (B); Play starts and stops both together, each keeping its own
 tempo and L/R panning. Project screen: SAVE SONG (into `GB/Saves/A.srm` or `B.srm`), LOAD SONG, EXPORT WAV (`GB/Export/<name>.wav`, one pass until every channel loops).
-Songs: `GB/Saves/A.srm` and `B.srm` (the banks); loose `GB/Songs/*.lsdsng` can be loaded too. At power-on each console opens the song it saved last (the bank's active slot), or an empty one if it never saved. `demos/` holds sample songs and kits.
+Songs: `GB/Saves/A.srm` and `B.srm` (the banks); loose `GB/Songs/*.lsdsng` can be loaded too. At power-on each console opens the song it saved last (the bank's active slot). If neither console ever saved a song, they open with the built-in demo pair (`src/gb/demo.cpp`: DEMO_A is the melody, DEMO_B the beat and bass, one piece in A minor at 120 BPM with SYNC on, so Play on either console plays both); if only one saved, the other opens empty. LOAD SONG lists the demo of that console as `*DEMO_A` / `*DEMO_B`. `make demo` writes them as `demos/DEMO_A.lsdsng` / `DEMO_B.lsdsng` and renders `build/demo/DEMO_A+B.wav`. `demos/` also holds sample kits.
 Docs: `LEARNINGS.md`, `docs/LSDJ_FORMAT.md`, `docs/HARDWARE_MAP.md`, `UPSTREAM.md`. `tools/oracle/` checks against an LSDJ ROM.
 
 Extra sample kits: put 16 KB LSDJ `.kit` files in `GB/Kits` on the card. The first two characters of the name (hex, 00-3F) are the kit slot the file replaces, e.g. `0A_808.kit` replaces kit 0A (the number a song's kit instrument shows); up to 16 files, read at boot. The Project readout ends with `K<n>`, the number of kit files loaded.

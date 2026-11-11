@@ -1,0 +1,25 @@
+# Screens for the manual. Run by tools/manual/make_shots.sh on a fresh copy of a card with no songs: both consoles start with the built-in demo (DEMO_A, DEMO_B).
+wait 30
+tap CONFIG
+tap DOWN
+tap DOWN
+tap DOWN
+wait 10
+screenshot @/70-sync-master.png
+press SHIFT
+tap SONG
+release SHIFT
+tap CONFIG
+tap DOWN
+tap DOWN
+tap DOWN
+wait 10
+press SHIFT
+tap SONG
+release SHIFT
+tap MASTER
+wait 80
+screenshot @/71-dual.png
+press F1
+wait 60
+screenshot @/72-dual-dock.png

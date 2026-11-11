@@ -195,3 +195,9 @@ Mismatches are counted per tick and per register field against the ROM running t
 - TRAINJAM channel 1 (211 frequency mismatches): a table with V (vibrato) next to T A4 and M commands; the vibrato phase differs.
 - Friendbender, NOLIGHT, i_mpuzzled, revision: duty and frequency on pulse 2 with long tables.
 - kicks-v9.2 and PRESSURE: pulse 1 sweeps; the frame sequencer phase at the first note is not matched (tick phase leftover in the ROM, see above).
+
+## The demo songs (src/gb/demo.cpp), checked against the ROM
+- Built in code, two songs that make one piece: A minor, tempo 0x78 (120 BPM with the default 6-tick groove), 4 song rows of 4 bars, SYNC byte 1 in both. Chords come from one phrase moved by chain transposes (0, -4, +3, -2); the chord command C 37 / C 47 gives minor / major.
+- The wave channel sounds one octave below a pulse for the same note number (note 34 = 440 Hz on a pulse, 220 Hz on the wave channel). The bell and bass are written an octave higher for that reason.
+- A wave instrument keeps its synth number in the high nibble of byte 3 (i'mpuzzled's WBAS1/2/3 hold 00, 10, 20). The demo draws its waves straight into the synth's 16 frames and sets the hand-drawn bit, so it plays without the ROM's synth routine.
+- Oracle run (tools/oracle compare.py, the LSDJ 9.4.2 ROM against gb::Player) over a full pass, 1530 ticks, 4 channels, 5 fields: song A differs in 4 places and song B in 286 of 6120 channel-ticks, every one the envelope level off by one step at a single tick. Enabled, frequency, duty and pan agree on every tick, so notes, chords, the kick's table, the bell's table and the noise hits are the same in the ROM.

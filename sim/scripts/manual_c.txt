@@ -1,9 +1,5 @@
+# Screens for the manual. Run by tools/manual/make_shots.sh on a fresh copy of a card with no songs: both consoles start with the built-in demo (DEMO_A, DEMO_B).
 wait 30
-tap FILE
-tap DOWN
-tap DOWN
-tap INSERT
-wait 60
 tap SONG
 tap NOTE
 tap INSTR
@@ -27,10 +23,11 @@ tap DELETE
 tap SONG
 wait 20
 tap PLAY
-wait 400
+wait 9500
 screenshot @/34-song-playing.png
 tap PLAY
 wait 30
+tap DOWN
 tap PATTERN
 press SHIFT
 press INSERT
