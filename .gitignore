@@ -2,3 +2,4 @@ build/
 reference/
 __pycache__/
 *.pyc
+demos/*.lsdsng

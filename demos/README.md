@@ -1,9 +1,8 @@
 # Demos
 
-Real LSDJ songs (.lsdsng, same container as .lsdprj) supplied by the owner of this repo for testing and demonstration.
-They are other people's music: not covered by LICENSE, personal use only, do not republish. Names are the original file
-names. Kits (`kits/*.kit`) are sample kits for the wave channel.
+The LSDJ songs that used to live here are not part of this repository: they are other people's music.
+Kits (`kits/*.kit`) are sample kits for the wave channel and stay.
 
-Format: only Friendbender, i_mpuzzled, kicks and revision are in the current (9.x) memory format. The others were saved by
-older LSDJ versions (format byte 0x07-0x0B at 0x7FFF) and go through `gb::upgradeSong` on load, which reproduces LSDJ 9.4.2's own conversion for notes, commands, instruments and tables
-(only synth bytes and two project bytes differ).
+The tests and the simulator check use songs from this folder when they find them, and skip those parts when they do not.
+To run them with your own songs, put `.lsdsng` files here (git ignores them); `kicks-v9.2.lsdsng` is the one the
+simulator's playback check looks for.
