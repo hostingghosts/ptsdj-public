@@ -133,7 +133,7 @@ public:
     int songRow = 0, songCh = 0;
     int chain = 0, chainPos = 0, chainCol = 0;
     int phrase = 0, step = 0, phraseCol = 0;
-    int instr = 0, instrRow = 0;
+    int instr = 0, instrRow = 0, instrCol = 0;     // instrCol: which value of a row with several (Left / Right)
     int table = 0, tableRow = 0, tableCol = 0;
     int groove = 0, grooveStep = 0;
     int projRow = 0;

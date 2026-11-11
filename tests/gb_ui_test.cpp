@@ -2130,16 +2130,16 @@ TEST(the_demo_is_listed_with_a_star_loads_and_cannot_be_erased) {
     CHECK(r.app.song.songCell(1, 0) != 0xFF);                     // the melody: the lead plays from the verse on
 }
 
-// ---- instrument pages: every row edits the byte the LSDJ 9.4.2 ROM edits (docs/LSDJ_FORMAT.md, "Instrument pages in the ROM") ------------------
+// ---- instrument pages: every value edits the byte the LSDJ 9.4.2 ROM edits (docs/LSDJ_FORMAT.md, "Instrument pages in the ROM") --------------
 
 namespace {
-// The instrument after one Insert + Right (or Left) on row `row` (0 = the first row under TYPE) of an instrument that starts as `start`.
-std::array<uint8_t, 16> editRow(const std::array<uint8_t, 16>& start, int row, gb::Key k) {
+// The instrument after `n` times Insert + Right (or Left) on value `col` of row `row` (0 = the first row under TYPE) of an instrument that starts as `start`.
+std::array<uint8_t, 16> editRow(const std::array<uint8_t, 16>& start, int row, gb::Key k, int col = 0, int n = 1) {
     static gb::Song s; static gb::Player p(s); static gb::Lsdj l(s, p);
     std::memcpy(s.instrument(0), start.data(), 16);
     s.markInstrument(0);
-    l.show(gb::Scr::Instr); l.instr = 0; l.instrRow = 2 + row;
-    holdTap(l, gb::Key::A, k);
+    l.show(gb::Scr::Instr); l.instr = 0; l.instrRow = 2 + row; l.instrCol = col;
+    for (int i = 0; i < n; ++i) holdTap(l, gb::Key::A, k);
     std::array<uint8_t, 16> out;
     std::memcpy(out.data(), s.instrument(0), 16);
     return out;
@@ -2157,82 +2157,153 @@ bool same(const std::string& got, const char* want) {
     std::printf("       edited \"%s\", the ROM edits \"%s\"\n", got.c_str(), want);
     return false;
 }
+// Only which byte numbers changed: for rows whose direction or step the ROM words differently but that edit the same byte.
+std::string bytes(const std::array<uint8_t, 16>& a, const std::array<uint8_t, 16>& b) {
+    std::string r;
+    for (int i = 0; i < 16; ++i) if (a[i] != b[i]) r += "b" + std::to_string(i) + " ";
+    return r;
+}
 const std::array<uint8_t, 16> kPulseBase = {0, 0xA8, 0x03, 0x00, 0xFF, 0x04, 0, 0x43, 0x01, 0x01, 0x05, 0x05, 0x02, 0, 0, 0};
 const std::array<uint8_t, 16> kKitBase = {2, 0xA8, 0x04, 0x00, 0xFF, 0x04, 0, 0x03, 0x01, 0x05, 0xD0, 0x05, 0x02, 0, 0xF3, 0};
 const std::array<uint8_t, 16> kNoiseBase = {3, 0xA8, 0x04, 0x00, 0xFF, 0x04, 0, 0x03, 0x01, 0x01, 0xD0, 0x05, 0x02, 0, 0xF3, 0};
 const std::array<uint8_t, 16> kWaveBase = {1, 0xA8, 0x0F, 0x25, 0xFF, 0x04, 0, 0x03, 0x01, 0x01, 0x05, 0x05, 0x02, 0, 0, 0};
 }  // namespace
 
-TEST(pulse_rows_edit_the_rom_bytes_and_automate_leaves_the_envelope_alone) {
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 0, gb::Key::Right)), "b1 A8>A9 "));      // ENVELOPE
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 1, gb::Key::Right)), "b7 43>83 "));      // WAVE (duty)
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 3, gb::Key::Right)), "b3 00>40 "));      // LENGTH
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 6, gb::Key::Right)), "b8 01>02 "));      // CMD/RATE (this row used to be TUNING)
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 7, gb::Key::Right)), "b2 03>04 "));      // PU2 TUNE
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 8, gb::Key::Right)), "b11 05>06 "));     // PU FINE
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 9, gb::Key::Right)), "b5 04>0C "));      // AUTOMATE = the table's STEP mode, byte 5 bit 3
-    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 10, gb::Key::Right)), "b6 00>20 "));     // TABLE
+TEST(pulse_rows_edit_the_rom_bytes) {
+    using gb::Key;
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 0, Key::Right, 0)), "b1 A8>A9 "));        // ENV., first value: the envelope byte
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 0, Key::Right, 1)), "b9 01>02 "));        // second stage
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 0, Key::Right, 2)), "b10 05>06 "));       // third stage
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 1, Key::Right)), "b7 43>83 "));           // WAVE (duty)
+    CHECK(same(bytes(kPulseBase, editRow(kPulseBase, 2, Key::Left)), "b7 "));                 // OUTPUT
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 3, Key::Right)), "b3 00>40 "));           // LENGTH
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 4, Key::Left)), "b4 FF>FE "));            // SWEEP
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 5, Key::Right)), "b5 04>05 "));           // PITCH
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 6, Key::Right)), "b5 04>24 "));           // TRANSP. OFF = byte 5 bit 5
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 7, Key::Right)), "b2 03>04 "));           // PU2 TSP
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 8, Key::Right)), "b11 05>06 "));          // FINETUNE
+    CHECK(same(diff(kPulseBase, editRow(kPulseBase, 9, Key::Right)), "b8 01>02 "));           // CMD/RATE (this row used to be TUNING)
 }
 
-TEST(automate_is_byte_5_bit_3_on_every_type_and_never_touches_byte_9) {
-    struct { const std::array<uint8_t, 16>* base; int row; } c[] = {{&kPulseBase, 9}, {&kKitBase, 9}, {&kNoiseBase, 6}, {&kWaveBase, 10}};
+TEST(the_table_row_is_mode_and_number_and_step_is_byte_5_bit_3_on_every_type) {
+    using gb::Key;
+    struct { const std::array<uint8_t, 16>* base; int row; } c[] = {{&kPulseBase, 10}, {&kKitBase, 10}, {&kNoiseBase, 7}, {&kWaveBase, 10}};
     for (auto& t : c) {
-        const auto after = editRow(*t.base, t.row, gb::Key::Right);
-        CHECK_EQ(int(after[9]), int((*t.base)[9]));                       // the envelope's second stage (pulse, noise) or the kit number (kit) is not part of it
-        CHECK_EQ(int(after[5]), int((*t.base)[5] | 8));
+        const auto& base = *t.base;
+        CHECK(same(diff(base, editRow(base, t.row, Key::Right, 0, 1)), "b6 00>20 "));         // OFF > ON: byte 6 bit 5
+        const auto step = editRow(base, t.row, Key::Right, 0, 2);                              // ON > STEP: byte 5 bit 3
+        CHECK_EQ(int(step[6]), 0x20);
+        CHECK_EQ(int(step[5]), int(base[5] | 8));
+        CHECK_EQ(int(step[9]), int(base[9]));                                                  // the envelope's second stage (pulse, noise) and the kit number are not part of it
+        CHECK(same(diff(base, editRow(base, t.row, Key::Right, 1)), ""));                      // the number cannot change while the table is OFF
+        auto on = base; on[6] = 0x20;
+        CHECK_EQ(int(editRow(on, t.row, Key::Right, 1)[6]), 0x21);                             // ON: the number counts
+        auto st = base; st[6] = 0x20; st[5] = 0x0C;
+        CHECK_EQ(int(editRow(st, t.row, Key::Left, 0, 1)[5]), int(base[5] & ~8));              // STEP > ON clears bit 3
+        CHECK_EQ(int(editRow(st, t.row, Key::Left, 0, 2)[6]), 0);                              // ... and ON > OFF clears byte 6 bit 5 (the number stays 0 here)
     }
 }
 
 TEST(kit_rows_edit_the_rom_bytes) {
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 1, gb::Key::Right)), "b2 04>05 "));          // the second kit (its bit 6 is the speed flag, left alone)
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 2, gb::Key::Right)), "b1 A8>20 "));          // VOLUME 3
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 2, gb::Key::Left)), "b1 A8>40 "));           // VOLUME 2
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 5, gb::Key::Right)), "b8 01>02 "));          // FINETUNE (used to be the 12T/FIX/DRM TUNING)
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 6, gb::Key::Right)), "b13 00>01 "));         // OFFSET
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 7, gb::Key::Right)), "b11 05>06 "));         // LEN
-    CHECK(same(diff(kKitBase, editRow(kKitBase, 8, gb::Key::Right)), "b5 04>24 "));          // LOOP
+    using gb::Key;
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 0, Key::Right)), "b9 05>06 "));              // the first kit
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 1, Key::Right)), "b2 04>05 "));              // the second kit
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 2, Key::Right, 0)), "b1 A8>20 "));           // VOLUME 3
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 2, Key::Left, 0)), "b1 A8>40 "));            // VOLUME 2
+    CHECK(same(bytes(kKitBase, editRow(kKitBase, 2, Key::Left, 1)), "b7 "));                 // OUTPUT
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 3, Key::Right)), "b5 04>05 "));              // PITCH
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 4, Key::Right)), "b8 01>02 "));              // FINETUNE (used to be the 12T/FIX/DRM TUNING)
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 5, Key::Right, 0)), "b12 02>03 "));          // OFFSET, both values
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 5, Key::Right, 1)), "b13 00>01 "));
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 6, Key::Right, 0)), "b3 00>01 "));           // LEN, both values
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 6, Key::Right, 1)), "b11 05>06 "));
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 7, Key::Right, 0)), "b5 04>44 "));           // LOOP, both flags
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 7, Key::Right, 1)), "b5 04>24 "));
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 8, Key::Right)), "b2 04>44 "));              // SPEED 0.5X is byte 2 bit 6
+    CHECK(same(diff(kKitBase, editRow(kKitBase, 9, Key::Right)), "b10 D0>D1 "));             // CLIP
+    CHECK_EQ(int(editRow(kKitBase, 9, Key::Right, 0, 5)[10]), 0xD3);                         // HARD, SOFT, FOLD, WRAP and no further
+    CHECK_EQ(int(editRow(kKitBase, 9, Key::Left, 0, 2)[10]), 0xD0);
     std::array<uint8_t, 16> fast = kKitBase;
-    fast[2] = 0x44;                                                                                    // kit 4 with the speed flag
-    CHECK_EQ(int(editRow(fast, 1, gb::Key::Right)[2]), 0x45);                                          // the kit number moves, the flag stays
+    fast[2] = 0x44;                                                                          // kit 4 at 0.5X
+    CHECK_EQ(int(editRow(fast, 1, Key::Right)[2]), 0x45);                                    // the kit number moves, the speed flag stays
+    CHECK_EQ(int(editRow(fast, 8, Key::Left)[2]), 0x04);                                     // and back to 1X
 }
 
 TEST(noise_rows_edit_the_rom_bytes) {
-    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 0, gb::Key::Right)), "b1 A8>A9 "));
-    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 3, gb::Key::Right)), "b3 00>40 "));
-    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 4, gb::Key::Right)), "b5 04>05 "));      // P+L+VIB
-    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 5, gb::Key::Right)), "b8 01>02 "));      // CMD/RATE
-    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 7, gb::Key::Right)), "b6 00>20 "));
+    using gb::Key;
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 0, Key::Right, 0)), "b1 A8>A9 "));
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 0, Key::Right, 1)), "b9 01>02 "));
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 0, Key::Right, 2)), "b10 D0>D1 "));
+    CHECK(same(bytes(kNoiseBase, editRow(kNoiseBase, 1, Key::Left)), "b7 "));                // OUTPUT
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 2, Key::Right)), "b3 00>40 "));          // LENGTH
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 3, Key::Right)), "b2 04>01 "));          // PITCH SAFE (the ROM: 04 > 01)
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 3, Key::Left)), "b2 04>00 "));           // PITCH FREE (the ROM: 04 > 00)
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 4, Key::Right)), "b5 04>05 "));          // VIBRATO
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 5, Key::Right)), "b5 04>24 "));          // TRANSP.
+    CHECK(same(diff(kNoiseBase, editRow(kNoiseBase, 6, Key::Right)), "b8 01>02 "));          // CMD/RATE
 }
 
 TEST(wave_rows_edit_the_rom_bytes_and_the_wave_row_follows_the_play_mode) {
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 0, gb::Key::Right)), "b1 A8>20 "));        // VOLUME 3 (stored as the NR32 code)
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 0, gb::Key::Left)), "b1 A8>40 "));         // VOLUME 2
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 3, gb::Key::Right)), "b12 02>03 "));       // FINETUNE
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 4, gb::Key::Right)), "b8 01>02 "));        // CMD/RATE
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 7, gb::Key::Right)), "b11 05>06 "));       // SPEED
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 8, gb::Key::Right)), "b10 05>04 "));       // LENGTH counts the other way: bigger shown, smaller stored
+    using gb::Key;
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 0, Key::Right, 0)), "b1 A8>20 "));         // VOLUME 3 (stored as the NR32 code)
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 0, Key::Left, 0)), "b1 A8>40 "));          // VOLUME 2
+    CHECK(same(bytes(kWaveBase, editRow(kWaveBase, 0, Key::Left, 1)), "b7 "));               // OUTPUT, the second value of the same row
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 3, Key::Right)), "b12 02>03 "));           // FINETUNE
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 4, Key::Right)), "b8 01>02 "));            // CMD/RATE
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 7, Key::Right)), "b11 05>06 "));           // SPEED
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 8, Key::Right)), "b10 05>04 "));           // LENGTH counts the other way: bigger shown, smaller stored
     // PLAY ONCE: the WAVE row is the SYNTH row and moves the high nibble of byte 3 (the ROM: 25 > 35)
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 6, gb::Key::Right)), "b3 25>35 "));
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 6, Key::Right)), "b3 25>35 "));
     // PLAY MANUAL: the row is the whole byte, one step at a time (the ROM: 20 > 21)
     std::array<uint8_t, 16> manual = kWaveBase;
     manual[9] = 0; manual[3] = 0x20;
-    CHECK(same(diff(manual, editRow(manual, 6, gb::Key::Right)), "b3 20>21 "));
+    CHECK(same(diff(manual, editRow(manual, 6, Key::Right)), "b3 20>21 "));
     // PLAY steps up: the frame (low nibble of byte 3) goes back to 0; stepping down leaves it
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 5, gb::Key::Right)), "b3 25>20 b9 01>02 "));
-    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 5, gb::Key::Left)), "b9 01>00 "));
-    // the old rows are gone: nothing on this page writes byte 3 as a length, and byte 2 is only the loop position
-    for (int r = 0; r < 12; ++r) {
-        const auto a = editRow(manual, r, gb::Key::Right);
-        if (r != 6) CHECK_EQ(int(a[3]), int(manual[3]));
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 5, Key::Right)), "b3 25>20 b9 01>02 "));
+    CHECK(same(diff(kWaveBase, editRow(kWaveBase, 5, Key::Left)), "b9 01>00 "));
+    // the old rows are gone: nothing on this page writes byte 3 except the WAVE row
+    for (int r = 0; r < 11; ++r)
+        for (int col = 0; col < 2; ++col) {
+            const auto a = editRow(manual, r, Key::Right, col);
+            if (r != 6 && r != 5) CHECK_EQ(int(a[3]), int(manual[3]));
+        }
+}
+
+TEST(wave_loop_position_counts_from_the_first_frame_and_stops_there) {
+    using gb::Key;
+    std::array<uint8_t, 16> w = kWaveBase;
+    w[9] = 2; w[10] = 0x05;                                                                  // LOOP, the animation starts at frame 5 (byte 10 low nibble)
+    const struct { int b2, key, want; } c[] = {                                              // measured on LSDJ 9.4.2
+        {0x08, 0, 0x07}, {0x08, 1, 0x09}, {0x0C, 0, 0x0B}, {0x05, 0, 0x05}, {0x04, 0, 0x04}, {0x04, 1, 0x05}, {0x0F, 0, 0x0E}, {0x0F, 1, 0x0F}};
+    for (auto& t : c) {
+        w[2] = uint8_t(t.b2);
+        CHECK_EQ(int(editRow(w, 9, t.key ? Key::Right : Key::Left)[2]), t.want);
     }
 }
 
 TEST(wave_volume_runs_3_2_1_0_like_the_rom) {
     std::array<uint8_t, 16> w = kWaveBase;
     const int want[4] = {0x40, 0x60, 0x00, 0x00};                // from 3 down: 2, 1, 0, and 0 stays
-    for (int i = 0; i < 4; ++i) { w = editRow(w, 0, gb::Key::Left); CHECK_EQ(int(w[1]), want[i]); }
-    w = editRow(w, 0, gb::Key::Right);
+    for (int i = 0; i < 4; ++i) { w = editRow(w, 0, gb::Key::Left, 0); CHECK_EQ(int(w[1]), want[i]); }
+    w = editRow(w, 0, gb::Key::Right, 0);
     CHECK_EQ(int(w[1]), 0x60);                                   // back up to 1
+}
+
+TEST(left_and_right_pick_the_value_on_a_row_with_several) {
+    Rig r;
+    gb::Lsdj& l = r.app.lsdj;
+    std::memcpy(r.app.song.instrument(0), kPulseBase.data(), 16);
+    r.app.song.markInstrument(0);
+    l.show(gb::Scr::Instr); l.instr = 0; l.instrRow = 2;                                     // ENV.: three values
+    CHECK_EQ(l.instrCol, 0);
+    l.key(gb::Key::Right, true); l.key(gb::Key::Right, false);
+    CHECK_EQ(l.instrCol, 1);
+    l.key(gb::Key::Right, true); l.key(gb::Key::Right, false);
+    l.key(gb::Key::Right, true); l.key(gb::Key::Right, false);
+    CHECK_EQ(l.instrCol, 2);                                                                 // no further
+    l.key(gb::Key::Down, true); l.key(gb::Key::Down, false);                                 // WAVE has one value: the cursor stays on it
+    CHECK_EQ(l.instrCol, 0);
+    CHECK_EQ(l.instrRow, 3);
 }
 
 TEST(phrase_notes_stop_at_the_roms_top_note_and_an_octave_step_that_would_leave_the_range_does_nothing) {

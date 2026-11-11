@@ -88,7 +88,7 @@ private:
         bool bendTgt = false;                                         // L: the accumulator slides to 0 and stops there
         int bendRate = 0; int16_t bendAcc = 0;      // P: rate and accumulator in 1/256 semitone (16 bit, as the ROM)                          // P
         int chord[3] = {0, 0, 0}; bool chordOn = false; int chordCnt = 0, chordOfs = 0;   // C
-        int kPos = 0, kChunks = 0, kLimit = 0, kBeg[2] = {0, 0}, kEnd[2] = {0, 0}, kFreq = 0x749; bool kPlay = false, kLoop = false, kHas[2] = {false, false}; Kit kit[2];   // kit samples being streamed
+        int kPos = 0, kChunks = 0, kLimit = 0, kBeg[2] = {0, 0}, kEnd[2] = {0, 0}, kFreq = 0x749; bool kPlay = false, kLoop = false, kSlow = false, kHas[2] = {false, false}; Kit kit[2];   // kit samples being streamed
         double wPos = 0; int wDir = 1, wCnt = 0; bool wAnim = false;   // wave frame animation
         int noiseS = 0, shapeOfs = 0; double shapeAcc = 0; bool noiseFresh = false;           // noise: P value, and the S / P shape offset in index steps
         int retrig = -1, retrigCnt = 0;                              // R: period in ticks, -1 off

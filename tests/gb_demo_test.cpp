@@ -200,3 +200,28 @@ TEST(the_songs_are_valid_lsdsng_files_and_draw_their_own_waves) {
     for (int i = 0; i < 16; ++i) drawn = drawn || b.wave(16)[i] != 0;
     CHECK(drawn);
 }
+
+TEST(no_note_rings_on_into_a_quiet_section_when_the_song_loops) {
+    // A wave note rings until the next note and a held pulse note until its envelope or a K ends it. At the top of the song the lead, the bell (song A)
+    // and the bass (song B) are quiet for the intro: the last notes of the previous pass must have been ended by then.
+    static Song a, b;
+    buildDemoA(a);
+    buildDemoB(b);
+    struct { Song* s; int ch; } c[] = {{&a, 0}, {&a, 2}, {&b, 2}};             // song A: PU1 and WAV, song B: WAV
+    for (auto& t : c) {
+        Player p(*t.s);
+        p.start(0);
+        const double tickCycles = 10485760.0 / p.tempo();
+        long long done = 0;
+        int loudTicks = 0, tick = 0;
+        for (; tick < 1536 + 380; ++tick) {                                      // one pass and the first 380 ticks (4 bars is 384) of the next
+            const long long until = (long long)((tick + 0.9) * tickCycles);
+            p.run(uint32_t(until - done));
+            done = until;
+            if (tick < 1560) continue;                                           // past the loop point and the first few ticks of the intro
+            const Apu::ChState st = p.apu().state(t.ch);
+            if (st.enabled && st.dac && st.vol > 0) ++loudTicks;
+        }
+        CHECK_EQ(loudTicks, 0);
+    }
+}

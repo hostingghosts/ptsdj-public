@@ -1,5 +1,6 @@
 // Player rules measured against LSDJ 9.4.2 (see docs/LSDJ_FORMAT.md): the random generator, B gate and Z.
 #include "gb/dual.h"
+#include "gb/kitbank.h"
 #include "gb/player.h"
 #include "test.h"
 
@@ -241,4 +242,50 @@ TEST(the_output_is_louder_and_rounds_off_peaks_instead_of_clipping_them) {
     }
     CHECK(Dual::finish(60000) > Dual::finish(30000));                       // still rising at the top: no flat clipping
     CHECK_EQ(int(Dual::finish(0)), 0);
+}
+
+// ---- kit SPEED (byte 2 bit 6) ----------------------------------------------------------------------------------------------
+
+namespace {
+struct OneKit final : KitSource {
+    std::vector<uint8_t> bank = std::vector<uint8_t>(kKitBytes, 0xFF);
+    int index = 4;
+    OneKit() {
+        KitBank::clear(bank.data());
+        std::vector<uint8_t> smp(16 * 300, 0x9A);                 // 300 chunks, about 0.84 s at the normal speed: it does not end during the test
+        KitBank::add(bank.data(), "KIK", smp.data(), int(smp.size()));
+    }
+    Kit kit(int i) const override { Kit k; if (i == index) k.data = bank.data(); return k; }
+};
+
+// Chunks played in 0.1 s by a kit instrument whose second kit is byte 2 and whose note picks sample 1 of it; also the pitch register at the end.
+int chunksIn100ms(uint8_t byte2, int* freq) {
+    static OneKit kits;
+    static int n; n = 0;
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    s.chainPhrase(0, 0) = 0;
+    s.songCell(0, 2) = 0;
+    s.note(0, 0) = 0x10;                                         // sample 1 of the second kit, nothing from the first
+    s.phraseInstr(0, 0) = 0;
+    uint8_t* in = s.instrument(0);
+    in[0] = 2; in[1] = 0x20; in[2] = byte2; in[7] = 3; in[9] = 0; in[10] = 0xD0;
+    Player p(s);
+    p.setKits(&kits);
+    p.setWaveHook([](int, int) { ++n; });
+    p.start(0);
+    for (int i = 0; i < 1000; ++i) p.run(1049);                  // 0.1 s in small steps
+    if (freq) *freq = p.apu().state(2).freq;
+    return n;
+}
+}  // namespace
+
+TEST(a_kit_with_the_speed_flag_plays_at_half_speed_and_is_not_a_different_kit) {
+    int f1 = 0, f2 = 0;
+    const int normal = chunksIn100ms(0x04, &f1);
+    const int slow = chunksIn100ms(0x44, &f2);                   // kit 4 with bit 6 set: the same kit, half the speed (measured: 0x692 and 23424 cycles per chunk)
+    CHECK(normal >= 80 && normal <= 95);                         // one chunk per 11712 cycles
+    CHECK(slow >= 40 && slow <= 48);
+    CHECK_EQ(f1, 0x749);
+    CHECK_EQ(f2, 0x692);
 }

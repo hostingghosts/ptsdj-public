@@ -42,6 +42,7 @@ def build():
                 ['[Delete] + Up or Down', 'Goes to another phrase.'],
                 ['[Play]', 'Plays just this phrase on its track and loops it. [Shift] + [Play] plays the whole song.'],
                 ['Pads', 'With [Rec] off, a pad types its note at the cursor. With [Rec] on, the pads only make sound (see Chapter 7).']], [2.2 * inch, BODY_W - 2.2 * inch])
+    s += [callout('tip', 'There is no OFF note in LSDJ, and none in PTSDJ. To end a note, put the <b>K</b> command on the step. K08 ends the note after 8 ticks (a step is 6 ticks). The notes run from C-2 up to a top note. A big step with Up or Down that would go past the end does nothing.')]
     s += [callout('note', 'For a drum kit sound, the NOTE column does not show a pitch. It shows the <b>name of a drum sample</b>. Chapter 11 explains drum kits.')]
 
     # ---- Instrument
@@ -50,49 +51,54 @@ def build():
           P('The first row is <b>NAME</b>. Press [Insert] to type a name of up to five letters. The second row is <b>TYPE</b>. It can be PULSE, WAVE, KIT or NOISE. The rows below change with the type.'),
           callout('note', 'A new instrument starts as a plain pulse sound you can hear right away. When you change the TYPE, the sound goes back to the plain settings of that type.'),
           fig('23-instr-pulse', 'A pulse instrument.', 4.2 * inch)]
+    s += [H3('Rows with more than one value'),
+          P('Some rows hold two or three values side by side, like <b>ENV.</b> (three) and <b>TABLE</b> (two). The bright box shows which one you are on. Press Left or Right to move to the next value. Then use [Insert] with Left or Right, or the jog wheel, to change it.')]
     s += [H3('Pulse instruments (tracks PU1 and PU2)')]
     s += table([['Row', 'What it does'],
-                ['ENVELOPE', 'Two digits. The first is how loud the note starts (0 is silent, F is loudest). The second is how fast it fades. 0 means no fade. Small numbers fade fast. Big numbers fade slowly.'],
+                ['ENV.', 'How loud the note is and how it fades. It has three two-digit values. In the first, the first digit is how loud the note starts (0 is silent, F is loudest) and the second is how fast it fades (0 means no fade; small numbers fade fast). The second and third values add two more stages, so a note can start loud, drop to a middle level, then fade out.'],
                 ['WAVE', 'The shape of the beep: 12.5, 25, 50 or 75. Thin sounds (12.5) are buzzy. 50 is round and full.'],
                 ['OUTPUT', 'Which speaker: OFF, L (left), R (right) or LR (both).'],
                 ['LENGTH', 'UNLIM lets the note ring until the next one. A number makes the note stop by itself. Small numbers are short.'],
                 ['SWEEP', 'Makes the pitch slide at the start of each note. 7F means no sweep. Only works on PU1.'],
-                ['P+L+VIB', 'Two digits that set the style of pitch bend, slide and vibrato. The usual value is fine to start.'],
+                ['PITCH', 'The style of pitch bend, slide and vibrato. The usual value is fine to start.'],
+                ['TRANSP.', 'ON: the note follows the transposes of the chain and the project. OFF: it ignores them.'],
+                ['PU2 TSP', 'Moves the pitch of PU2 up or down in half steps. 0C is one octave.'],
+                ['FINETUNE', 'A tiny pitch nudge. Two pulse tracks with a tiny nudge sound thick and wide.'],
                 ['CMD/RATE', 'A setting LSDJ keeps for each instrument. PTSDJ stores it so your songs stay the same on a real Game Boy, but it does not use it yet. Leave it as it is.'],
-                ['PU2 TUNE', 'Moves the pitch of PU2 up or down in half steps. 0C is one octave.'],
-                ['PU FINE', 'A tiny pitch nudge. Two pulse tracks with a tiny nudge sound thick and wide.'],
-                ['AUTOMATE', 'OFF: the table runs by itself as time passes. ON: the table moves one row for each new note.'],
-                ['TABLE', 'OFF or a table number. The table adds extra steps to the sound (Table page).']], [1.3 * inch, BODY_W - 1.3 * inch])
+                ['TABLE', 'Two values. The first is OFF, ON or STEP. ON runs the table as time passes. STEP moves the table one row for each new note. The second is the table number (Table page). While the table is OFF you cannot change the number.']], [1.3 * inch, BODY_W - 1.3 * inch])
     s += [fig2('30-instr-wave', 'A wave instrument.', '32-instr-noise', 'A noise instrument.')]
     s += [H3('Wave instruments (track WAV)'),
           P('A wave instrument plays a little repeating shape that you design on the Synth and Wave pages.')]
     s += table([['Row', 'What it does'],
-                ['VOLUME', '3 is full volume. 2 is half. 1 is a quarter. 0 is silent.'],
-                ['OUTPUT, P+L+VIB, AUTOMATE, TABLE', 'Work like on the pulse instrument.'],
+                ['VOLUME / OUTPUT', 'Two values. VOLUME is 3 (full), 2 (half), 1 (a quarter) or 0 (silent). Next to it is the speaker choice.'],
+                ['PITCH, TRANSP., CMD/RATE, TABLE', 'Work like on the pulse instrument.'],
                 ['FINETUNE', 'A tiny pitch nudge.'],
-                ['CMD/RATE', 'Stored but not used yet, like on the pulse instrument.'],
                 ['PLAY', 'MANUAL plays one wave all the time. ONCE, LOOP and PINGPONG step through the 16 waves of a synth by themselves: once, round and round, or back and forth.'],
-                ['WAVE (or SYNTH)', 'Which wave to play. With PLAY on MANUAL it is a two-digit wave number: the first digit is the synth (0 to F) and the second is which of its 16 waves. With the other PLAY settings the row is called SYNTH and you pick only the synth, 0 to F.'],
+                ['WAVE (or SYNTH)', 'Which wave to play. With PLAY on MANUAL it is a two-digit wave number: the first digit is the synth (0 to F) and the second is which of its 16 waves. With the other PLAY settings the row is called SYNTH and you pick only the synth, 0 to F. When you turn PLAY up from MANUAL, the wave number goes back to the first wave of its synth.'],
                 ['SPEED', 'How many ticks each wave stays, when PLAY steps through them. Small numbers are fast.'],
                 ['LENGTH', 'How many of the 16 waves are used when PLAY steps through them. F uses all 16.'],
-                ['LOOP POS', 'Where a LOOP starts again. A dash means from the first wave.']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['LOOP POS', 'Where a LOOP starts again. A dash means from the first wave. It cannot go before the first wave that is used.']], [1.8 * inch, BODY_W - 1.8 * inch])
+    s += [callout('tip', 'A wave note has no fade. It rings until the next note. To end it, put the <b>K</b> command on the step (Chapter 6). The same goes for the end of a song: if a song loops back to a quiet part, end the last wave note with K or it will ring all through the quiet part.')]
     s += [H3('Noise instruments (track NOI)')]
     s += table([['Row', 'What it does'],
-                ['ENVELOPE', 'Loudness and fade, like the pulse instrument.'],
-                ['SHAPE', 'The colour of the noise. Different numbers sound like hiss, rumble or crunch. Try some!'],
-                ['OUTPUT, LENGTH, P+L+VIB, CMD/RATE, AUTOMATE, TABLE', 'Work like on the pulse instrument.']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['ENV.', 'Loudness and fade, like the pulse instrument.'],
+                ['OUTPUT, LENGTH, TRANSP., CMD/RATE, TABLE', 'Work like on the pulse instrument.'],
+                ['PITCH', 'FREE or SAFE. These are the same two choices LSDJ has for how the noise pitch is picked.'],
+                ['VIBRATO', 'The style of vibrato for the noise. The usual value is fine to start.']], [2.0 * inch, BODY_W - 2.0 * inch])
     s += [H3('Kit instruments (track WAV)'),
           P('A kit instrument plays short recorded sounds, such as drums. It plays on the WAV track. Chapter 11 has the full story.'),
           fig('31-instr-kit', 'A kit instrument. KIT 1 and KIT 2 name the drum kits. The kit name shows next to each number.', 4.2 * inch)]
     s += table([['Row', 'What it does'],
                 ['KIT 1', 'The first drum kit (00 to 32 in hex). The step\'s note picks a sample from this kit.'],
                 ['KIT 2', 'A second kit. It plays at the same time as KIT 1 when a step picks a KIT 2 sample.'],
-                ['VOLUME', '3 is full volume. 2 is half. 1 is a quarter. 0 is silent.'],
-                ['OUTPUT, P+L+VIB, AUTOMATE, TABLE', 'Work like on the other instruments.'],
+                ['VOLUME / OUTPUT', 'Two values. VOLUME is 3 (full), 2 (half), 1 (a quarter) or 0 (silent). Next to it is the speaker choice.'],
+                ['PITCH, TABLE', 'Work like on the other instruments.'],
                 ['FINETUNE', 'A tiny pitch nudge for every sample.'],
-                ['OFFSET', 'Where in the sample the sound starts. Bigger numbers skip more of the beginning.'],
-                ['LEN', 'How much of the sample plays. 00 plays all of it. A number cuts it short.'],
-                ['LOOP', 'ON repeats the sample.']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['OFFSET', 'Where in the sample the sound starts. Bigger numbers skip more of the beginning. The second value is the one PTSDJ uses.'],
+                ['LEN', 'How much of the sample plays. 00 (shown ALL) plays all of it. A number cuts it short. The second value is the one PTSDJ uses.'],
+                ['LOOP', 'Two ON / OFF values. The second one repeats the sample. PTSDJ uses only that one.'],
+                ['SPEED', '1X is the normal speed. 0.5X plays the sample at half speed, so it sounds an octave lower and lasts twice as long.'],
+                ['CLIP', 'What happens when two layered samples add up to too much: HARD, SOFT, FOLD or WRAP. PTSDJ always clips hard, like HARD. The setting is kept for a real Game Boy.']], [1.8 * inch, BODY_W - 1.8 * inch])
     s += [H3('Naming an instrument'),
           P('On the NAME row, press [Insert]. A little keyboard opens. Move with the arrows. Press [Insert] to type the letter. The &lt; key erases. Press [Play] for OK. Press [Delete] to cancel.'),
           fig('33-name-keyboard', 'The name keyboard.', 3.8 * inch)]

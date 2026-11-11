@@ -106,7 +106,7 @@ void buildDemoA(Song& s) {
     Writer w(s);
     const int lead = w.instrument("LEAD", {0x00, 0xB4, 0, 0, 0xFF, 0, 0, kDuty50, 0, 0x60, 0xD0, 0, 0, 0, 0xF3, 0});   // 11 falls to 6 and holds: a soft pluck
     const int pad = w.instrument("PAD", {0x00, 0x70, 0, 0, 0xFF, 0, 0, kDuty25, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0});         // level 7, held
-    const int bell = w.instrument("BELL", {0x01, 0xC8, 0x0F, 0x00, 0xFF, 0, 0x20, 0x03, 0, 0, 0, 0, 0, 0, 0, 0});        // synth 0, half volume, table 0
+    const int bell = w.instrument("BELL", {0x01, 0x40, 0x0F, 0x00, 0xFF, 0, 0x20, 0x03, 0, 0, 0, 0, 0, 0, 0, 0});        // synth 0, volume 2, table 0
     w.wave(0, 0.0, 0.0);                                                                                                 // a plain sine
     w.tableRow(0, 0, 12);                                                                                                // the bell's table: one tick an octave up, then the note itself
 
@@ -115,7 +115,7 @@ void buildDemoA(Song& s) {
     const int v1 = w.phrase({{0, N(4, A), lead}, {4, N(5, C), lead}, {8, N(5, E), lead}, {12, N(5, D), lead}});
     const int v2 = w.phrase({{0, N(5, C), lead}, {4, N(4, A), lead}, {8, N(4, A), lead}, {12, N(4, G), lead}});
     const int v3 = w.phrase({{0, N(5, E), lead}, {4, N(5, D), lead}, {8, N(5, C), lead}, {12, N(5, E), lead}});
-    const int v4 = w.phrase({{0, N(5, D), lead}, {4, N(4, B), lead}, {8, N(5, D), lead}, {12, N(4, B), lead}});
+    const int v4 = w.phrase({{0, N(5, D), lead}, {4, N(4, B), lead}, {8, N(5, D), lead}, {12, N(4, B), lead, kCmdK, 0x12}});   // K ends the last note before the bar does
     // Chorus: the same bars in eighth notes, a little higher.
     const int c1 = w.phrase({{0, N(5, E), lead}, {2, N(5, D), lead}, {4, N(5, C), lead}, {6, N(5, D), lead}, {8, N(5, E), lead}, {12, N(5, C), lead}});
     const int c2 = w.phrase({{0, N(5, C), lead}, {2, N(4, A), lead}, {4, N(5, C), lead}, {6, N(5, E), lead}, {8, N(5, F), lead}, {12, N(5, E), lead}});
@@ -125,9 +125,9 @@ void buildDemoA(Song& s) {
     const int padM = w.phrase({{0, N(3, A), pad, kCmdC, 0x37}, {8, N(3, A), pad, kCmdC, 0x37}});
     const int padJ = w.phrase({{0, N(3, A), pad, kCmdC, 0x47}, {8, N(3, A), pad, kCmdC, 0x47}});
     // Bell: root, third, fifth, third up the chord (the wave channel sounds an octave below a pulse for the same note number, so these are written
-    // an octave higher than they sound).
-    const int belM = w.phrase({{0, N(5, A), bell}, {4, N(6, C), bell}, {8, N(6, E), bell}, {12, N(6, C), bell}});
-    const int belJ = w.phrase({{0, N(5, A), bell}, {4, N(6, Cs), bell}, {8, N(6, E), bell}, {12, N(6, Cs), bell}});
+    // an octave higher than they sound). The last note of each bar ends with K: a wave note rings until the next one, even through a quiet section.
+    const int belM = w.phrase({{0, N(5, A), bell}, {4, N(6, C), bell}, {8, N(6, E), bell}, {12, N(6, C), bell, kCmdK, 0x12}});
+    const int belJ = w.phrase({{0, N(5, A), bell}, {4, N(6, Cs), bell}, {8, N(6, E), bell}, {12, N(6, Cs), bell, kCmdK, 0x12}});
 
     const int quiet = w.chain({sil, sil, sil, sil});
     const int verse = w.chain({v1, v2, v3, v4});
@@ -146,7 +146,7 @@ void buildDemoB(Song& s) {
     Writer w(s);
     const int kick = w.instrument("KICK", {0x00, 0xC4, 0, 0, 0xFF, 0, 0x20, kDuty50, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0});      // table 0 drops the pitch
     const int stab = w.instrument("STAB", {0x00, 0x95, 0, 0, 0xFF, 0, 0, kDuty25, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0});
-    const int bass = w.instrument("BASS", {0x01, 0xC8, 0x0F, 0x10, 0xFF, 0, 0, 0x03, 0, 0, 0, 0, 0, 0, 0, 0});            // synth 1, half volume
+    const int bass = w.instrument("BASS", {0x01, 0x40, 0x0F, 0x10, 0xFF, 0, 0, 0x03, 0, 0, 0, 0, 0, 0, 0, 0});            // synth 1, volume 2
     const int hat = w.instrument("HAT", {0x03, 0x63, 0, 0, 0xFF, 0, 0, 0x03, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0});
     const int snare = w.instrument("SNARE", {0x03, 0xA5, 0, 0, 0xFF, 0, 0, 0x03, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0});
     w.wave(1, 0.35, 0.0);                                                                                                   // sine with some second harmonic
@@ -166,7 +166,7 @@ void buildDemoB(Song& s) {
     const int stM = w.phrase({{6, N(3, A), stab, kCmdC, 0x37}, {14, N(3, A), stab, kCmdC, 0x37}});
     const int stJ = w.phrase({{6, N(3, A), stab, kCmdC, 0x47}, {14, N(3, A), stab, kCmdC, 0x47}});
     // Bass: root, octave and fifth only, so it fits every chord of the progression (sounding at A2, 110 Hz, from the wave channel).
-    const int bs = w.phrase({{0, N(3, A), bass}, {3, N(3, A), bass}, {6, N(4, A), bass}, {8, N(3, A), bass}, {11, N(4, E), bass}, {14, N(4, A), bass}});
+    const int bs = w.phrase({{0, N(3, A), bass}, {3, N(3, A), bass}, {6, N(4, A), bass}, {8, N(3, A), bass}, {11, N(4, E), bass}, {14, N(4, A), bass, kCmdK, 0x0A}});
     // Hats and snare on the noise channel.
     const int nA = w.phrase({{0, HAT_NOTE, hat}, {4, HAT_NOTE, hat}, {8, HAT_NOTE, hat}, {12, HAT_NOTE, hat}});
     const int nB = w.phrase({{0, HAT_NOTE, hat}, {2, HAT_NOTE, hat}, {4, SNARE_NOTE, snare}, {6, HAT_NOTE, hat}, {8, HAT_NOTE, hat},

@@ -111,6 +111,7 @@ story += table([['To do this', 'Do this'],
                 ['Mute a track', 'On the Song page, hold [Shift] and press [Insert].'],
                 ['Hear the pads', 'Press a pad. It plays the sound on the screen.'],
                 ['Get help', 'Hold [F8] for a pop-up. For the help pages, open [Config] and pick HELP.'],
+                ['End a note', 'There is no OFF note. Put K on the step: K08 ends it after 8 ticks.'],
                 ['Name a sound', 'On the Instrument page, move to NAME and press [Insert].'],
                 ['Sounds from the card', 'Hold [Shift] and press [Instrument] to open the library.'],
                 ['Make a drum kit', 'Press [Sample Loader], pick a WAV file, press [Insert].']], [1.7 * inch, BODY_W - 1.7 * inch])

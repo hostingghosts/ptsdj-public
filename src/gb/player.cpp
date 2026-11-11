@@ -147,7 +147,7 @@ void Player::startKit(const StepEvent& e) {
     v.wAnim = false;
     if (!kits_) return;
     v.kit[0] = kits_->kit(in[9] & 0x7F);
-    v.kit[1] = kits_->kit(in[2] & 0x7F);
+    v.kit[1] = kits_->kit(in[2] & 0x3F);                // bit 6 of byte 2 is the SPEED flag (0.5X), not part of the kit number (measured)
     const int a = e.note & 15, bb = e.note >> 4;
     v.kHas[0] = a > 0 && v.kit[0].range(a - 1, v.kBeg[0], v.kEnd[0]);
     v.kHas[1] = bb > 0 && v.kit[1].range(bb - 1, v.kBeg[1], v.kEnd[1]);
@@ -156,12 +156,13 @@ void Player::startKit(const StepEvent& e) {
     v.kChunks = 0;
     v.kLimit = in[11] ? in[11] * 2 - 1 : 0;           // byte 11 = n lets 2n - 1 chunks play (measured on 9.4.2)
     v.kLoop = (in[5] & 0x20) != 0;                  // only bit 5 loops the sample (measured)
-    v.kFreq = std::clamp(0x749 + int8_t(in[8]), 0, 0x7FF);
+    v.kSlow = (in[2] & 0x40) != 0;                  // SPEED 0.5X: the pitch period doubles (0x692 instead of 0x749) and a chunk lasts twice as long (measured)
+    v.kFreq = std::clamp((v.kSlow ? 0x692 : 0x749) + int8_t(in[8]), 0, 0x7FF);
     v.kPlay = true;
     apu_.write(0xFF1C, in[1]);
     nextKit_ = now_;
     kitChunk();
-    nextKit_ = now_ + kKitChunk;
+    nextKit_ = now_ + (v.kSlow ? 2 * kKitChunk : kKitChunk);
 }
 
 void Player::kitChunk() {
@@ -702,7 +703,7 @@ void Player::run(uint32_t cycles) {
         if (v_[2].kPlay) nextEv = std::min(nextEv, nextKit_);
         long long t = std::min<long long>(end, std::max<long long>(now_, nextEv));
         if (t > now_) { apu_.advance(uint32_t(t - now_)); now_ = t; }
-        if (v_[2].kPlay && now_ >= nextKit_) { kitChunk(); nextKit_ += kKitChunk; continue; }
+        if (v_[2].kPlay && now_ >= nextKit_) { kitChunk(); nextKit_ += v_[2].kSlow ? 2 * kKitChunk : kKitChunk; continue; }
         if (!go) continue;
         if (now_ >= next360_) {
             sub360();                                                       // the ROM's 358 Hz interrupt: sub-step first, then the tempo accumulator decides on a tick
@@ -757,6 +758,7 @@ void Player::auditionData(const uint8_t* bytes, int len) {
     v.kLimit = 0;
     v.kLoop = false;
     v.kFreq = 0x749;
+    v.kSlow = false;
     v.kPlay = true;
     apu_.write(0xFF1C, 0x20);
     nextKit_ = now_;
