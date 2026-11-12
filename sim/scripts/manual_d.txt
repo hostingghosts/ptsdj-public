@@ -7,6 +7,10 @@ tap DOWN
 tap INSERT
 tap INSTR
 wait 20
+tap UP
+enc 32
+tap DOWN
+wait 20
 tap DOWN
 enc 2
 tap DOWN

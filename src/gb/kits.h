@@ -1,5 +1,5 @@
 // LSDJ sample kits: 16 KB banks (offset table at 0, 15 names, raw 4-bit samples streamed to the wave channel).
-// The ROM's own kits are banks 8.. of an LSDJ ROM image; extra kits come from .kit files. Nothing here is bundled.
+// The ROM's own kits are banks 8.. of an LSDJ ROM image; extra kits come from .kit files. Only the demo's two kits are built in (builtin_kits.h).
 #pragma once
 
 #include <cstddef>

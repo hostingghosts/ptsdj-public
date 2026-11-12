@@ -76,7 +76,7 @@ def build():
           H2('When PTSDJ starts'),
           P('Each Game Boy opens the song you saved last. If neither Game Boy ever saved a song, they open with the demo songs. If only one of them saved a song, the other one opens empty.'),
           H2('The demo songs'),
-          P('DEMO_A has the melody. DEMO_B has the beat and the bass. They are made to be one piece of music: the same key (A minor), the same speed (120 beats a minute), and the same length (16 bars, about 32 seconds). SYNC is on in both, so pressing [Play] on either Game Boy starts both. Load <b>*DEMO_A</b> on Game Boy A and <b>*DEMO_B</b> on Game Boy B to bring them back after you change them. You can also use them as a starting point: change a note, save under a new name, and the original stays in the list.'),
+          P('DEMO_A has the drums, the lead and the hats. DEMO_B has the bass and the pads. They are made to be one piece of music: the same key (A minor), the same speed (170 beats a minute), and the same length (68 bars, about a minute and a half). The drums are two sample kits that are built into PTSDJ, shown as KIT 32 and KIT 33. SYNC is on in both, so pressing [Play] on either Game Boy starts both. Load <b>*DEMO_A</b> on Game Boy A and <b>*DEMO_B</b> on Game Boy B to bring them back after you change them. You can also use them as a starting point: change a note, save under a new name, and the original stays in the list.'),
           H2('Song files from LSDJ'),
           P('PTSDJ can read LSDJ song files (.lsdsng). Put them in <b>GB/Songs</b>. They show up in the song list with a +. When you export, PTSDJ also writes a .lsdsng of your song.'),
           H2('Audio files'),

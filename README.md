@@ -6,8 +6,8 @@ State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (close 
 screens (Song, Chain, Phrase, Instrument, Table, Groove, Project), 8 channels (two linked Game Boys, tracks 1-4 = song A, 5-8 = song B,
 summed stereo), WAV export. Synth and Wave screens (Select+Up from Phrase = Synth, then Right = Wave; the ROM's own generator rebuilds a synth's 16 frames after each edit,
 so they need `GB/LSDJ.GB` on the card, like the kits). Project > LOAD SONG FILE A/B lists `GB/Songs` and loads a song into that console. Drawing on the Wave page marks the synth hand-drawn; editing that synth then asks "OVERWRITE HAND-DRAWN WAVES?" (NO preselected, as in the ROM). The Synth page's WAVE 00-0F row is display only in the ROM, so there is no range select to build.
-Demos: the built-in pair (`make demo`) and a drum and bass pair for the Amen kits (`make dnb`, see `demos/README.md`).
-Version 1.0.0: runs on the Tracker (line and mic recorder, firmware loader, kit export and layering checked on hardware, exports run on a real Game Boy with
+Demo: the built-in pair is a drum and bass piece (`make demo`, see `demos/README.md`); its two Amen drum kits are built into the firmware.
+Version 1.0.1: runs on the Tracker (line and mic recorder, firmware loader, kit export and layering checked on hardware, exports run on a real Game Boy with
 the original LSDJ ROM). Built desktop-first: every feature has host tests (`make -C tests`) and runs in the simulator (`make -C sim check`).
 Known limits: a few effects differ from LSDJ in small ways (see `docs/LSDJ_FORMAT.md`, "How close the player is"); the Game Boy hardware is the final word for how a
 song sounds. Back to stock: reflash a stock Polyend firmware (`docs/HARDWARE_TEST.md`, last item).
@@ -68,7 +68,7 @@ in `src/gb/ui/lsdj.cpp` as sections of name/text entries that paginate by themse
 make host-test                    # unit tests
 make sim; build/sim/gb-sim        # simulator (keys: arrows, Insert, Delete, Shift, Space)
 make -C sim check                 # screen tour (4 DMG shades only) + demo song to WAV
-make CROSS=<path>/arm-none-eabi-  # build/PolyendTracGBTrkv010.ptf (24 chars, checked)
+make CROSS=<path>/arm-none-eabi-  # build/PolyendTracPTSDJv010.ptf (24 chars, checked)
 ```
 Two consoles: the Song key switches the screen between tracks 1-4 (A) and 5-8 (B); Play starts and stops both together, each keeping its own
 tempo and L/R panning. Project screen: SAVE SONG (into `GB/Saves/A.srm` or `B.srm`), LOAD SONG, EXPORT WAV (`GB/Export/<name>.wav`, one pass until every channel loops).

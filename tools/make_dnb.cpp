@@ -1,5 +1,5 @@
-// make_dnb <out dir> [kit dir] [kit1 slot] [kit2 slot]: builds the drum and bass pair (src/gb/dnb.cpp), writes DNB_A and DNB_B as .lsdsng, renders the pair
-// to DNB_A+B.wav with the firmware's mixer (the two Amen kits are read from <kit dir>/DM-AMEN1.kit and DM-AMEN2.kit, default demos/kits), and prints what was
+// make_dnb <out dir> [kit dir] [kit1 slot] [kit2 slot]: builds the drum and bass pair (src/gb/dnb.cpp), writes DEMO_A and DEMO_B as .lsdsng, renders the pair
+// to DEMO_A+B.wav with the firmware's mixer (the two Amen kits are read from <kit dir>/DM-AMEN1.kit and DM-AMEN2.kit, default demos/kits), and prints what was
 // measured: length, loudness per part, each channel's share of the mix, and every pitch the tonal channels play against A minor.
 #include <algorithm>
 #include <cmath>
@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "gb/demo.h"
 #include "gb/dnb.h"
 #include "gb/dual.h"
 #include "gb/kits.h"
@@ -177,12 +178,12 @@ int main(int argc, char** argv) {
     buildDnbA(a, k1, k2);
     buildDnbB(b);
     std::printf("songs (kits in slots %02X and %02X):\n", k1, k2);
-    writeSong(dir + "/DNB_A.lsdsng", a, kDnbNameA);
-    writeSong(dir + "/DNB_B.lsdsng", b, kDnbNameB);
+    writeSong(dir + "/DEMO_A.lsdsng", a, kDemoNameA);
+    writeSong(dir + "/DEMO_B.lsdsng", b, kDemoNameB);
     for (int c = 0; c < 2; ++c) {                       // 128 KB saves with the song as working memory: what the LSDJ ROM (and tools/oracle) loads
         std::vector<uint8_t> sav(kSavSize);
         (c ? b : a).writeSav(sav.data());
-        const std::string path = dir + (c ? "/DNB_B.sav" : "/DNB_A.sav");
+        const std::string path = dir + (c ? "/DEMO_B.sav" : "/DEMO_A.sav");
         if (std::FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(sav.data(), 1, sav.size(), f); std::fclose(f); }
     }
     std::printf("pitches heard:\n");
@@ -203,7 +204,7 @@ int main(int argc, char** argv) {
         return pass(d, rate);
     };
     const std::vector<int16_t> mix = renderPair(0, 0);
-    writeWav(dir + "/DNB_A+B.wav", mix, rate);
+    writeWav(dir + "/DEMO_A+B.wav", mix, rate);
     const size_t frames = mix.size() / 2;
     std::printf("mix: one pass %.2f s, peak %.3f, %.2f %% of samples above 60 %%\n", double(frames) / rate, peak(mix), hot(mix));
 

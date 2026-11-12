@@ -22,7 +22,7 @@ def build():
     # ---- Chain
     s += [H2('The Chain page'),
           P('A chain is a list of up to 16 phrases. They play one after another. The left column is the <b>phrase</b> number. The right column is <b>TSP</b>, which means transpose: it moves all the notes of that phrase higher or lower. <b>0C</b> is one octave up.'),
-          fig('21-chain', 'A chain with four phrases. The 03 phrase plays four times.', 4.2 * inch)]
+          fig('21-chain', 'A chain with eight phrases. Phrases 15 to 18 play twice.', 4.2 * inch)]
     s += table([['Key', 'What it does'],
                 ['[Insert]', 'Puts a phrase number in the box. Hold [Shift] and press Right to open the phrase.'],
                 ['[Delete] + Left or Right', 'Picks another chain.'],

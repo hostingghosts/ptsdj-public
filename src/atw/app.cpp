@@ -1,5 +1,6 @@
 #include "atw/app.h"
 #include "gb/bank.h"
+#include "gb/builtin_kits.h"
 #include "gb/demo.h"
 #include "gb/kitbank.h"
 #include "gb/wavconv.h"
@@ -902,12 +903,13 @@ bool App::exportRom(const char* path, int console) {
     auto pick = [&](uint32_t b, bool note) -> const uint8_t* {
         const uint8_t* src = p_.bigMem + size_t(b) * gb::kKitBankSize;
         const int idx = gb::kitOfBank(int(b));                 // the kit number LSDJ reads this bank as (-1: program code)
-        const uint8_t* kit = idx >= 0 && idx < 64 ? set.override_(idx) : nullptr;
+        const uint8_t* own = idx >= 0 && idx < 64 ? set.override_(idx) : nullptr;           // a .kit file for this slot,
+        const uint8_t* kit = own ? own : gb::builtinKit(idx);                              // else the demo's built-in kit if this is its slot
         if (kit && kit[0] == 0x60 && kit[1] == 0x40) {
             bool free = src[0] == 0x60 && src[1] == 0x40;
             if (!free) { free = true; for (size_t k = 0; k < gb::kKitBankSize && free; ++k) free = src[k] == 0xFF; }
             if (free) return kit;
-            if (note && romSkipped_ == 0xFF) romSkipped_ = uint8_t(idx);   // something else is in that slot's bank: never overwritten
+            if (note && own && romSkipped_ == 0xFF) romSkipped_ = uint8_t(idx);   // something else is in that slot's bank: never overwritten
         }
         return src;
     };

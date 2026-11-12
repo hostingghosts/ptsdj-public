@@ -1,12 +1,11 @@
 # GB tracker firmware (LSDJ-style Game Boy tracker) for the original Polyend Tracker hardware (MK66FX1M0).
 # Personal use only; see LICENSE.
-#   make            -> build/gbtracker.hex and build/PolyendTracGBTrkv<ver>.ptf (24 chars)
+#   make            -> build/gbtracker.hex and build/PolyendTracPTSDJv<ver>.ptf (24 chars)
 #   make SELFTEST=1 -> build/selftest/PolyendTracker_STst<N>.ptf: hardware selftest only
 #   make host-test  -> host unit tests (ASan/UBSan)
 #   make sim        -> desktop simulator (SDL2)
 #   make check      -> host tests + simulator smoke run + device image
-#   make dnb        -> the drum and bass pair as demos/DNB_A.lsdsng and DNB_B.lsdsng, build/dnb/DNB_A+B.wav, and the kit files named for their slots
-#   make demo       -> the two demo songs as demos/DEMO_A.lsdsng and DEMO_B.lsdsng, and build/demo/DEMO_A+B.wav (both playing together)
+#   make demo       -> the built-in demo (src/gb/dnb.cpp) as demos/DEMO_A.lsdsng and DEMO_B.lsdsng, build/demo/DEMO_A+B.wav (both playing together), and what was measured
 VERSION   ?= 0.1.0
 BUILD     := build
 DIAG_N    ?= 1
@@ -16,7 +15,7 @@ BUILD     := build/selftest
 DEFS_EXTRA := -DOT_FORCE_SELFTEST=1
 PTF_NAME  := PolyendTracker_STst$(DIAG_N).ptf
 else
-PTF_NAME  := PolyendTracGBTrkv$(VERNUM).ptf
+PTF_NAME  := PolyendTracPTSDJv$(VERNUM).ptf
 endif
 PTF       := $(BUILD)/$(PTF_NAME)
 # The stock update bootloader ignores image names that are not exactly 24
@@ -87,29 +86,23 @@ sim:
 check: host-test all
 	$(MAKE) -C sim check
 
-# The demo songs are built in code (src/gb/demo.cpp); this writes them as files and renders a WAV of the pair with the firmware's own mixer.
+# The demo songs are built in code (src/gb/dnb.cpp, src/gb/demo.cpp) and play the two Amen kits that are built into the firmware (src/gb/builtin_kits.inc, made by
+# tools/embed_kits.py from demos/kits). This writes the songs as files, renders a WAV of the pair with the firmware's own mixer and prints what was measured.
 demo:
 	$(MAKE) -C tests ../build/host-tests/libgb.a
 	mkdir -p build/demo
 	g++ -std=c++17 -Wall -Wextra -Werror -O1 -fsanitize=address,undefined -DGB_BUILD -Isrc -Isrc/platform -Isrc/platform/core \
-	    tools/make_demo.cpp build/host-tests/libgb.a -o build/demo/make_demo
-	build/demo/make_demo build/demo
+	    tools/make_dnb.cpp build/host-tests/libgb.a -o build/demo/make_dnb
+	build/demo/make_dnb build/demo demos/kits
 	cp build/demo/DEMO_A.lsdsng build/demo/DEMO_B.lsdsng demos/
 
-# The drum and bass pair (src/gb/dnb.cpp) plays the two Amen kits in demos/kits; this writes the songs, renders a WAV with the kits and prints what was measured.
-dnb:
-	$(MAKE) -C tests ../build/host-tests/libgb.a
-	mkdir -p build/dnb/kits
-	g++ -std=c++17 -Wall -Wextra -Werror -O1 -fsanitize=address,undefined -DGB_BUILD -Isrc -Isrc/platform -Isrc/platform/core \
-	    tools/make_dnb.cpp build/host-tests/libgb.a -o build/dnb/make_dnb
-	build/dnb/make_dnb build/dnb demos/kits
-	cp build/dnb/DNB_A.lsdsng build/dnb/DNB_B.lsdsng demos/
-	cp demos/kits/DM-AMEN1.kit build/dnb/kits/15_DM-AMEN1.kit
-	cp demos/kits/DM-AMEN2.kit build/dnb/kits/16_DM-AMEN2.kit
+# src/gb/builtin_kits.inc from the two kit files (run it only when demos/kits changes).
+embed-kits:
+	python3 tools/embed_kits.py src/gb/builtin_kits.inc demos/kits/DM-AMEN1.kit demos/kits/DM-AMEN2.kit
 
 clean:
 	rm -rf build
 
 -include $(OBJS:.o=.d)
 
-.PHONY: all clean host-test sim check demo dnb
+.PHONY: all clean host-test sim check demo embed-kits

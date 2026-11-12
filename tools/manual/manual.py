@@ -6,7 +6,7 @@ import part1, part2, part3, part4
 
 def footer(canv, doc):
     canv.saveState(); canv.setFont('Helvetica', 8.5); canv.setFillColor(colors.HexColor('#666'))
-    canv.drawString(MARGIN, 0.5 * inch, 'PTSDJ Manual  -  version 1.0.0')
+    canv.drawString(MARGIN, 0.5 * inch, 'PTSDJ Manual  -  version 1.0.1')
     canv.drawRightString(W - MARGIN, 0.5 * inch, 'page %d' % doc.page)
     canv.restoreState()
 
@@ -24,7 +24,7 @@ class Doc(BaseDocTemplate):
 story = [Spacer(1, 0.55 * inch), Paragraph('PTSDJ', S['cover1']), Spacer(1, 6), Paragraph('The Manual', S['cover2']), Spacer(1, 1.9 * inch),
          fig('28-project', 'The Project page, where you save, load and export.', 3.6 * inch), Spacer(1, 10),
          Paragraph('A Game Boy-style music maker for the Polyend Tracker', S['cover2']), Spacer(1, 6),
-         Paragraph('Version 1.0.0 &nbsp;-&nbsp; written for beginners. New to PTSDJ? Read the Quick Start first.', S['cover3']), PageBreak()]
+         Paragraph('Version 1.0.1 &nbsp;-&nbsp; written for beginners. New to PTSDJ? Read the Quick Start first.', S['cover3']), PageBreak()]
 toc = TableOfContents(); toc.levelStyles = [ParagraphStyle('t0', parent=base, fontName='Helvetica-Bold', fontSize=11.5, leading=17, spaceBefore=4, leftIndent=0),
                                             ParagraphStyle('t1', parent=base, fontSize=9.5, leading=12.5, spaceAfter=0, leftIndent=18, textColor=colors.HexColor('#444'))]
 story += [Paragraph('Contents', S['h1']), Rule(), Spacer(1, 6), toc]

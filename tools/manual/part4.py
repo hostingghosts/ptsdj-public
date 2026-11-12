@@ -117,5 +117,5 @@ def build():
                    'LSDJ (Little Sound DJ) was made by Johan Kotlinski. PTSDJ does not include LSDJ. You need your own copy of the ROM.',
                    'PTSDJ is not made by or connected to Polyend or to the makers of LSDJ.',
                    'Normal Polyend Tracker projects are never touched by PTSDJ. You can always go back to the stock firmware.']),
-          H2('Version'), P('This guide matches PTSDJ version 1.0.0.')]
+          H2('Version'), P('This guide matches PTSDJ version 1.0.1.')]
     return s

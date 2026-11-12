@@ -1292,6 +1292,26 @@ TEST(export_lsdj_also_writes_the_rom_with_the_card_kits_in_the_banks_lsdj_reads_
     CHECK_EQ(int(out[39 * 0x4000 + 5]), 0xAA);                  // kit 1A is in bank 39, where LSDJ reads kit 1A
 }
 
+TEST(export_lsdj_puts_the_demos_built_in_kits_into_the_rom_unless_a_file_takes_their_slot) {
+    MemStorage st;
+    std::vector<uint8_t> rom(1u << 20);
+    for (size_t i = 0; i < rom.size(); ++i) rom[i] = i / 0x4000 >= 34 ? 0xFF : uint8_t(i / 0x4000 + 1);      // banks 34 and up are empty
+    st.files["GB/LSDJ.GB"] = rom;
+    std::vector<uint8_t> kit(0x4000, 0xAA);
+    kit[0] = 0x60; kit[1] = 0x40;
+    st.files["GB/Kits/32_MINE.kit"] = kit;                      // kit 0x32 (bank 63) is the card's own: it wins over the built-in one
+    st.dirs.insert("GB/Kits");
+    Rig r(true, &st);
+    r.app.loadKits();
+    CHECK(r.app.exportFiles("D", 0));
+    const auto& out = st.files["GB/Export/D_A.gb"];
+    CHECK_EQ(int(out.size()), 1 << 20);
+    const uint8_t* amen = gb::builtinKit(gb::kBuiltinKit1);
+    CHECK(std::memcmp(&out[62 * 0x4000], amen, 0x4000) == 0);   // kit 0x31 is bank 62: the built-in AMEN1
+    CHECK_EQ(int(out[63 * 0x4000 + 5]), 0xAA);                  // kit 0x32 is bank 63: the file's kit
+    CHECK_EQ(int(out[30 * 0x4000 + 5]), 31);                    // other banks are untouched
+}
+
 // ---- sample kits ----------------------------------------------------------------------------------------------------------------
 
 namespace {
@@ -1967,7 +1987,7 @@ TEST(kit_numbers_map_to_rom_banks_as_lsdj_reads_them) {
     CHECK_EQ(bankOf(0x14), 33);
     CHECK_EQ(bankOf(0x15), 34);
     CHECK_EQ(bankOf(0x1A), 39);
-    CHECK_EQ(bankOf(0x32), 63);
+    CHECK_EQ(bankOf(0x30), 61);                                 // (0x31 and 0x32, banks 62 and 63, are the demo's built-in kits)
     CHECK_EQ(gb::kitOfBank(39), 0x1A);
     CHECK_EQ(gb::kitOfBank(30), -1);                            // program code is no kit
     CHECK_EQ(gb::kitOfBank(34), 0x15);

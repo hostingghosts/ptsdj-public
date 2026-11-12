@@ -4,6 +4,10 @@ tap SONG
 tap NOTE
 tap INSTR
 wait 20
+tap UP
+enc 32
+tap DOWN
+wait 20
 tap DOWN
 wait 20
 enc 1
@@ -27,6 +31,7 @@ wait 9500
 screenshot @/34-song-playing.png
 tap PLAY
 wait 30
+tap DOWN
 tap DOWN
 tap PATTERN
 press SHIFT

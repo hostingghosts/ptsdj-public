@@ -5,5 +5,3 @@ __pycache__/
 demos/*.lsdsng
 !demos/DEMO_A.lsdsng
 !demos/DEMO_B.lsdsng
-!demos/DNB_A.lsdsng
-!demos/DNB_B.lsdsng

@@ -232,13 +232,13 @@ pictures; the player ignores CMD/RATE, the second OFFSET and LEN values, the fir
 - No key combination makes an off note: Select+B and Select+A leave a note alone, A+B (or B then A) clears the cell to empty (note 00, instrument FF), a second A on an empty cell
   does nothing new. LSDJ silences a note with the K (kill) command, so PTSDJ has no OFF note either.
 
-## Drum and bass pair, and what it taught the player (measured against the 9.4.2 ROM with tools/oracle)
-- `src/gb/dnb.cpp` (`make dnb`): two songs for two consoles, A minor, 170 BPM (tempo byte 0xAA, 6 ticks a step, a bar is 1.41 s), 68 bars in nine parts (intro, build, drop 1 in two rows, break,
-  build 2, drop 2 in two rows, outro), 9 song rows of 8 bars (4 in build 2). Song A: the Amen kits on the wave channel (kit 1 = DM-AMEN1 in slot 15, kit 2 = DM-AMEN2 in slot 16, shown KIT 16 and
-  KIT 17), a lead, a slow arpeggio and hats; song B: sub and reese bass on the wave channel, root-and-fifth pads on both pulses, a snare layer and the risers.
+## The demo (a drum and bass pair), and what it taught the player (measured against the 9.4.2 ROM with tools/oracle)
+- `src/gb/dnb.cpp` (`make demo`): the built-in demo, two songs for two consoles, A minor, 170 BPM (tempo byte 0xAA, 6 ticks a step, a bar is 1.41 s), 68 bars in nine parts (intro, build, drop 1 in two rows, break,
+  build 2, drop 2 in two rows, outro), 9 song rows of 8 bars (4 in build 2). Song A: the Amen kits on the wave channel (kit 1 = DM-AMEN1 in slot 0x31, kit 2 = DM-AMEN2 in slot 0x32, shown KIT 32 and
+  KIT 33; both are compiled into the firmware, src/gb/builtin_kits.h), a lead, a slow arpeggio and hats; song B: sub and reese bass on the wave channel, root-and-fifth pads on both pulses, a snare layer and the risers.
 - Written to be clean, after a first version that was too busy: at most four tonal voices at once in a drop, only the clean kit slices (the kicks 1KK 8KK 9KK and snares 2SN 6SN ASN FSN ISN, which decay without a second
   hit; the slices called HH carry the break's own hats off the grid and are not used, the hats are on the noise channel), no chord command (a 60 Hz chord cycle fizzes), the chords Am Am F G as one phrase moved by the
-  chain's transposes (0, 0, -4, -2) with only roots, fifths and octaves in the pads and bass. `make dnb` prints the check for it: ticks with a semitone or tritone between two tonal voices (0.2 % here, none in the drops).
+  chain's transposes (0, 0, -4, -2) with only roots, fifths and octaves in the pads and bass. `make demo` prints the check for it: ticks with a semitone or tritone between two tonal voices (0.2 % here, none in the drops).
 - Tables used: a slow arpeggio (G picks a one-step row, H 00 loops; minor and major), a pulse-width + delayed-vibrato lead (W, V, a hop back to row 2), two pumps (the amplitude column dips the pads on the kicks, restarted by
   A at step 10), a riser (transpose column climbing the pentatonic A C D G, amplitude column rising: 8 levels of 12 ticks), a sub with a vibrato that comes in after four steps.
 - Layered drums: song A's pulse 2 (free in the builds and drops) plays a synth kick (table fall of 21 semitones in 8 ticks, A3 to C2, envelope 10 with digit 4) on every full-level kick of the kit and a synth snare tone (E3 falling a fifth in 4 ticks) on every full-level snare, written from the same Steps as the kit phrase so they start on the same tick; song B's noise snare layer sits on steps 4 and 12. Envelope digits are periods in 1/360 s per level (digit 1 = 3 ms), so a drum envelope needs digit 3 or 4, not 1. The leads and pads were taken down 1 to 3 levels to give the drums room.

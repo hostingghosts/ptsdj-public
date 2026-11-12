@@ -10,6 +10,7 @@ tap SONG
 wait 30
 screenshot @/20-song.png
 tap DOWN
+tap DOWN
 tap PATTERN
 wait 30
 screenshot @/21-chain.png

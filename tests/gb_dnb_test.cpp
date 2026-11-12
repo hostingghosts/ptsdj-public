@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <vector>
 
+#include "gb/builtin_kits.h"
+#include "gb/demo.h"
 #include "gb/dnb.h"
 #include "gb/dual.h"
 #include "gb/kitbank.h"
@@ -28,6 +30,8 @@ std::vector<uint8_t> slurp(const char* path) {
     }
     return v;
 }
+
+struct RomKitsHolder { static RomKits& bare() { static RomKits k; return k; } };
 
 struct Kits {
     std::vector<uint8_t> a1 = slurp("../demos/kits/DM-AMEN1.kit"), a2 = slurp("../demos/kits/DM-AMEN2.kit");
@@ -385,6 +389,52 @@ TEST(the_synth_kick_and_snare_tone_hit_with_the_kit_on_the_same_tick) {
             CHECK(kitHit);
             CHECK(vb[size_t(t + 1)].on[3] && vb[size_t(t + 1)].vol[3] >= 5);
         }
+}
+
+TEST(the_demo_is_this_pair_and_its_two_kits_are_built_into_the_firmware) {
+    // the built-in demo is the drum and bass pair, byte for byte
+    static Song a, b, da, db;
+    buildDnbA(a);
+    buildDnbB(b);
+    buildDemoA(da);
+    buildDemoB(db);
+    CHECK(std::memcmp(a.mem(), da.mem(), kMemSize) == 0);
+    CHECK(std::memcmp(b.mem(), db.mem(), kMemSize) == 0);
+    CHECK_EQ(kDemoTempo, kDnbTempo);
+    // its kits are in the firmware at slots 0x31 and 0x32 (ROM banks 62 and 63 in LSDJ, free in a stock ROM), and a bare RomKits finds them
+    CHECK_EQ(kDnbKit1, 0x31);
+    CHECK_EQ(kDnbKit2, 0x32);
+    CHECK_EQ(kitOfBank(kitBank(kBuiltinKit1)), kBuiltinKit1);       // real kit banks (62 and 63): EXPORT LSDJ can put them into a ROM
+    CHECK_EQ(kitOfBank(kitBank(kBuiltinKit2)), kBuiltinKit2);
+    RomKits bare;
+    for (int slot : {kBuiltinKit1, kBuiltinKit2}) {
+        const Kit k = bare.kit(slot);
+        CHECK(k.data != nullptr);
+        CHECK(k.samples() >= 15 || k.samples() > 0);
+        CHECK(k.data[0] == 0x60 && k.data[1] == 0x40);
+    }
+    CHECK(bare.kit(0x33).data == nullptr && builtinKit(0x15) == nullptr);
+    // they are the files in demos/kits
+    Kits files;
+    if (files.ok()) {
+        CHECK(std::memcmp(builtinKit(kBuiltinKit1), files.a1.data(), kKitBankSize) == 0);
+        CHECK(std::memcmp(builtinKit(kBuiltinKit2), files.a2.data(), kKitBankSize) == 0);
+    }
+    // a .kit file in the same slot still wins
+    std::vector<uint8_t> other(kKitBankSize, 0);
+    bare.setOverride(kBuiltinKit1, other.data());
+    CHECK(bare.kit(kBuiltinKit1).data == other.data());
+    // and the demo plays its drums with no kit files and no ROM: the wave channel starts samples
+    static int hits;
+    hits = 0;
+    Player p(da);
+    p.setKits(&RomKitsHolder::bare());
+    p.setWaveHook([](int pos, int) { if (pos == 16) ++hits; });
+    p.start(0);
+    const double tc = 10485760.0 / p.tempo();
+    long long done = 0;
+    for (int t = 0; t < 20 * 96; ++t) { const long long until = (long long)((t + 0.9) * tc); p.run(uint32_t(until - done)); done = until; }
+    CHECK(hits > 40);
 }
 
 TEST(the_songs_are_valid_lsdsng_files_and_play_without_a_rom) {

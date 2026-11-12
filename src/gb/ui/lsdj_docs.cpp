@@ -131,8 +131,8 @@ const Entry kSavingTxt[] = {
     {"AT START", "Each Game Boy opens with the song you saved last. If neither one ever saved a song, they open with the demo songs. If only one did, the other opens empty."},
     {"SHIFT + BKSP", "In the song list, erases the song under the cursor."},
     {"EXPORT WAV", "Makes an audio file."},
-    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as PTSDJ_A.SRM or PTSDJ_B.SRM."},
-    {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's own kits in. Each one goes with the save file of the same name, PTSDJ_A.SRM."},
+    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. It saves the song and copies the file to GB/Export as PTSDJ_A.SRM or PTSDJ_B.SRM. It also writes the song as a .LSDSNG file there."},
+    {"KITS IN THE ROM", "Drum kits live in the LSDJ ROM, not in the song. EXPORT LSDJ also writes PTSDJ_A.GB and PTSDJ_B.GB: your ROM with that Game Boy's own kits in, and the demo's two kits (KIT 32 and 33). Each one goes with the save file of the same name, PTSDJ_A.SRM."},
     {"KIT SLOTS", "Use kits 16 to 33 for your own: 30 slots. Kits 01 to 15 are the ROM's own. Kit numbers count from 01, like on a real Game Boy."},
     {"ON A GAME BOY", "Put PTSDJ_A.GB and PTSDJ_A.SRM together on the cartridge or emulator. The save file has to have the same name as the ROM."},
 };
@@ -274,7 +274,7 @@ const Entry kProjectTxt[] = {
     {"LOAD SONG", "Lists the songs in that file."},
     {"NEW SONG", "Asks for a name, then starts an empty song."},
     {"EXPORT WAV", "Makes an audio file."},
-    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. Copies the save files to GB/Export. With your own kits it also writes PTSDJ_A.GB and PTSDJ_B.GB."},
+    {"EXPORT LSDJ", "Pick A, B or A+B with the jog wheel, then press Insert. Copies the save files to GB/Export and writes each song as a .LSDSNG file. With your own kits it also writes PTSDJ_A.GB and PTSDJ_B.GB."},
     {"SHIFT", "Hold Shift here: F8 says FIRMWARE, and the line of technical numbers at the bottom shows."},
     {"SHIFT + F8", "Press it to load another firmware."},
 };
@@ -303,7 +303,7 @@ const Entry kFileTxt[] = {
     {"INSERT", "Loads it into the song on screen."},
     {"- BEFORE A NAME", "A song in the save file."},
     {"+ BEFORE A NAME", "A loose file from GB/Songs. Saving files it in the save file."},
-    {"* BEFORE A NAME", "The built-in demo for this Game Boy. Load one on A and one on B, then press Play to hear them together."},
+    {"* BEFORE A NAME", "The built-in demo for this Game Boy. Load one on A and one on B, then press Play to hear them together. Its drums are two kits built into PTSDJ, KIT 32 and 33."},
     {"SHIFT + BKSP", "Erases the song under the cursor. Press Insert to say yes."},
     {"BKSP", "Go back."},
 };
