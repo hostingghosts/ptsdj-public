@@ -289,3 +289,88 @@ TEST(a_kit_with_the_speed_flag_plays_at_half_speed_and_is_not_a_different_kit) {
     CHECK_EQ(f1, 0x749);
     CHECK_EQ(f2, 0x692);
 }
+
+namespace {
+// One voice of a one-phrase song at tempo 150, the state of channel `ch` read at the end of each tick (as the oracle does): one value per tick of `field`.
+std::vector<int> ticksOf(const uint8_t (&in)[16], int ch, int cmd, int val, int note, int n, int field, const std::vector<std::array<uint8_t, 6>>& table = {}) {
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, ch) = 0;
+    s.note(0, 0) = uint8_t(note); s.phraseInstr(0, 0) = 0; s.phraseCmd(0, 0) = uint8_t(cmd); s.phraseVal(0, 0) = uint8_t(val);
+    for (int i = 0; i < 16; ++i) s.instrument(0)[i] = in[i];
+    for (size_t r = 0; r < table.size(); ++r) {            // env, transpose, cmd 1, val 1, cmd 2, val 2
+        s.at(uint16_t(off::kTblEnv + r)) = table[r][0]; s.at(uint16_t(off::kTblTrans + r)) = table[r][1];
+        s.at(uint16_t(off::kTblCmd1 + r)) = table[r][2]; s.at(uint16_t(off::kTblVal1 + r)) = table[r][3];
+        s.at(uint16_t(off::kTblCmd2 + r)) = table[r][4]; s.at(uint16_t(off::kTblVal2 + r)) = table[r][5];
+    }
+    s.at(off::kTempo) = 150;
+    Player p(s);
+    p.start(0);
+    std::vector<int> out;
+    long long done = 0;
+    for (int t = 0; t < n; ++t) {
+        const long long until = (long long)((t + 0.9) * 10485760.0 / 150);
+        p.run(uint32_t(until - done)); done = until;
+        out.push_back(field == 0 ? p.apu().state(ch).freq : p.apu().state(ch).vol);
+    }
+    return out;
+}
+}  // namespace
+
+TEST(a_hop_to_its_own_row_does_nothing_and_the_table_wraps_after_row_15) {
+    // measured on LSDJ 9.4.2 (pulse 2, note 22, rows 0 1 2 3 = +0 +3 +5 +7, row 3 holds H 03): the +7 lasts one tick, then the table runs on through empty rows
+    // and starts again at tick 16 (row 0). To hold a row, hop to the row before it (H 02 on row 3 holds row 2).
+    const uint8_t in[16] = {0, 0xF0, 0, 0, 0x7F, 0, 0x20, 3, 0, 0, 0, 0, 0, 0, 0, 0};
+    const std::vector<std::array<uint8_t, 6>> tbl = {{0, 0, 0, 0, 0, 0}, {0, 3, 0, 0, 0, 0}, {0, 5, 0, 0, 0, 0}, {0, 7, kCmdH, 0x03, 0, 0}};
+    const auto f = ticksOf(in, 1, 0, 0, 22, 40, 0, tbl);
+    const int want[4] = {1452, 1547, 1602, 1650};
+    for (int t = 0; t < 4; ++t) CHECK_EQ(f[t], want[t]);
+    for (int t = 4; t < 16; ++t) CHECK_EQ(f[t], 1452);
+    for (int t = 0; t < 4; ++t) CHECK_EQ(f[16 + t], want[t]);
+    const std::vector<std::array<uint8_t, 6>> back = {{0, 0, 0, 0, 0, 0}, {0, 3, 0, 0, 0, 0}, {0, 5, 0, 0, 0, 0}, {0, 7, kCmdH, 0x02, 0, 0}};
+    const auto g = ticksOf(in, 1, 0, 0, 22, 40, 0, back);
+    for (int t = 2; t < 40; ++t) CHECK_EQ(g[t], 1602);
+}
+
+TEST(r_triggers_the_note_again_at_once_and_each_trigger_restarts_the_envelope) {
+    // measured: noise note with envelope 9 falling, R 03: the volume goes 8 7 5 and starts again at 8 every 3 ticks (it used to fall to 0 and stay there);
+    // R 00 on a step of its own triggers the note again too (volume 8 again at that tick, then the envelope falls).
+    const uint8_t in[16] = {3, 0x94, 0, 0, 0x7F, 0, 0, 3, 0, 0, 0xD0, 0, 0, 0, 0xF3, 0};
+    const auto v = ticksOf(in, 3, kCmdR, 0x03, 41, 24, 1);
+    const int want[9] = {8, 7, 5, 8, 7, 5, 8, 7, 5};
+    for (int t = 0; t < 24; ++t) CHECK_EQ(v[t], want[t % 3]);
+    Song s;
+    for (int r = 0; r < 256; ++r) for (int c = 0; c < 4; ++c) s.songCell(r, c) = 0xFF;
+    for (int c = 0; c < 16; ++c) s.chainPhrase(0, c) = c == 0 ? 0 : 0xFF;
+    s.songCell(0, 3) = 0;
+    s.note(0, 0) = 41; s.phraseInstr(0, 0) = 0;
+    s.phraseCmd(0, 2) = kCmdR; s.phraseVal(0, 2) = 0x00;
+    for (int i = 0; i < 16; ++i) s.instrument(0)[i] = in[i];
+    s.at(off::kTempo) = 150;
+    Player p(s);
+    p.start(0);
+    std::vector<int> vol;
+    long long done = 0;
+    for (int t = 0; t < 24; ++t) {
+        const long long until = (long long)((t + 0.9) * 10485760.0 / 150);
+        p.run(uint32_t(until - done)); done = until;
+        vol.push_back(p.apu().state(3).vol);
+    }
+    CHECK_EQ(vol[5], 1); CHECK_EQ(vol[6], 0); CHECK_EQ(vol[11], 0); CHECK_EQ(vol[12], 8); CHECK_EQ(vol[13], 7); CHECK_EQ(vol[18], 0);
+}
+
+TEST(wave_vibrato_and_bends_work_in_semitones_but_in_drum_mode_in_the_linear_table) {
+    // measured on LSDJ 9.4.2: the same V 44 swings the wave channel's register by an amount proportional to its period (bigger on low notes); a wave instrument with
+    // byte 5 bit 6 set (the kick drums) works in the ROM's linear table, where the same vibrato swings the register by about the same amount on any note.
+    auto swing = [&](int note, uint8_t b5) {
+        const uint8_t in[16] = {1, 0x20, 0x0F, 0, 0xFF, b5, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0};
+        const auto f = ticksOf(in, 2, kCmdV, 0x44, note, 60, 0);
+        int lo = 4096, hi = 0;
+        for (size_t t = 4; t < f.size(); ++t) { lo = std::min(lo, f[t]); hi = std::max(hi, f[t]); }
+        return hi - lo;
+    };
+    CHECK(swing(10, 0x00) > 2 * swing(34, 0x00));
+    CHECK(swing(10, 0x40) < 2 * swing(34, 0x40));
+    CHECK(swing(10, 0x00) > 30);
+}

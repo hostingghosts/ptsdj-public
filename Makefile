@@ -5,6 +5,7 @@
 #   make host-test  -> host unit tests (ASan/UBSan)
 #   make sim        -> desktop simulator (SDL2)
 #   make check      -> host tests + simulator smoke run + device image
+#   make dnb        -> the drum and bass pair as demos/DNB_A.lsdsng and DNB_B.lsdsng, build/dnb/DNB_A+B.wav, and the kit files named for their slots
 #   make demo       -> the two demo songs as demos/DEMO_A.lsdsng and DEMO_B.lsdsng, and build/demo/DEMO_A+B.wav (both playing together)
 VERSION   ?= 0.1.0
 BUILD     := build
@@ -95,9 +96,20 @@ demo:
 	build/demo/make_demo build/demo
 	cp build/demo/DEMO_A.lsdsng build/demo/DEMO_B.lsdsng demos/
 
+# The drum and bass pair (src/gb/dnb.cpp) plays the two Amen kits in demos/kits; this writes the songs, renders a WAV with the kits and prints what was measured.
+dnb:
+	$(MAKE) -C tests ../build/host-tests/libgb.a
+	mkdir -p build/dnb/kits
+	g++ -std=c++17 -Wall -Wextra -Werror -O1 -fsanitize=address,undefined -DGB_BUILD -Isrc -Isrc/platform -Isrc/platform/core \
+	    tools/make_dnb.cpp build/host-tests/libgb.a -o build/dnb/make_dnb
+	build/dnb/make_dnb build/dnb demos/kits
+	cp build/dnb/DNB_A.lsdsng build/dnb/DNB_B.lsdsng demos/
+	cp demos/kits/DM-AMEN1.kit build/dnb/kits/15_DM-AMEN1.kit
+	cp demos/kits/DM-AMEN2.kit build/dnb/kits/16_DM-AMEN2.kit
+
 clean:
 	rm -rf build
 
 -include $(OBJS:.o=.d)
 
-.PHONY: all clean host-test sim check demo
+.PHONY: all clean host-test sim check demo dnb

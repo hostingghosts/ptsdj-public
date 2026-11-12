@@ -231,3 +231,25 @@ pictures; the player ignores CMD/RATE, the second OFFSET and LEN values, the fir
   60 A+Up goes to 6C, 61 and 64 A+Up stay). Any byte above 6C shows as ??? and no byte shows OFF; 00 is the empty ---.
 - No key combination makes an off note: Select+B and Select+A leave a note alone, A+B (or B then A) clears the cell to empty (note 00, instrument FF), a second A on an empty cell
   does nothing new. LSDJ silences a note with the K (kill) command, so PTSDJ has no OFF note either.
+
+## Drum and bass pair, and what it taught the player (measured against the 9.4.2 ROM with tools/oracle)
+- `src/gb/dnb.cpp` (`make dnb`): two songs for two consoles, A minor, 170 BPM (tempo byte 0xAA, 6 ticks a step, a bar is 1.41 s), 68 bars in nine parts (intro, build, drop 1 in two rows, break,
+  build 2, drop 2 in two rows, outro), 9 song rows of 8 bars (4 in build 2). Song A: the Amen kits on the wave channel (kit 1 = DM-AMEN1 in slot 15, kit 2 = DM-AMEN2 in slot 16, shown KIT 16 and
+  KIT 17), a lead, a slow arpeggio and hats; song B: sub and reese bass on the wave channel, root-and-fifth pads on both pulses, a snare layer and the risers.
+- Written to be clean, after a first version that was too busy: at most four tonal voices at once in a drop, only the clean kit slices (the kicks 1KK 8KK 9KK and snares 2SN 6SN ASN FSN ISN, which decay without a second
+  hit; the slices called HH carry the break's own hats off the grid and are not used, the hats are on the noise channel), no chord command (a 60 Hz chord cycle fizzes), the chords Am Am F G as one phrase moved by the
+  chain's transposes (0, 0, -4, -2) with only roots, fifths and octaves in the pads and bass. `make dnb` prints the check for it: ticks with a semitone or tritone between two tonal voices (0.2 % here, none in the drops).
+- Tables used: a slow arpeggio (G picks a one-step row, H 00 loops; minor and major), a pulse-width + delayed-vibrato lead (W, V, a hop back to row 2), two pumps (the amplitude column dips the pads on the kicks, restarted by
+  A at step 10), a riser (transpose column climbing the pentatonic A C D G, amplitude column rising: 8 levels of 12 ticks), a sub with a vibrato that comes in after four steps.
+- Layered drums: song A's pulse 2 (free in the builds and drops) plays a synth kick (table fall of 21 semitones in 8 ticks, A3 to C2, envelope 10 with digit 4) on every full-level kick of the kit and a synth snare tone (E3 falling a fifth in 4 ticks) on every full-level snare, written from the same Steps as the kit phrase so they start on the same tick; song B's noise snare layer sits on steps 4 and 12. Envelope digits are periods in 1/360 s per level (digit 1 = 3 ms), so a drum envelope needs digit 3 or 4, not 1. The leads and pads were taken down 1 to 3 levels to give the drums room.
+- No noise rolls: the fills are kit snares on the wave channel. Retriggering a noise note faster than every 3 ticks (R 03 and below: 20 to 60 hits a second) or holding it above about level 7 is heard as a low buzz, not a roll; the first version did it on both consoles and sounded like a jackhammer. The breaks are chopped in the Amen way (kick on 0 and 2, snares on 4 and 12, half-level ghost snares, a kick on the and of the third beat). O pans the hats; K ends every wave note.
+- Checked against the ROM (tools/oracle compare): the pulse channels and noise of both songs agree except for one-tick note-start jitter, vibrato phase and envelope levels one step off on single ticks. The kits are not
+  in the ROM, so song A's wave channel is checked by the tests only.
+
+Found while checking it, and fixed in the player:
+- **A hop to its own row does nothing.** `H 03` on row 3 used to hold the row; the ROM runs on through the empty rows and wraps at row 15. To hold a row, hop to the row before it (`H 02` on row 3 holds row 2). `H xy` with x > 0 was already right.
+- **R triggers the note at once**, whatever its value (R 00 too), and each trigger restarts the envelope from its start level. R with no volume step used to leave the envelope in a state that fell to 0 and stayed there.
+- **Amplitude column: y = F is different** (x F reads as a longer, other thing: levels 4 then 7 instead of x); the pair uses y up to C. Not modelled.
+- **Wave pitch has modes in byte 5.** With bit 6 set (the kick drums) the ROM bends and vibrates in its linear table (about 19.2 register units per step, the old behaviour); otherwise in semitones like the pulse
+  channels, so the same V or P moves a low wave note several times further in register units than a high one (a bass vibrato was 3.7 times too small on A1). Bits 4 and 1 of byte 5 select other modes that the player does not model yet.
+- A table row with L still slides differently from the ROM on low wave notes (the pair does not use it).

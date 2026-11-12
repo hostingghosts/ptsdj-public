@@ -6,6 +6,7 @@ State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (close 
 screens (Song, Chain, Phrase, Instrument, Table, Groove, Project), 8 channels (two linked Game Boys, tracks 1-4 = song A, 5-8 = song B,
 summed stereo), WAV export. Synth and Wave screens (Select+Up from Phrase = Synth, then Right = Wave; the ROM's own generator rebuilds a synth's 16 frames after each edit,
 so they need `GB/LSDJ.GB` on the card, like the kits). Project > LOAD SONG FILE A/B lists `GB/Songs` and loads a song into that console. Drawing on the Wave page marks the synth hand-drawn; editing that synth then asks "OVERWRITE HAND-DRAWN WAVES?" (NO preselected, as in the ROM). The Synth page's WAVE 00-0F row is display only in the ROM, so there is no range select to build.
+Demos: the built-in pair (`make demo`) and a drum and bass pair for the Amen kits (`make dnb`, see `demos/README.md`).
 Version 1.0.0: runs on the Tracker (line and mic recorder, firmware loader, kit export and layering checked on hardware, exports run on a real Game Boy with
 the original LSDJ ROM). Built desktop-first: every feature has host tests (`make -C tests`) and runs in the simulator (`make -C sim check`).
 Known limits: a few effects differ from LSDJ in small ways (see `docs/LSDJ_FORMAT.md`, "How close the player is"); the Game Boy hardware is the final word for how a

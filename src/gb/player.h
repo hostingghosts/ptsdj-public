@@ -104,7 +104,8 @@ private:
     void startTable(int ch, int t);
     void retrigVolume(int ch);
     void startSlide(int ch, int val);
-    static int pitchIndex(int ch, int n);
+    int pitchIndex(int ch, int n);
+    bool linearPitch(int ch);   // a wave instrument with bit 6 of byte 5 set (the kick drums) bends and vibrates in the ROM's linear table; every other voice in semitones
     static int bendRateOf(uint8_t val);
     static uint16_t pitchToFreq(const uint16_t* tab, int total, int16_t& bendAcc);
     static int waveIndex(int n);

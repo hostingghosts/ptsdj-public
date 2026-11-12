@@ -287,7 +287,8 @@ int Player::waveIndex(int n) {
     return cache[n < 1 ? 1 : 127];
 }
 
-int Player::pitchIndex(int ch, int n) { return ch == 2 ? waveIndex(n) : (n - 1) * 256; }
+bool Player::linearPitch(int ch) { return ch == 2 && (instr(v_[ch].instr)[5] & 0x40); }
+int Player::pitchIndex(int ch, int n) { return linearPitch(ch) ? waveIndex(n) : (n - 1) * 256; }
 
 // L: slide the pitch accumulator to 0 in value + 1 sub-steps (value 0 jumps there); the rate is |acc| / (value + 1), truncated (ROM 02:4363).
 void Player::startSlide(int ch, int val) {
@@ -354,7 +355,7 @@ void Player::refreshPitch(int ch) {
     // LSDJ keeps the pitch as note + 8-bit fraction (1/256 semitone) plus bend, vibrato and slide, and interpolates the frequency table (measured, ROM 00:1B28)
     int total = (n - 1) * 256 + v.bendAcc + int(std::lround(v.vibSemis * 256.0));
     uint16_t f;
-    if (ch == 2) {                                   // wave instruments look the pitch up in the ROM's linear table (about 19.2 per index) at 00:09B9
+    if (ch == 2 && linearPitch(2)) {                 // wave instruments with byte 5 bit 6 look the pitch up in the ROM's linear table (about 19.2 per index) at 00:09B9
         const int baseIdx = (v.bendRate && !v.bendAcc) ? (waveIndex(n) & ~255) : waveIndex(n);   // until its first step a bend works from the whole table index (measured on kicks)
         total = baseIdx + v.bendAcc + int(std::lround(v.vibSemis * 256.0)) + ((v.bendRate || v.bendAcc) ? 6 : 0);   // +6/256 index: the fitted base is that much low once a bend is running (empirical; INFORMAL wave pitch matches exactly)
         f = pitchToFreq(kLinFreq, total, v.bendAcc);
@@ -413,7 +414,8 @@ void Player::tableTick(int ch) {
             if (c == kCmdH && k == 1 && v.tStep) continue;     // a table that steps one row per note ignores a hop in its second column (measured)
             if (c == kCmdH) {
                 const int n = val >> 4, dest = val & 15;
-                if (n == 0 || v.hop[row] < n) { if (n) ++v.hop[row]; row = dest; hopped = true; }
+                if (n == 0 && dest == row) {}                                   // a hop to its own row does nothing, the table goes on (measured: it still wraps after row 15)
+                else if (n == 0 || v.hop[row] < n) { if (n) ++v.hop[row]; row = dest; hopped = true; }
                 else v.hop[row] = 0;
             } else if (c) { slot_ = 1 + k; command(ch, c, val, true); slot_ = 0; }
         }
@@ -435,7 +437,7 @@ void Player::tableTick(int ch) {
 
 void Player::retrigVolume(int ch) {
     Voice& v = v_[ch];
-    if (!v.retrigDv || ch == 2 || !v.on || muted_[ch]) return;
+    if (ch == 2 || !v.on || muted_[ch]) return;
     v.baseVol = std::clamp(v.baseVol + v.retrigDv, 0, 15);
     v.vol = v.baseVol;
     { const uint8_t* in = instr(v.instr); v.envStage = v.vol > (in[9] >> 4) ? 1 : v.vol > (in[10] >> 4) ? 2 : 3; }
@@ -517,7 +519,7 @@ void Player::command(int ch, uint8_t cmd, uint8_t val, bool fromTable, bool agai
             v.retrig = (val & 15) == 0 ? -1 : (val & 15); v.retrigCnt = fromTable ? 0 : -1;   // a phrase command runs before this tick's count, a table row after it
             const int x = val >> 4;
             v.retrigDv = x == 0 || x == 8 ? 0 : x < 8 ? x : x - 16;       // measured: signed volume step per retrigger, also applied when the command runs
-            if (v.retrigDv) retrigger(ch);                                 // volume steps need the trigger to take effect
+            if (!(ch == 2 && v.kPlay)) retrigger(ch);                      // every R triggers the note again at once, R 00 too (measured with a decaying noise note)
             break;
         }
         case kCmdS:
