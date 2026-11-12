@@ -7,6 +7,7 @@
 #include "atw/ui/screen.h"
 #include "gb/ui/lcd.h"
 #include "gb/ui/lsdj.h"
+#include "gb/ui/mixpage.h"
 #include "hal_api.h"
 #include "ui/buttons.h"
 
@@ -22,6 +23,8 @@ class GbScreen final : public Screen {
 public:
     void bind(App* app, gb::Lsdj* a, gb::Lsdj* b) { app_ = app; lsdjA_ = a; lsdjB_ = b; lsdj_ = a; }
     gb::Lcd& lcd() { return lcd_; }
+    bool mixOpen() const { return mixOpen_; }
+    bool mixHelp() const { return mixHelp_; }
     const char* title() const override { return ""; }
     void prepare(ot::IDisplay& d) override;
     void draw(ot::Gfx& g) override;
@@ -36,6 +39,10 @@ private:
     bool splitOn() const;
     void drawStrip(ot::Gfx& g, int top);
     void drawPageTab(ot::Gfx& g);
+    void mixAdjust(int delta);                      // the Master Mix page (Shift + Master): the limiter, then the master volume
+    void closeMix();
+    gb::MixView mixView();                          // what the page shows now (also updates the meters)
+    void drawMaster(ot::Gfx& g, bool split);        // while Master is held: the level as a column of squares over the battery light (a bar under the legend in the split view)
     App* app_ = nullptr;
     gb::Lsdj* lsdj_ = nullptr;                      // the console on screen (in the split view: the one the keys control)
     gb::Lsdj* lsdjA_ = nullptr;
@@ -47,6 +54,16 @@ private:
     uint8_t popupKey_ = 0xFF;                       // the key holding a pop-up open (F8, or Note / Instr params with Shift)
     float dock_ = 0;                                // 0 lowered .. 1 raised
     void closePopup() { if (lsdj_) lsdj_->hidePopup(); popupKey_ = 0xFF; }
+    bool masterHeld_ = false, masterTurned_ = false;   // Master held: the jog wheel sets the master volume; a tap (released within kMasterHoldMs, nothing turned) splits the screen
+    uint32_t masterDownMs_ = 0;
+    static constexpr uint32_t kMasterHoldMs = 300;
+    bool masterActive() const;                      // held long enough, or turned: the meter is up and the release will not change the view
+    float vu_ = 0;                                  // the meter's live level in steps, 0 .. App::kMasterMax, falling back slowly
+    bool mixOpen_ = false;                          // the Master Mix page is up over everything; playback goes on
+    int mixRow_ = 0;                                // 0 limiter on/off, 1 drive, 2 ceiling, 3 release, 4 master volume
+    float outDb_ = -90.f, grDb_ = 0.f;              // the page's meters: output peak (falls 1.5 dB a frame), limiter reduction
+    bool mixHelp_ = false;                          // F8 held on the page: its help pop-up
+    int mixHelpPage_ = 0;
     int volHeld_ = -1;                              // F2 / F7 held: the jog wheel sets that console's level
     void swapConsole() { if (lsdjB_) lsdj_ = lsdj_ == lsdjA_ ? lsdjB_ : lsdjA_; }
 };
@@ -61,6 +78,7 @@ public:
     ScreenId current() const { return current_; }
     void requestRedraw() { dirty_ = true; }
     void showSplash(uint32_t ms) { splashMs_ = ms; }
+    GbScreen& gbScreen() { return blank_; }
 
     bool shift = false;
 

@@ -92,6 +92,18 @@ public:
     void progress(const char* label, int pct); // a long action reports here: the bar is drawn at once, over whatever is on screen
     void bootChime(int stage);                 // 0 starts the power-on recording, 2 cuts it (the splash)
     int look() const { return look_; }
+    // Master volume: 0 (silent) .. kMasterMax (0 dB: the mix exactly as it was), 1.5 dB a step. It is applied to the whole output in fill(), so a turn of the knob
+    // is heard at once, and it is kept on the card (GB/MASTER.CFG), not in the songs. The WAV export gets it too.
+    // The output chain is the limiter (Master Mix page, `mix()`) and then the master volume; both are saved in GB/MASTER.CFG. LSDJ song / ROM exports are never touched.
+    static constexpr int kMasterMax = 32;
+    int masterLevel() const { return master_.load(std::memory_order_relaxed); }
+    void setMasterLevel(int v) { master_.store(v < 0 ? 0 : v > kMasterMax ? kMasterMax : v, std::memory_order_relaxed); }
+    static float masterGain(int level);                           // 1.0 at kMasterMax, 0 at 0
+    const gb::OutputLimiter::Settings& mix() const { return mix_; }
+    float limiterGain() const { return dual.limiter().gain(); }   // how far the limiter is pulling the sound down now: 1.0 = not at all
+    void setMix(const gb::OutputLimiter::Settings& m);            // clamps, and hands the limiter its new settings
+    void saveMasterLevel();                                       // writes GB/MASTER.CFG (the volume and the limiter) when it differs from what the file holds
+    int takeOutputPeak() { return outPeak_.exchange(0, std::memory_order_relaxed); }   // loudest sample sent out since the last call, 0-32767 (the meter)
     // How long a sound rendered now waits before the speakers play it: what is queued in the ring, plus the output buffer.
     int audioLeadMs() const {
         const uint32_t rate = p_.sampleRateMilliHz / 1000;
@@ -103,6 +115,7 @@ public:
     static constexpr const char* kExportDir = "GB/Export";   // WAV exports; the session is always called SESSION until a file browser exists
     static constexpr const char* kInstDir = "GB/Instruments";   // saved instruments (.gbi)
     static constexpr const char* kKitDir = "GB/Kits";       // .kit files: the first two characters (hex) say which kit slot a file replaces, e.g. 0A_808.kit
+    static constexpr const char* kMasterPath = "GB/MASTER.CFG";   // the master volume and the limiter, one "KEY n" line each: VOL 0-32, LIM 0/1, DRIVE 0-36, CEIL -24..-1, REL 25-500
     static constexpr const char* kRomPath = "GB/LSDJ.GB";   // the owner's own LSDJ ROM: its sample kits are read from it
     bool loadKits();                             // blocking: the whole ROM image and the .kit files (tests, tools); boot loads them step by step instead
     int kitFilesLoaded() const { return kitsLoaded_; }
@@ -178,6 +191,12 @@ private:
     void renderChime(int16_t* out, int n, uint32_t rate);
     int syncRole_[2] = {1, 2};                 // 1 master, 2 slave; only matters while both projects have SYNC on
     int look_ = 0;
+    std::atomic<int> master_{kMasterMax};
+    std::atomic<int> outPeak_{0};
+    float gainNow_ = 1.f;                                   // the gain applied to the last block of output (audio callback only), so a change ramps over one block
+    gb::OutputLimiter::Settings mix_;                       // the limiter as set on the Master Mix page
+    char cfgSaved_[96] = {};                                // what GB/MASTER.CFG holds (empty: nothing saved, the defaults)
+    void loadMasterLevel();
     uint32_t progressAt_ = 0;
     static constexpr int kMaxInst = 400;                                   // the library lists the presets too
     static constexpr uint32_t kInstOffset = kWorkOffset + 3 * gb::kKitBankSize;   // the names live in SDRAM after the edit buffers

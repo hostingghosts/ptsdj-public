@@ -337,8 +337,36 @@ TEST(the_mix_is_balanced_and_does_not_squash) {
     int peak = 0;
     size_t hot = 0;
     for (int16_t v : mix) { peak = std::max(peak, std::abs(int(v))); if (std::abs(int(v)) > 19660) ++hot; }
-    CHECK(peak < 32000);                                              // no flat clipping anywhere (full scale is 32767; the layered kick brings the loudest hit to about 0.95)
-    CHECK(double(hot) / double(mix.size()) < 0.01);
+    CHECK(peak < 32000);                                              // nothing reaches full scale: the output limiter holds the loudest hits at 0.97
+    CHECK(double(hot) / double(mix.size()) < 0.08);                   // the output is about 5 dB louder than before the limiter, so more of it is above 60 %
+    {   // how hard the limiter works on the demo: it should only touch the loudest hits (kicks), not squash the music
+        static Song a2, b2;
+        buildDnbA(a2);
+        buildDnbB(b2);
+        Player qa(a2), qb(b2);
+        qa.setKits(&k.src); qb.setKits(&k.src);
+        qa.start(0); qb.start(0);
+        OutputLimiter lim;
+        int16_t ta[2 * 512], tb[2 * 512];
+        size_t frames = 0, below3 = 0, below6 = 0;
+        float minGain = 1.f;
+        while (frames < size_t(kRate) * 96) {
+            qa.render(ta, 512, kRate);
+            qb.render(tb, 512, kRate);
+            for (int i = 0; i < 512; ++i) {
+                float l = float((int(ta[2 * i]) + int(tb[2 * i])) * 7 / 10) * (1.f / 32768.f), r = float((int(ta[2 * i + 1]) + int(tb[2 * i + 1])) * 7 / 10) * (1.f / 32768.f);
+                lim.process(l, r);
+                const float g = lim.gain();
+                minGain = std::min(minGain, g);
+                if (g < 0.708f) ++below3;
+                if (g < 0.501f) ++below6;
+            }
+            frames += 512;
+        }
+        CHECK(minGain > 0.4f);                                               // never turns anything down by more than 8 dB
+        CHECK(double(below3) / double(frames) < 0.08);                       // and spends little time more than 3 dB down: only the loudest hits are touched
+        std::printf("  limiter on the demo: lowest gain %.2f (%.1f dB), below -3 dB %.2f %% of the time, below -6 dB %.2f %%\n", double(minGain), 20.0 * std::log10(double(minGain)), 100.0 * double(below3) / double(frames), 100.0 * double(below6) / double(frames));
+    }
     const size_t bar = mix.size() / kDnbBars;
     auto part = [&](int from, int bars) { return rmsOf(std::vector<int16_t>(mix.begin() + long(bar) * from, mix.begin() + long(bar) * (from + bars))); };
     const double intro = part(0, 8), drop1 = part(16, 16), brk = part(32, 8), drop2 = part(44, 16), outro = part(60, 8);

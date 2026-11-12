@@ -2,6 +2,7 @@
 #include "atw/ui/ui.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 #include "atw/app.h"
@@ -158,6 +159,12 @@ void GbScreen::prepare(ot::IDisplay& d) {
     lsdjA_->poll(ms);
     if (lsdjB_) lsdjB_->poll(ms);
     lcd_.setLook(app_->look());
+    if (mixOpen_) {
+        gb::drawMixPage(lcd_, mixView());
+        if (mixHelp_) gb::drawMixHelp(lcd_, mixHelpPage_);
+        lcd_.prepare(d);
+        return;
+    }
     if (splitOn()) {
         lsdjA_->draw(lcd_); lcd_.prepare(d, gb::Lcd::kRamA);
         app_->pump();                               // keep the audio queue topped up between the two uploads
@@ -189,8 +196,17 @@ void GbScreen::draw(ot::Gfx& g) {
     if (!lsdj_) return;
     const bool play = lsdjA_->playing() || (lsdjB_ && lsdjB_->playing());
     const int look = app_->look();
+    if (mixOpen_) {                                         // the Master Mix page: one screen in the bezel, whatever view was up
+        drawLens(g, play || lsdjA_->peakLight() || (lsdjB_ && lsdjB_->peakLight()), look);
+        g.color(0xFFFFFF);
+        lcd_.draw(g.display(), kLcdX, kLcdY, 3);
+        g.text(750, 462, ui::kSmall, kLensLight, "?", ot::IDisplay::kOptCenterX);
+        if (mixHelp_ && gb::mixHelpPages() > 1) drawPageTab(g);
+        return;
+    }
     if (!splitOn()) {
         drawLens(g, play || lsdjA_->peakLight() || (lsdjB_ && lsdjB_->peakLight()), look);
+        if (masterActive()) drawMaster(g, false);
         g.color(0xFFFFFF);
         lcd_.draw(g.display(), kLcdX, kLcdY, 3);
         const bool fw = shift_ && lsdj_->screen() == gb::Scr::Project;
@@ -211,6 +227,81 @@ void GbScreen::draw(ot::Gfx& g) {
     const bool want = aHeld_ || bHeld_ || volHeld_ >= 0;
     dock_ = want ? std::min(1.f, dock_ + 0.4f) : std::max(0.f, dock_ - 0.4f);
     if (dock_ > 0) drawStrip(g, 480 - int(136 * dock_));
+    if (masterActive()) drawMaster(g, true);
+}
+
+bool GbScreen::masterActive() const {
+    return masterHeld_ && (masterTurned_ || app_->platform().clock->millis() - masterDownMs_ >= kMasterHoldMs);
+}
+
+// The master volume as a VU meter. Every step from the bottom up to the current level is a square in a muted green, yellow or red (as if switched off); the squares
+// light up brightly as far as the sound leaving the Tracker reaches. The bottom square is the battery light. Level 0 (silent) leaves it dark.
+void GbScreen::drawMaster(ot::Gfx& g, bool split) {
+    constexpr int kSteps = App::kMasterMax;
+    const int level = app_->masterLevel();
+    const int pk = app_->takeOutputPeak();
+    const float live = pk <= 0 ? 0.f : std::max(0.f, float(kSteps) + 20.f * std::log10(float(pk) / 32767.f) / 1.5f);
+    vu_ = std::max(live, vu_ - 1.f);                                  // rises at once, falls a step a frame
+    auto shade = [&](int p, bool lit) {                                // p = 1 .. kSteps: green, through yellow, to red
+        const float f = float(p - 1) / float(kSteps - 1);
+        const float r = f < 0.5f ? f * 2.f : 1.f, gr = f < 0.5f ? 1.f : 1.f - (f - 0.5f) * 2.f;
+        const float k = lit ? 1.f : 0.32f;
+        auto ch = [&](float v, float lo, float hi) { return int(std::clamp((lo + (hi - lo) * v) * k, 0.f, 1.f) * 255.f); };
+        return uint32_t(ch(r, 0.18f, 0.92f) << 16 | ch(gr, 0.28f, 0.92f) << 8 | ch(0.f, 0.18f, 0.20f));
+    };
+    for (int p = 1; p <= kSteps; ++p) {
+        if (p > std::max(level, 1)) {
+            if (split) g.fill(241 + (p - 1) * 10, 17, 8, 12, kLensDark);        // the empty slots keep the bar centred under the legend
+            continue;
+        }
+        const bool lit = p <= int(vu_ + 0.5f);
+        const uint32_t col = level == 0 ? 0x3A3842 : shade(p, lit);
+        if (split) g.fill(241 + (p - 1) * 10, 17, 8, 12, col);
+        else if (p == 1) g.fill(32, 236, 14, 14, col);
+        else g.fill(32, 236 - (p - 1) * 7 + 1, 14, 5, col);
+    }
+    char label[24];
+    const int tenths = (kSteps - level) * 15;
+    if (level == 0) std::snprintf(label, sizeof label, "MUTE");
+    else if (tenths == 0) std::snprintf(label, sizeof label, "0 DB");
+    else std::snprintf(label, sizeof label, "-%d.%d DB", tenths / 10, tenths % 10);
+    if (split) g.text(570, 16, ui::kSmall, kLensLight, label);
+    else g.text(10, 274, ui::kSmall, kLensLight, label);
+}
+
+void GbScreen::mixAdjust(int delta) {
+    if (!delta) return;
+    gb::OutputLimiter::Settings m = app_->mix();
+    switch (mixRow_) {
+        case 0: m.on = delta > 0; break;
+        case 1: m.driveHalfDb += delta; break;
+        case 2: m.ceilHalfDb += delta; break;
+        case 3: m.releaseMs += 25 * delta; break;
+        default: app_->setMasterLevel(app_->masterLevel() + delta); return;
+    }
+    app_->setMix(m);
+}
+
+void GbScreen::closeMix() {
+    mixOpen_ = false;
+    mixHelp_ = false;
+    app_->saveMasterLevel();
+}
+
+// What the Master Mix page shows. The limiter's reduction is how far it is pulling the sound down at this moment; the output peak falls back 1.5 dB a frame.
+gb::MixView GbScreen::mixView() {
+    gb::MixView v;
+    v.m = app_->mix();
+    v.master = app_->masterLevel();
+    v.masterMax = App::kMasterMax;
+    v.row = mixRow_;
+    grDb_ = 20.f * std::log10(std::max(app_->limiterGain(), 1e-4f));
+    const int pk = app_->takeOutputPeak();
+    const float live = pk <= 0 ? -90.f : 20.f * std::log10(float(pk) / 32767.f);
+    outDb_ = std::max(live, outDb_ - 1.5f);
+    v.reductionDb = grDb_;
+    v.outDb = outDb_;
+    return v;
 }
 
 // While a pop-up with several pages is open, a tab grows out of the bezel's lower left corner so that < and > sit right above F1 and F2.
@@ -264,6 +355,29 @@ bool GbScreen::button(uint8_t id, bool down) {
     if (!lsdj_) return false;
     using gb::Key;
     using gb::Scr;
+    if (mixOpen_) {                                          // the Master Mix page: Up / Down pick a setting, Left / Right and the jog wheel change it, F8 held is its help, Master closes it;
+        if (mixHelp_ && (id == ot::btn::F1 || id == ot::btn::F2 || id == ot::btn::Left || id == ot::btn::Right)) {    // the help turns its pages
+            if (down) mixHelpPage_ = std::clamp(mixHelpPage_ + (id == ot::btn::F1 || id == ot::btn::Left ? -1 : 1), 0, gb::mixHelpPages() - 1);
+            return true;
+        }
+        switch (id) {
+            case ot::btn::Master: if (down) closeMix(); return true;
+            case ot::btn::F8: mixHelp_ = down; if (down) mixHelpPage_ = 0; return true;
+            case ot::btn::Up: if (down && !mixHelp_) mixRow_ = (mixRow_ + gb::kMixRows - 1) % gb::kMixRows; return true;
+            case ot::btn::Down: if (down && !mixHelp_) mixRow_ = (mixRow_ + 1) % gb::kMixRows; return true;
+            case ot::btn::Left: if (down && !mixHelp_) mixAdjust(-1); return true;
+            case ot::btn::Right: if (down && !mixHelp_) mixAdjust(1); return true;
+            case ot::btn::Shift: shift_ = down; lsdj_->key(Key::Select, down); return true;
+            case ot::btn::Play: lsdj_->key(Key::Start, down); return true;
+            case ot::btn::Song: case ot::btn::Pattern: case ot::btn::Note: case ot::btn::Instr: case ot::btn::InstrParams: case ot::btn::Fx1: case ot::btn::Fx2:
+            case ot::btn::Config: case ot::btn::File: case ot::btn::Performance: case ot::btn::Help: case ot::btn::SampleLoader: case ot::btn::SampleEditor:
+            case ot::btn::SamplePlayback: case ot::btn::SampleRecorder:
+                if (!down) return true;
+                closeMix();                                  // a page key leaves the page and does what it does everywhere else
+                break;
+            default: return true;
+        }
+    }
     if (popupKey_ != 0xFF && !splitOn() && (id == ot::btn::F1 || id == ot::btn::F2)) {   // a pop-up is up: F1 / F2 turn its pages, a free hand beside the held key
         if (down) lsdj_->popupTurn(id == ot::btn::F1 ? -1 : 1);
         return true;
@@ -307,7 +421,16 @@ bool GbScreen::button(uint8_t id, bool down) {
         case ot::btn::Rec: if (down) lsdj_->toggleRecMode(); break;      // Phrase page: Rec mode on/off
         case ot::btn::Copy: if (down) lsdj_->copyKey(shift_); break;
         case ot::btn::Help: if (down) lsdj_->openHelp(); break;
-        case ot::btn::Master: if (down && lsdjA_->syncLinked()) split_ = !split_; break;
+        case ot::btn::Master:
+            if (down && shift_) { mixOpen_ = true; mixHelp_ = false; masterHeld_ = false; vu_ = 0; outDb_ = -90.f; app_->takeOutputPeak(); }       // Shift + Master: the Master Mix page, not the volume knob
+            else if (down) { masterHeld_ = true; masterTurned_ = false; masterDownMs_ = app_->platform().clock->millis(); vu_ = 0; app_->takeOutputPeak(); }
+            else if (masterHeld_) {                                                     // released: after a hold the level is kept and the view stays; a tap splits the screen
+                const bool hold = masterActive();
+                masterHeld_ = false;
+                app_->saveMasterLevel();
+                if (!hold && lsdjA_->syncLinked()) split_ = !split_;
+            }
+            break;
         case ot::btn::SampleLoader: if (down) lsdj_->openLoader(); break;
         case ot::btn::SampleEditor: if (down) lsdj_->openEditor(); break;
         case ot::btn::SamplePlayback: if (down) lsdj_->openKit(); break;
@@ -337,6 +460,8 @@ bool GbScreen::button(uint8_t id, bool down) {
 
 void GbScreen::encoder(int delta) {
     if (!lsdj_) return;
+    if (mixOpen_) { mixAdjust(delta); return; }
+    if (masterHeld_) { app_->setMasterLevel(app_->masterLevel() + delta); masterTurned_ = true; return; }
     if (volHeld_ >= 0) { (volHeld_ ? lsdjB_ : lsdjA_)->adjustVolume(delta); return; }
     lsdj_->encoder(delta);
 }

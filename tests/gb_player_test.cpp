@@ -4,7 +4,9 @@
 #include "gb/player.h"
 #include "test.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <utility>
 #include <vector>
@@ -230,18 +232,113 @@ TEST(table_slide_row_glides_from_the_old_pitch_without_wrapping) {
     CHECK(minF < 400);
 }
 
-TEST(the_output_is_louder_and_rounds_off_peaks_instead_of_clipping_them) {
-    CHECK(std::abs(int(Dual::finish(1000)) - 1600) <= 2);                  // quiet material: 1.6 times louder
-    CHECK(std::abs(int(Dual::finish(-1000)) + 1600) <= 2);
-    int prev = -1;
-    for (int x = 0; x <= 60000; x += 100) {                                 // a rising input never gives a falling output, and never passes full scale
-        const int y = Dual::finish(x);
-        CHECK(y >= prev);
-        CHECK(y <= 32767);
-        prev = y;
+TEST(the_output_limiter_amplifies_quiet_material_and_turns_loud_peaks_down_instead_of_distorting_them) {
+    const float kPi = 3.14159265f;
+    {   // quiet: exactly the drive louder once the delay has passed, a clean sine
+        OutputLimiter lim;
+        float worst = 0;
+        for (int i = 0; i < 4000; ++i) {
+            float l = 0.1f * std::sin(2 * kPi * 440.f * float(i) / 44100.f), r = l;
+            lim.process(l, r);
+            if (i >= 200) worst = std::max(worst, std::fabs(l - lim.drive() * 0.1f * std::sin(2 * kPi * 440.f * float(i - (OutputLimiter::kLook - 1)) / 44100.f)));
+        }
+        CHECK(worst < 1e-4f);
     }
-    CHECK(Dual::finish(60000) > Dual::finish(30000));                       // still rising at the top: no flat clipping
-    CHECK_EQ(int(Dual::finish(0)), 0);
+    {   // loud: never above the ceiling, and the shape stays a sine (only its size changes slowly), also on a signal that jumps from quiet to loud
+        OutputLimiter lim;
+        float top = 0, worstSlope = 0, prev = 0;
+        for (int i = 0; i < 44100; ++i) {
+            const float amp = i < 441 * 23 ? 0.05f : i < 441 * 68 ? 0.9f : 0.05f;   // switches at zero crossings of the 100 Hz sine (441 frames a cycle)
+            float l = amp * std::sin(2 * kPi * 100.f * float(i) / 44100.f), r = 0.5f * l;
+            lim.process(l, r);
+            top = std::max(top, std::fabs(l));
+            if (i > 1) worstSlope = std::max(worstSlope, std::fabs(l - prev));
+            prev = l;
+        }
+        CHECK(top <= lim.ceiling() + 1e-4f);
+        CHECK(top > lim.ceiling() - 0.02f);                           // and it does use the headroom
+        CHECK(worstSlope < 0.06f);                                           // 100 Hz near full scale: a step of 0.014 per frame; no jumps from the gain changes
+    }
+    {   // noise at the loudest: never above the ceiling
+        OutputLimiter lim;
+        uint32_t s = 12345;
+        float top = 0;
+        for (int i = 0; i < 100000; ++i) {
+            s = s * 1664525u + 1013904223u;
+            float l = (float(s >> 8) / float(1 << 24) * 2.f - 1.f) * 1.0f, r = -l;
+            lim.process(l, r);
+            top = std::max(top, std::max(std::fabs(l), std::fabs(r)));
+        }
+        CHECK(top <= lim.ceiling() + 1e-4f);
+    }
+    {   // silence stays silent, and after a loud passage the gain comes back to 1
+        OutputLimiter lim;
+        float l = 0, r = 0;
+        for (int i = 0; i < 100; ++i) { l = 1.f; r = 1.f; lim.process(l, r); }
+        CHECK(lim.gain() < 0.9f);
+        for (int i = 0; i < 12000; ++i) { l = 0; r = 0; lim.process(l, r); }
+        CHECK(lim.gain() > 0.99f);
+        CHECK_EQ(l, 0.f);
+    }
+}
+
+TEST(the_output_limiter_follows_its_settings_drive_ceiling_release_and_off) {
+    const float kPi = 3.14159265f;
+    auto settle = [&](OutputLimiter& lim, float amp, int frames, float* top) {
+        float t = 0;
+        for (int i = 0; i < frames; ++i) {
+            float l = amp * std::sin(2 * kPi * 100.f * float(i) / 44100.f), r = l;
+            lim.process(l, r);
+            if (i > 2000) t = std::max(t, std::fabs(l));
+        }
+        if (top) *top = t;
+    };
+    OutputLimiter::Settings d;
+    CHECK_EQ(d.driveHalfDb, 18);                                          // the defaults: +9.0 dB, -0.5 dBFS, 125 ms, on
+    CHECK_EQ(d.ceilHalfDb, -1);
+    CHECK_EQ(d.releaseMs, 125);
+    {   // the drive: +6 dB (12 half dB) doubles a quiet sine
+        OutputLimiter lim;
+        OutputLimiter::Settings s; s.driveHalfDb = 12;
+        lim.set(s); lim.reset();
+        float top = 0; settle(lim, 0.1f, 6000, &top);
+        CHECK(std::fabs(top - 0.1f * 1.9953f) < 2e-3f);
+    }
+    {   // the ceiling: -6 dB (-12 half dB) holds a loud sine to 0.501
+        OutputLimiter lim;
+        OutputLimiter::Settings s; s.ceilHalfDb = -12;
+        lim.set(s); lim.reset();
+        float top = 0; settle(lim, 0.9f, 20000, &top);
+        CHECK(top <= 0.5013f + 1e-4f);
+        CHECK(top > 0.48f);
+    }
+    {   // off: the mix passes at the chips' own level, only delayed, however loud
+        OutputLimiter lim;
+        OutputLimiter::Settings s; s.on = false;
+        lim.set(s); lim.reset();
+        float top = 0; settle(lim, 0.9f, 6000, &top);
+        CHECK(std::fabs(top - 0.9f) < 1e-3f);
+        CHECK(lim.gain() > 0.9999f);
+    }
+    {   // release: a short release brings the gain back sooner than a long one
+        int back[2] = {};
+        for (int k = 0; k < 2; ++k) {
+            OutputLimiter lim;
+            OutputLimiter::Settings s; s.releaseMs = k ? 500 : 25;
+            lim.set(s); lim.reset();
+            float l = 1.f, r = 1.f;
+            for (int i = 0; i < 200; ++i) { l = r = 1.f; lim.process(l, r); }
+            while (lim.gain() < 0.99f && back[k] < 100000) { l = r = 0.f; lim.process(l, r); ++back[k]; }
+        }
+        CHECK(back[0] * 5 < back[1]);
+    }
+    {   // out of range values are clamped
+        OutputLimiter::Settings s; s.driveHalfDb = 99; s.ceilHalfDb = 7; s.releaseMs = 9999;
+        s.clamp();
+        CHECK_EQ(s.driveHalfDb, 36);
+        CHECK_EQ(s.ceilHalfDb, -1);
+        CHECK_EQ(s.releaseMs, 500);
+    }
 }
 
 // ---- kit SPEED (byte 2 bit 6) ----------------------------------------------------------------------------------------------

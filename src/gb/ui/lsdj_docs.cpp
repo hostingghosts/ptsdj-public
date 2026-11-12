@@ -1,5 +1,6 @@
 // The help text of the Lsdj screens: the Help pages, the F8 pop-up and the cheat sheets, and how they are laid out in pages.
 #include "gb/ui/lsdj.h"
+#include "gb/ui/mixpage.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -116,7 +117,8 @@ const Entry kNamesTxt[] = {
 };
 const Entry kTwoSongsTxt[] = {
     {"SYNC", "On the Project page. MASTER sets the tempo. SLAVE follows it. Play starts both."},
-    {"MASTER KEY", "Shows both songs side by side."},
+    {"MASTER KEY", "Tap: both songs side by side. Hold and turn the jog wheel: master volume, 0 DB at the top; the view stays."},
+    {"SHIFT + MASTER", "The Master Mix page: the limiter (on, drive, ceiling, release), then the master volume. Up / Down pick, the jog wheel changes, Master closes. It shapes playback and the WAV export."},
     {"SHIFT + SONG KEY", "Switches the screen between song A and song B."},
     {"F1 AND F8", "In the side by side view, pick song A or B. Hold one to see what every F key does."},
     {"F2 / F7 + JOG", "Volume of song A / song B."},
@@ -428,6 +430,23 @@ const Section kWaveDocs[] = {sec("WAVE PAGE", kWaveTxt)};
 const Section kFileDocs[] = {sec("SONG FILES", kFileTxt)};
 const Section kLibraryDocs[] = {sec("LIBRARY", kLibraryTxt)};
 
+const Entry kMixTxt[] = {
+    {"", "The whole output: the limiter first, then the master volume."},
+    {"OPEN AND CLOSE", "Shift + Master opens it. Master, or any page key, closes it."},
+    {"UP / DOWN", "Pick a setting."},
+    {"JOG WHEEL", "Change it. The arrow keys < > do too."},
+    {"LIMITER", "ON turns loud hits down smoothly instead of clipping them. OFF passes the sound at its own level, which is quiet."},
+    {"DRIVE", "How much louder the sound gets before the limiter. More is louder, and squashes the kicks more."},
+    {"CEILING", "The loudest the sound may get. Anything above it is turned down."},
+    {"RELEASE", "How long the sound takes to come back after a hit was turned down. Short is punchy, long is smooth."},
+    {"MASTER", "The volume after the limiter, 0 DB at the top. Hold Master and turn the jog wheel does the same from any page."},
+    {"REDUC", "How far the limiter is turning the sound down right now."},
+    {"OUT", "The loudest sound leaving the Tracker. Keep it off the very top."},
+    {"WAV EXPORT", "Uses this chain, master volume included."},
+    {"LSDJ FILES", "Songs and ROM exports are not touched by it."},
+};
+const Section kMixDocs[] = {sec("MASTER MIX", kMixTxt)};
+
 #define DOC_SET(a) (n = int(sizeof a / sizeof *a), a)
 const Section* docsFor(Lsdj::Popup p, Scr s, int& n) {
     n = 0;
@@ -510,6 +529,7 @@ bool Lsdj::docsFit() {
     int n;
     bool ok = true;
     for (Popup p : {kPhraseSheet, kTableSheet}) { const Section* d = docsFor(p, Scr::Song, n); ok = ok && fits(d, n); }
+    ok = ok && mixHelpFits();
     for (Scr s : {Scr::Song, Scr::Chain, Scr::Phrase, Scr::Instr, Scr::Table, Scr::Groove, Scr::Project, Scr::Synth, Scr::Wave, Scr::File, Scr::Library, Scr::Loader, Scr::Editor, Scr::Kit, Scr::Firmware, Scr::Recorder, Scr::Help}) {
         const Section* d = docsFor(kPageHelp, s, n);
         ok = ok && fits(d, n);
@@ -534,6 +554,31 @@ void Lsdj::drawHelp(Lcd& l) const {
     int n;
     const Section* d = docsFor(kPageHelp, Scr::Help, n);
     drawDoc(l, d, n, clampi(helpPage, 0, helpPages() - 1), 0, 200, "<> PAGE  BKSP EXIT");
+}
+
+int mixHelpPages() { return totalPages(kMixDocs, 1); }
+
+void drawMixHelp(Lcd& l, int page) {
+    const int pages = mixHelpPages();
+    l.rect(0, 0, 200, 144, 3);                       // the same pop-up as the other pages: a border of the dark shade
+    l.rect(2, 2, 196, 140, 0);
+    drawDoc(l, kMixDocs, 1, clampi(page, 0, pages - 1), 2, 196, pages > 1 ? "PAGE: < > OR F1 F2" : "");
+}
+
+bool mixHelpFits() {
+    for (int k = 0; k < kMixDocs[0].n; ++k) {
+        const Entry& e = kMixDocs[0].e[k];
+        if (e.term && std::strlen(e.term) > size_t(kDocW)) return false;
+        DLine rows[kDocLines + 2];
+        if (entryRows(e, rows, kDocLines + 2) > kDocLines) return false;
+        for (const char* p = e.text; p && *p;) {
+            int len;
+            const char* nx = wrapNext(p, len);
+            if (len == kDocW && p[len] != ' ' && p[len] != 0) return false;
+            p = nx;
+        }
+    }
+    return true;
 }
 
 }  // namespace gb

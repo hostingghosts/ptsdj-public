@@ -1,6 +1,8 @@
 // GB app + UI host tests over fake HALs: boot, the blank first screen, the power-hold bar, the silent audio callback and the
 // FT81x display-list budget (2048 words per frame; a 100-word margin below the hardware limit is kept free).
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <cstring>
@@ -475,6 +477,7 @@ TEST(audio_is_rendered_ahead_and_a_late_block_counts_once) {
     for (int i = 0; i < 128; ++i) CHECK_EQ(int(out[2 * i]), 0);
     r.app.pump();
     r.app.fill(out, 128);
+    r.app.fill(out, 128);              // (the output limiter delays the sound by 63 frames, so the second block is the one that is surely in it)
     int peak = 0;
     for (int i = 0; i < 128; ++i) peak = std::max(peak, std::abs(int(out[2 * i])));
     CHECK(peak > 0);
@@ -2346,9 +2349,9 @@ TEST(phrase_notes_stop_at_the_roms_top_note_and_an_octave_step_that_would_leave_
 
 namespace {
 // True when the 8 px cells at (col, row), as many as `text` has characters, look like `text` drawn there.
-bool cellsShow(const gb::Lcd& lcd, int col, int row, const char* text) {
+bool cellsShow(const gb::Lcd& lcd, int col, int row, const char* text, bool inv = false) {
     gb::Lcd ref;
-    ref.text(col, row, text);
+    ref.text(col, row, text, inv);
     for (int y = row * 8; y < row * 8 + 8; ++y)
         for (int x = col * 8; x < (col + int(std::strlen(text))) * 8; ++x)
             if (lcd.at(x, y) != ref.at(x, y)) return false;
@@ -2390,4 +2393,323 @@ TEST(the_sample_loader_and_kit_page_show_the_same_numbers_and_new_kits_are_named
     gb::Lcd lcd2;
     l.draw(lcd2);
     CHECK(cellsShow(lcd2, 17, 0, "KIT 02"));                      // a ROM kit: 01 inside, 02 on screen
+}
+
+namespace {
+// The loudest sample of 2048 frames of the two-note test pair, with the master volume at `level`.
+int masterPeak(int level, int* meter = nullptr) {
+    Rig r;
+    oneNote(r.app.song, 0, 25, 1);
+    oneNote(r.app.songB, 1, 37, 2);
+    r.app.setMasterLevel(level);
+    r.app.dual.start(0, 0);
+    r.app.pump();
+    int16_t out[2 * 128];
+    int peak = 0;
+    for (int blk = 0; blk < 16; ++blk) {
+        r.app.fill(out, 128);
+        if (blk < 2) continue;                                   // the gain ramps over the first block
+        for (int i = 0; i < 256; ++i) peak = std::max(peak, std::abs(int(out[i])));
+    }
+    if (meter) *meter = r.app.takeOutputPeak();
+    return peak;
+}
+}  // namespace
+
+TEST(master_volume_is_unity_at_the_top_then_1_5_db_a_step_down_to_silence) {
+    CHECK_EQ(App::masterGain(App::kMasterMax), 1.f);
+    CHECK(std::fabs(App::masterGain(App::kMasterMax - 1) - 0.8414f) < 0.001f);    // -1.5 dB
+    CHECK(std::fabs(App::masterGain(App::kMasterMax - 4) - 0.5012f) < 0.001f);    // -6 dB
+    CHECK_EQ(App::masterGain(0), 0.f);
+    int meter = 0;
+    const int full = masterPeak(App::kMasterMax, &meter);
+    CHECK(full > 500);
+    CHECK(meter >= full);                                        // the meter saw at least what was in the checked half
+    const int down = masterPeak(App::kMasterMax - 4);
+    CHECK(std::abs(down - full / 2) <= full / 50 + 2);           // -6 dB is half the amplitude
+    CHECK_EQ(masterPeak(0), 0);
+    Rig r;
+    r.app.setMasterLevel(99); CHECK_EQ(r.app.masterLevel(), App::kMasterMax);
+    r.app.setMasterLevel(-5); CHECK_EQ(r.app.masterLevel(), 0);
+}
+
+TEST(a_tap_on_master_splits_the_screen_but_hold_and_jog_set_the_master_volume_and_keep_it_on_the_card) {
+    MemStorage st;
+    Rig r(true, &st);
+    r.app.song.at(gb::off::kSync) = 1; r.app.songB.at(gb::off::kSync) = 1;
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);
+    r.loop(2);
+    ot::InputEvent e; e.type = ot::InputEvent::kEncoder; e.delta = -3; r.input.q.push_back(e);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(3);
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax - 3);
+    CHECK_EQ(r.app.dual.volume(0), 15);                          // not the consoles' own levels
+    CHECK(st.exists(App::kMasterPath));
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);        // a second hold turns the other way, and the cap holds
+    r.loop(2);
+    e.delta = 10; r.input.q.push_back(e);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(3);
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);
+    r.loop(2);
+    e.delta = -8; r.input.q.push_back(e);
+    r.loop(3);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(3);
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax - 8);
+    const uint32_t before = r.display.fills;
+    (void)before;
+    {   // a new start of the firmware finds the level on the card
+        Rig again(true, &st);
+        CHECK_EQ(again.app.masterLevel(), App::kMasterMax - 8);
+    }
+    {   // the tap: the screen splits (no level change) and nothing is written
+        r.app.setMasterLevel(App::kMasterMax - 8);
+        keyTap(r, ot::btn::Master);
+        CHECK_EQ(r.app.masterLevel(), App::kMasterMax - 8);
+        r.loop(10);
+        r.push(ot::InputEvent::kButtonDown, 6);
+        r.loop(2);
+        e.delta = -2; r.input.q.push_back(e);
+        r.loop(3);
+        r.push(ot::InputEvent::kButtonUp, 6);
+        r.loop(2);
+        CHECK_EQ(r.app.dual.volume(1), 13);                      // split on: F7 + jog still sets B's own level
+    }
+}
+
+TEST(the_master_meter_draws_only_while_master_is_held_and_fits_the_display_budget) {
+    Rig r;
+    r.loop(2500);                                                // past the splash
+    r.display.maxWords = 0;
+    r.loop(100);
+    const uint32_t idle = r.display.maxWords;
+    r.app.setMasterLevel(App::kMasterMax);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);
+    r.loop(100);
+    r.display.maxWords = 0;
+    r.loop(100);
+    CHECK_EQ(r.display.maxWords, idle);                          // held for 200 ms: still counts as a tap, no meter yet
+    r.loop(300);
+    r.display.maxWords = 0;
+    r.loop(100);
+    CHECK(r.display.maxWords > idle);                            // a column of squares
+    CHECK(r.display.maxWords + 100 <= 2048);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(100);
+    r.display.maxWords = 0;
+    r.loop(100);
+    CHECK_EQ(r.display.maxWords, idle);                          // released: the battery light is back to normal
+}
+
+namespace {
+void turn(Rig& r, int delta) { ot::InputEvent e; e.type = ot::InputEvent::kEncoder; e.delta = delta; r.input.q.push_back(e); r.loop(3); }
+void hold(Rig& r, int id) { r.push(ot::InputEvent::kButtonDown, uint8_t(id)); r.loop(2); }
+void let(Rig& r, int id) { r.push(ot::InputEvent::kButtonUp, uint8_t(id)); r.loop(2); }
+// Opens the Master Mix page the way a player does: Shift down, tap Master, Shift up.
+void openMix(Rig& r) { hold(r, ot::btn::Shift); hold(r, ot::btn::Master); r.loop(40); let(r, ot::btn::Master); let(r, ot::btn::Shift); }
+void closeMix(Rig& r) { hold(r, ot::btn::Master); let(r, ot::btn::Master); }
+// A WAV file's loudest sample.
+int wavPeak(const std::vector<uint8_t>& w) {
+    int pk = 0;
+    for (size_t i = 44; i + 1 < w.size(); i += 2) pk = std::max(pk, std::abs(int(int16_t(w[i] | (w[i + 1] << 8)))));
+    return pk;
+}
+}  // namespace
+
+TEST(shift_and_master_open_the_master_mix_page_which_sets_the_limiter_then_the_master_volume_and_keeps_it_on_the_card) {
+    MemStorage st;
+    Rig r(true, &st);
+    r.loop(2500);
+    CHECK(r.app.mix() == gb::OutputLimiter::Settings());
+    hold(r, ot::btn::Shift); hold(r, ot::btn::Master);           // Shift + Master held: the page, not the volume knob
+    r.loop(600);
+    turn(r, -3);                                                 // row 0: the limiter, off with a turn down
+    CHECK(!r.app.mix().on);
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax);              // the master volume was not touched
+    let(r, ot::btn::Master); let(r, ot::btn::Shift);
+    turn(r, 1);                                                  // still open after the release: back on
+    CHECK(r.app.mix().on);
+    hold(r, ot::btn::Down); let(r, ot::btn::Down);               // row 1: drive
+    turn(r, 4);
+    CHECK_EQ(r.app.mix().driveHalfDb, 22);
+    hold(r, ot::btn::Down); let(r, ot::btn::Down);               // row 2: ceiling
+    turn(r, -2);
+    CHECK_EQ(r.app.mix().ceilHalfDb, -3);
+    hold(r, ot::btn::Down); let(r, ot::btn::Down);               // row 3: release, 25 ms a step
+    turn(r, 1);
+    CHECK_EQ(r.app.mix().releaseMs, 150);
+    hold(r, ot::btn::Down); let(r, ot::btn::Down);               // row 4: the master volume
+    turn(r, -2);
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax - 2);
+    hold(r, ot::btn::Down); let(r, ot::btn::Down);               // Down wraps to the limiter again
+    turn(r, -1);
+    CHECK(!r.app.mix().on);
+    turn(r, 1);
+    hold(r, ot::btn::Right); let(r, ot::btn::Right);             // the arrow keys change a setting like the wheel
+    hold(r, ot::btn::Left); let(r, ot::btn::Left); hold(r, ot::btn::Left); let(r, ot::btn::Left);
+    CHECK(!r.app.mix().on);                                      // right: on, left: off, left: off
+    turn(r, 1);
+    CHECK(r.app.mix().on);
+    closeMix(r);
+    CHECK(st.exists(App::kMasterPath));
+    const std::string cfg(st.files[App::kMasterPath].begin(), st.files[App::kMasterPath].end());
+    CHECK(cfg.find("LIM 1") != std::string::npos);
+    CHECK(cfg.find("DRIVE 22") != std::string::npos);
+    CHECK(cfg.find("CEIL -3") != std::string::npos);
+    CHECK(cfg.find("REL 150") != std::string::npos);
+    Rig again(true, &st);                                        // a new start of the firmware finds all of it
+    CHECK_EQ(again.app.mix().driveHalfDb, 22);
+    CHECK_EQ(again.app.mix().ceilHalfDb, -3);
+    CHECK_EQ(again.app.mix().releaseMs, 150);
+    CHECK(again.app.mix().on);
+    CHECK_EQ(again.app.masterLevel(), App::kMasterMax - 2);
+    CHECK_EQ(again.app.dual.limiter().settings().driveHalfDb, 22);   // and the limiter itself has them
+}
+
+TEST(a_card_with_the_old_one_line_master_file_still_loads_its_volume_and_keeps_the_limiter_defaults) {
+    MemStorage st;
+    const char* old = "VOL 20\n";
+    st.files[App::kMasterPath].assign(old, old + std::strlen(old));
+    Rig r(true, &st);
+    CHECK_EQ(r.app.masterLevel(), 20);
+    CHECK(r.app.mix() == gb::OutputLimiter::Settings());
+}
+
+TEST(the_master_mix_page_is_a_game_boy_page_with_a_help_pop_up_and_fits_the_display_budget) {
+    Rig r;
+    r.loop(2500);
+    gb::Lcd& lcd = r.app.ui.gbScreen().lcd();
+    auto words = [&]() { r.display.maxWords = 0; r.loop(100); return r.display.maxWords; };
+    const uint32_t idle = words();
+    CHECK(!cellsShow(lcd, 0, 0, "MASTER MIX"));
+    openMix(r);
+    r.loop(10);
+    CHECK(r.app.ui.gbScreen().mixOpen());
+    CHECK(cellsShow(lcd, 0, 0, "MASTER MIX"));                   // drawn into the Game Boy screen, like the other pages
+    CHECK(cellsShow(lcd, 1, 4, "LIMITER"));
+    CHECK(cellsShow(lcd, 9, 4, "ON", true));                     // the value under the cursor is inverted
+    CHECK(cellsShow(lcd, 1, 12, "MASTER"));
+    CHECK(words() + 100 <= 2048);
+    CHECK(words() >= idle);
+    const int screen = int(r.app.lsdj.screen());
+    hold(r, ot::btn::Insert); let(r, ot::btn::Insert);           // the editing keys do not reach the console behind it
+    hold(r, ot::btn::F3); let(r, ot::btn::F3);
+    CHECK_EQ(int(r.app.lsdj.screen()), screen);
+    CHECK(!r.app.lsdj.channelMuted(0));
+    CHECK(r.app.ui.gbScreen().mixOpen());
+    // Help: F8 held covers the page with the pop-up, F1 / F2 or < > turn its pages, letting go brings the page back
+    hold(r, 7);
+    r.loop(40);
+    CHECK(r.app.ui.gbScreen().mixHelp());
+    CHECK(!cellsShow(lcd, 0, 0, "MASTER MIX"));
+    CHECK(cellsShow(lcd, 1, 1, "MASTER MIX", true));
+    const int pages = gb::mixHelpPages();
+    CHECK(pages > 1 && pages < 10);
+    auto counter = [&](int n) { char t[8]; std::snprintf(t, sizeof t, "%d/%d", n, pages); return cellsShow(lcd, 20, 1, t, true); };   // the page counter ends at column 22
+    CHECK(counter(1));
+    hold(r, ot::btn::F2); let(r, ot::btn::F2);
+    r.loop(40);
+    CHECK(counter(2));
+    hold(r, ot::btn::Left); let(r, ot::btn::Left);               // the arrows turn the help's pages, they do not move the cursor or change a setting
+    r.loop(40);
+    CHECK(counter(1));
+    CHECK(r.app.mix().on);
+    let(r, 7);
+    r.loop(40);
+    CHECK(!r.app.ui.gbScreen().mixHelp());
+    CHECK(cellsShow(lcd, 0, 0, "MASTER MIX"));
+    CHECK(gb::mixHelpFits());
+    closeMix(r);
+    r.loop(40);
+    CHECK(!r.app.ui.gbScreen().mixOpen());
+    CHECK(!cellsShow(lcd, 0, 0, "MASTER MIX"));
+    CHECK_EQ(r.app.masterLevel(), App::kMasterMax);
+}
+
+TEST(every_page_key_leaves_the_master_mix_page_and_goes_to_its_page) {
+    const uint8_t keys[] = {ot::btn::Song, ot::btn::Pattern, ot::btn::Note, ot::btn::Instr, ot::btn::InstrParams, ot::btn::Fx1, ot::btn::Fx2,
+                            ot::btn::Config, ot::btn::File, ot::btn::Performance, ot::btn::Help, ot::btn::SampleLoader, ot::btn::SampleEditor,
+                            ot::btn::SamplePlayback, ot::btn::SampleRecorder};
+    for (uint8_t k : keys) {
+        Rig r;
+        r.loop(2500);
+        openMix(r);
+        CHECK(r.app.ui.gbScreen().mixOpen());
+        keyTap(r, k);
+        r.loop(5);
+        CHECK(!r.app.ui.gbScreen().mixOpen());
+        CHECK(!r.app.ui.gbScreen().mixHelp());
+    }
+    Rig r;                                                       // and the page it goes to is the page that key opens
+    r.loop(2500);
+    openMix(r);
+    keyTap(r, ot::btn::Pattern);
+    CHECK(r.app.lsdj.screen() == gb::Scr::Chain);
+    openMix(r);
+    hold(r, 7);                                                  // with the help up too
+    keyTap(r, ot::btn::Config);
+    let(r, 7);
+    CHECK(r.app.lsdj.screen() == gb::Scr::Project);
+    CHECK(!r.app.ui.gbScreen().mixOpen());
+}
+
+TEST(the_wav_export_gets_the_limiter_and_the_master_volume_but_the_lsdj_files_do_not) {
+    auto render = [](int level, bool limiter, std::vector<uint8_t>* lsdsng) {
+        MemStorage st;
+        Rig r(true, &st);
+        oneNote(r.app.song, 0, 25, 3);
+        oneNote(r.app.songB, 1, 37, 2);
+        r.app.song.at(gb::off::kTempo) = 255;
+        r.app.setMasterLevel(level);
+        gb::OutputLimiter::Settings m; m.on = limiter;
+        r.app.setMix(m);
+        CHECK(r.app.exportWav("GB/x.wav", 22050, 10));
+        if (lsdsng) { CHECK(r.app.saveLinked("T")); *lsdsng = st.files["GB/Songs/T_A.lsdsng"]; }
+        return wavPeak(st.files["GB/x.wav"]);
+    };
+    std::vector<uint8_t> fileA, fileB;
+    const int full = render(App::kMasterMax, true, &fileA);
+    const int down = render(App::kMasterMax - 4, true, &fileB);   // -6 dB
+    CHECK(full > 2000);
+    CHECK(std::fabs(double(down) / double(full) - 0.5012) < 0.01);
+    const int bare = render(App::kMasterMax, false, nullptr);
+    CHECK(bare * 3 < full * 2);                                   // limiter off: no drive, so well below the limited file (which sits at the -0.5 dB ceiling)
+    CHECK(full <= 30935);                                         // and the limited file never passes that ceiling
+    CHECK(!fileA.empty() && fileA == fileB);                      // the song files do not know about the mix
+}
+
+TEST(a_hold_on_master_does_not_change_the_view_when_released_but_a_tap_does) {
+    MemStorage st;
+    Rig r(true, &st);
+    r.app.song.at(gb::off::kSync) = 1; r.app.songB.at(gb::off::kSync) = 1;
+    r.loop(2500);
+    auto words = [&]() { r.display.maxWords = 0; r.loop(100); return r.display.maxWords; };
+    const uint32_t single = words();
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);        // a long hold with no turn: the meter shows, and the release leaves the view alone
+    r.loop(600);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(10);
+    CHECK_EQ(words(), single);
+    keyTap(r, ot::btn::Master);                                  // a tap splits
+    const uint32_t split = words();
+    CHECK(split != single);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);        // a hold in the split view leaves it split
+    r.loop(600);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(10);
+    CHECK_EQ(words(), split);
+    r.push(ot::InputEvent::kButtonDown, ot::btn::Master);        // turning the knob right away counts as a hold even if it is short
+    r.loop(20);
+    ot::InputEvent e; e.type = ot::InputEvent::kEncoder; e.delta = -1; r.input.q.push_back(e);
+    r.loop(20);
+    r.push(ot::InputEvent::kButtonUp, ot::btn::Master);
+    r.loop(10);
+    CHECK_EQ(words(), split);
+    keyTap(r, ot::btn::Master);                                  // and a tap puts it back
+    CHECK_EQ(words(), single);
 }

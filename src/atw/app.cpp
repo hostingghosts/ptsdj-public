@@ -7,6 +7,7 @@
 #include "atw/chime_pcm.h"
 
 #include <algorithm>
+#include <cmath>
 #include "gb/upgrade.h"
 #include <cstdio>
 #include <new>
@@ -132,6 +133,28 @@ void App::fill(int16_t* out, uint32_t frames) {
             for (int c = 0; c < 2; ++c) { const int v = out[2 * i + c] + m; out[2 * i + c] = int16_t(v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
         }
     }
+    const float target = masterGain(master_.load(std::memory_order_relaxed));
+    float g = gainNow_;
+    const float step = frames ? (target - g) / float(frames) : 0.f;
+    const bool unity = g == 1.f && target == 1.f;                                    // the usual case: the samples pass untouched
+    int peak = 0;
+    for (uint32_t i = 0; i < frames; ++i) {
+        g += step;
+        for (int c = 0; c < 2; ++c) {
+            int v = out[2 * i + c];
+            if (!unity) { v = int(float(v) * g); out[2 * i + c] = int16_t(v); }
+            const int a = v < 0 ? -v : v;
+            if (a > peak) peak = a;
+        }
+    }
+    gainNow_ = target;
+    if (peak > outPeak_.load(std::memory_order_relaxed)) outPeak_.store(peak, std::memory_order_relaxed);
+}
+
+float App::masterGain(int level) {
+    if (level <= 0) return 0.f;
+    if (level >= kMasterMax) return 1.f;
+    return std::pow(10.f, -float(kMasterMax - level) * 1.5f / 20.f);
 }
 
 void App::pump() {
@@ -947,12 +970,14 @@ bool App::exportWav(const char* path, int rate, int maxSeconds) {
     bool ok = p_.storage->write(h, hdr, 44) == 44;      // placeholder, rewritten with the real sizes at the end
     static int16_t buf[2 * 1024];
     uint32_t frames = 0;
+    const float mg = masterGain(masterLevel());
     dual.start(0, 0);
     int total[2] = {};                                  // song rows in use: the bar is how far the slowest console has come through them
     for (int c = 0; c < 2; ++c) for (int r = 0; r < gb::kSongRows; ++r) for (int ch = 0; ch < 4; ++ch) if ((c ? songB : song).songCell(r, ch) != 0xFF) total[c] = r + 1;
     uint32_t tick = 0;
     while (ok && dual.running() && !dual.looped() && frames < uint32_t(rate) * uint32_t(maxSeconds)) {
         dual.render(buf, 1024, rate);
+        if (mg != 1.f) for (int i = 0; i < 2 * 1024; ++i) buf[i] = int16_t(float(buf[i]) * mg);       // limiter, then master volume: the file is what the speakers get
         ok = p_.storage->write(h, buf, sizeof buf) == int32_t(sizeof buf);
         frames += 1024;
         if ((++tick & 7) == 0) {
@@ -981,11 +1006,64 @@ bool App::exportWav(const char* path, int rate, int maxSeconds) {
     return ok;
 }
 
+// GB/MASTER.CFG: "VOL nn" (0-32), "LIM 0|1", "DRIVE nn" (0-36 half dB), "CEIL -nn" (-24..-1 half dB) and "REL nn" (ms), one per line. A missing line, or no file,
+// means that setting's default (full level, limiter on, +9 dB, -0.5 dB, 125 ms).
+void App::loadMasterLevel() {
+    if (!p_.storage || !p_.storage->exists(kMasterPath)) return;
+    const ot::IStorage::Handle h = p_.storage->open(kMasterPath, ot::IStorage::kRead);
+    if (h < 0) return;
+    char buf[sizeof cfgSaved_] = {};
+    const int32_t n = p_.storage->read(h, buf, sizeof buf - 1);
+    p_.storage->close(h);
+    if (n < 5) return;
+    gb::OutputLimiter::Settings m;
+    for (const char* s = buf; *s;) {
+        const char* key = s;
+        while (*s && *s != ' ' && *s != '\n') ++s;
+        const int kl = int(s - key);
+        int v = 0, sign = 1;
+        if (*s == ' ') ++s;
+        if (*s == '-') { sign = -1; ++s; }
+        for (; *s >= '0' && *s <= '9'; ++s) v = v * 10 + (*s - '0');
+        v *= sign;
+        while (*s && *s != '\n') ++s;
+        if (*s == '\n') ++s;
+        if (kl == 3 && !std::strncmp(key, "VOL", 3)) setMasterLevel(v);
+        else if (kl == 3 && !std::strncmp(key, "LIM", 3)) m.on = v != 0;
+        else if (kl == 5 && !std::strncmp(key, "DRIVE", 5)) m.driveHalfDb = v;
+        else if (kl == 4 && !std::strncmp(key, "CEIL", 4)) m.ceilHalfDb = v;
+        else if (kl == 3 && !std::strncmp(key, "REL", 3)) m.releaseMs = v;
+    }
+    setMix(m);
+    std::memcpy(cfgSaved_, buf, sizeof cfgSaved_);
+}
+
+void App::setMix(const gb::OutputLimiter::Settings& m) {
+    mix_ = m;
+    mix_.clamp();
+    dual.setMix(mix_);
+}
+
+void App::saveMasterLevel() {
+    if (!p_.storage) return;
+    char buf[sizeof cfgSaved_] = {};
+    const int n = std::snprintf(buf, sizeof buf, "VOL %d\nLIM %d\nDRIVE %d\nCEIL %d\nREL %d\n", masterLevel(), mix_.on ? 1 : 0, mix_.driveHalfDb, mix_.ceilHalfDb, mix_.releaseMs);
+    if (n <= 0 || n >= int(sizeof buf)) return;
+    if (!cfgSaved_[0] && masterLevel() == kMasterMax && mix_ == gb::OutputLimiter::Settings()) return;      // nothing was ever changed: no file
+    if (!std::memcmp(buf, cfgSaved_, sizeof buf)) return;
+    const ot::IStorage::Handle h = p_.storage->open(kMasterPath, ot::IStorage::kWrite);
+    if (h < 0) return;
+    const bool ok = p_.storage->write(h, buf, uint32_t(n)) == int32_t(n);
+    p_.storage->close(h);
+    if (ok) std::memcpy(cfgSaved_, buf, sizeof cfgSaved_);
+}
+
 void App::setBanner(const char* s) { lsdj.setBanner(s); lsdjB.setBanner(s); }
 
 void App::boot() {
     if (!p_.storage) return;
     p_.storage->mkdir("GB");
+    loadMasterLevel();
     p_.storage->mkdir(kSongDir);
     p_.storage->mkdir(kKitDir);
     p_.storage->mkdir(kExportDir);
