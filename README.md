@@ -1,4 +1,4 @@
-# polyend-gb
+# PTSDJ - for the original Polyend Tracker 
 
 LSDJ-style Game Boy tracker for the original Polyend Tracker (MK66). Personal use only (see `LICENSE`, `NOTICE.md`).
 
