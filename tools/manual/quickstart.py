@@ -4,7 +4,7 @@ from lib import *
 
 def footer(canv, doc):
     canv.saveState(); canv.setFont('Helvetica', 8.5); canv.setFillColor(colors.HexColor('#666'))
-    canv.drawString(MARGIN, 0.5 * inch, 'PTSDJ Quick Start  -  version 1.0.1')
+    canv.drawString(MARGIN, 0.5 * inch, 'PTSDJ Quick Start  -  version 1.0.3')
     canv.drawRightString(W - MARGIN, 0.5 * inch, 'page %d' % doc.page)
     canv.restoreState()
 
@@ -17,7 +17,7 @@ story = []
 story += [Spacer(1, 0.55 * inch), Paragraph('PTSDJ', S['cover1']), Spacer(1, 6), Paragraph('Quick Start', S['cover2']), Spacer(1, 2.1 * inch)]
 story += [fig('82-first-song-page', 'A new song, ready for music.', 3.6 * inch)]
 story += [Spacer(1, 10), Paragraph('A Game Boy-style music maker for the Polyend Tracker', S['cover2']), Spacer(1, 6),
-          Paragraph('Version 1.0.1 &nbsp;-&nbsp; for the original Polyend Tracker. Read this first. The full Manual has all the details.', S['cover3'])]
+          Paragraph('Version 1.0.3 &nbsp;-&nbsp; for the original Polyend Tracker. Read this first. The full Manual has all the details.', S['cover3'])]
 story += [PageBreak()]
 
 story += [Paragraph('What is PTSDJ?', S['h1']), Rule(), Spacer(1, 6)]
@@ -43,7 +43,7 @@ story += table([['Folder', 'What goes in it'],
                 ['GB/Songs', 'Loose LSDJ song files you want to load.'],
                 ['Firmware', 'Update files for the Tracker (.ptf).']], [1.6 * inch, BODY_W - 1.6 * inch])
 story += [H2('Put PTSDJ on the Tracker'),
-          steps(['Copy the file <b>PolyendTracPTSDJv101.ptf</b> into the <b>Firmware</b> folder on the SD card.',
+          steps(['Copy the file <b>PolyendTracPTSDJv103.ptf</b> into the <b>Firmware</b> folder on the SD card.',
                  'Copy the small text file <b>ot_restore.txt</b> into the same folder. It holds one line: the name of the .ptf file, with nothing else.',
                  'Put the card in the Tracker and turn it off and on. The Tracker installs PTSDJ and restarts.',
                  'You will hear the Game Boy chime. You are in!'])]
@@ -108,6 +108,7 @@ story += table([['To do this', 'Do this'],
                 ['Pick many spots', 'Hold [Shift] + [Insert] and press the arrows.'],
                 ['Copy and paste', '[Copy] copies. [Shift] + [Copy] pastes. Same page only.'],
                 ['Play or stop', '[Play]. On the Chain, Phrase and Table pages it plays just that one. [Shift] + [Play] plays the whole song.'],
+                ['Change the volume', 'Hold [Master] and turn the jog wheel. [Shift] + [Master] opens the Master Mix page for loudness. The Manual explains both.'],
                 ['Mute a track', 'On the Song page, hold [Shift] and press [Insert].'],
                 ['Hear the pads', 'Press a pad. It plays the sound on the screen.'],
                 ['Get help', 'Hold [F8] for a pop-up. For the help pages, open [Config] and pick HELP.'],

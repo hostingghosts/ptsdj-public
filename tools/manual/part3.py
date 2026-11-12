@@ -30,6 +30,40 @@ def build():
                 ['[Rec] on, then [Play]', 'Live recording. The phrase loops on its track while the whole song plays behind it. The pads write the notes you play, placed on the nearest step. Press [Play] to stop.']], [1.7 * inch, BODY_W - 1.7 * inch])
     s += [callout('tip', 'Recording lines up with what you hear. PTSDJ takes the delay between pressing and hearing into account.')]
 
+    s += [H2('Volume and loudness'),
+          P('There are three kinds of volume. Each instrument has its own. Each Game Boy has its own (hold F2 or F7 and turn the jog wheel, Chapter 8). And there is one <b>master volume</b> for everything you hear.'),
+          H3('The master volume'),
+          P('Hold [Master] and turn the jog wheel. The volume goes from silent up to <b>0 DB</b>, in 32 steps of 1.5 DB each. At 0 DB the sound is exactly as loud as the Master Mix page (below) makes it. Turning it down adds no noise or buzz.'),
+          fig('90-master-meter', 'Holding [Master]: the battery light grows into a meter. The number under BATTERY is the volume.', 4.4 * inch, box=(0, 0, 800, 480)),
+          P('The light grows into a column of squares. The squares up to your volume are green at the bottom and red at the top. They look switched off. The squares that light up bright show how loud the music is right now, like the meter on a stereo. Let go of [Master] and the light is back to normal. The volume is kept on the SD card, so it is the same the next time you start.'),
+          fig('91-master-bar', 'With two Game Boys side by side, the meter is a bar under the words DOT MATRIX WITH STEREO SOUND.', 4.6 * inch, box=(150, 0, 650, 56)),
+          callout('note', 'A quick tap on [Master] still shows both Game Boys side by side (Chapter 8). Only a hold changes the volume. When you let go after a hold, the screen stays on the same page.'),
+          H3('The Master Mix page'),
+          P('Press [Shift] + [Master] to open the Master Mix page. It controls the last steps the sound takes before it leaves the Tracker. First the sound goes through a <b>limiter</b>. Then it goes through the master volume.'),
+          P('A limiter is a guard for loud sounds. When a loud hit, such as a kick, would get too big, the limiter turns the sound down for a moment. So the sound never crackles. Drums are the loudest part of most songs, so the limiter works on them most.'),
+          fig('93-mix-page-limiting', 'The Master Mix page while the demo plays. The two bars at the bottom show the limiter at work.', 4.2 * inch)]
+    s += table([['Row', 'What it does'],
+                ['LIMITER', 'ON turns loud hits down smoothly. OFF sends the sound out untouched. That is much quieter.'],
+                ['DRIVE', 'How much louder the sound is made before the limiter, from 0 to +18 DB in steps of 0.5. More drive is louder, but the limiter has to turn the drums down more. It starts at +9.0 DB.'],
+                ['CEILING', 'The loudest the sound is allowed to get, from -12 DB up to -0.5 DB. Anything above it is turned down. A lower ceiling is gentler on your speakers.'],
+                ['RELEASE', 'How long the sound takes to come back after a loud hit was turned down, from 25 to 500 ms. Short is punchy. Long is smooth.'],
+                ['MASTER', 'The master volume. The same one you set by holding [Master].'],
+                ['REDUC', 'A bar and a number: how many DB the limiter is turning the sound down right now. 0.0 means it is doing nothing.'],
+                ['OUT', 'The loudest sound leaving the Tracker, in DB below full. -0.5 means it is right at the top.']], [1.2 * inch, BODY_W - 1.2 * inch])
+    s += table([['Keys on this page', 'What they do'],
+                ['Up or Down', 'Pick a row. The row has a > in front of it and its value is dark.'],
+                ['Jog wheel, or Left and Right', 'Change the value.'],
+                ['Hold F8', 'A pop-up that explains the page. F1 and F2 turn its pages.'],
+                ['[Master]', 'Close the page.'],
+                ['Any page key', 'Close the page and go to that page, like [Song] or [Config].'],
+                ['[Play]', 'Start or stop the music while you listen and adjust.']], [2.2 * inch, BODY_W - 2.2 * inch])
+    s += [fig2('94-mix-help', 'Hold F8 for help about the page.', '95-mix-help2', 'F1 and F2 turn the help pages.'),
+          H3('Finding a good setting'),
+          bullets(['Play your song and watch REDUC. If it jumps by more than 3 or 4 DB on every drum hit, the drums are being squashed. Lower DRIVE a little, or make RELEASE longer.',
+                   'If the music is too quiet, raise DRIVE and watch REDUC. Or turn up your speakers or headphones.',
+                   'To hear what the limiter does, switch LIMITER OFF and ON again while the music plays.']),
+          callout('note', 'The Master Mix settings are saved on the SD card, in <b>GB/MASTER.CFG</b>, together with the master volume. They belong to your Tracker, not to a song.')]
+
     # ================================================================= 8
     s += H1('8. Two Game Boys at once')
     s += [P('PTSDJ has two pretend Game Boys. Each has its own song, its own tempo, and its own drum kits. Together they give you 8 tracks.'),
@@ -42,7 +76,7 @@ def build():
     s += [fig('70-sync-master', 'SYNC set to MASTER on song A.', 3.8 * inch),
           P('The <b>master</b> sets the tempo. The <b>slave</b> follows it. If you change the master\'s tempo, the slave\'s tempo changes too.'),
           H2('Side-by-side view'),
-          P('Press [Master] while the songs are linked. Both Game Boys show next to each other on the screen. The one you are working on is bright. The other is dim.'),
+          P('<b>Tap</b> [Master] while the songs are linked. Both Game Boys show next to each other on the screen. The one you are working on is bright. The other is dim. Tap it again to go back. (If you <b>hold</b> [Master] instead, you change the master volume. See Chapter 7.)'),
           fig('71-dual', 'Both Game Boys side by side.', 5.8 * inch, box=(0, 52, 800, 348)),
           P('Look at the bottom corners. A letter <b>A</b> sits above F1. A letter <b>B</b> sits above F8. Hold either key and a dock rises. It names what every F key does:'),
           fig('72-dual-dock', 'The dock. Volume and mute keys for each Game Boy.', 5.2 * inch, box=(0, 0, 800, 480))]
@@ -80,7 +114,7 @@ def build():
           H2('Song files from LSDJ'),
           P('PTSDJ can read LSDJ song files (.lsdsng). Put them in <b>GB/Songs</b>. They show up in the song list with a +. When you export, PTSDJ also writes a .lsdsng of your song.'),
           H2('Audio files'),
-          P('<b>EXPORT WAV</b> on the Project page makes an audio file in <b>GB/Export</b>. It plays the song once, until every track starts to repeat. You can share it, or play it on a computer.'),
+          P('<b>EXPORT WAV</b> on the Project page makes an audio file in <b>GB/Export</b>. It plays the song once, until every track starts to repeat. You can share it, or play it on a computer. The file is made with the same sound path you hear: the limiter and the master volume from the Master Mix page (Chapter 7) are in it. For the loudest file, set the master volume to 0 DB first. Songs and ROMs for a real Game Boy are never changed by these settings.'),
           H2('Tidy up'),
           P('<b>CLEAN SONG DATA</b> and <b>CLEAN INSTR DATA</b> on the Project page free up chains, phrases and instruments that nothing uses. Press [Insert] twice to confirm. This makes the song file smaller.')]
 

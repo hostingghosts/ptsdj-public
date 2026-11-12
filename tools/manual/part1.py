@@ -55,7 +55,7 @@ def build():
                 ['[Config]', 'Project page: settings, saving, exporting and the help pages.'],
                 ['[Perform]', 'Groove page: how long each step lasts.'],
                 ['[File]', 'The song list for the current Game Boy.'],
-                ['[Master]', 'Shows both Game Boys side by side, when they are linked (Chapter 8).']], [2.0 * inch, BODY_W - 2.0 * inch])
+                ['[Master]', 'Tap: shows both Game Boys side by side, when they are linked (Chapter 8). Hold it and turn the jog wheel: the master volume. With [Shift]: the Master Mix page (Chapter 7).']], [2.0 * inch, BODY_W - 2.0 * inch])
     s += [H2('The sample keys'), P('These green keys work with drum kits. Chapter 11 explains them.')]
     s += table([['Key', 'Page it opens'],
                 ['[Sample Loader]', 'Pick a WAV file and turn it into a drum sound.'],
@@ -90,6 +90,7 @@ def build():
                 ['GB/Samples', 'WAV files that you turn into drum sounds.'],
                 ['GB/Kits/A and GB/Kits/B', 'Your drum kits. Each Game Boy has its own kits.'],
                 ['GB/Export', 'What PTSDJ writes when you export: WAV files, save files and ROMs for a real Game Boy.'],
+                ['GB/MASTER.CFG', 'Your master volume and the Master Mix settings. PTSDJ writes it when you let go of the keys.'],
                 ['Firmware', 'Update files (.ptf) for the Tracker, and the small ot_restore.txt file.']], [2.0 * inch, BODY_W - 2.0 * inch])
     s += callout('care', 'PTSDJ does not include the LSDJ ROM. Use your own copy. Songs, kits and presets are made by you or by PTSDJ. The ROM is not.')
     s += [H2('Installing PTSDJ'), steps(['Put the <b>.ptf</b> file for PTSDJ in the <b>Firmware</b> folder on the SD card.',

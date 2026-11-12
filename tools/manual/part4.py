@@ -20,6 +20,8 @@ def build():
     s += [P('Find your problem in the left column.')]
     s += table([['What is wrong', 'What to try'],
                 ['I hear nothing when I press Play.', 'Is the track muted? On the Song page, [Shift] + [Insert] mutes and unmutes. Check the instrument: OUTPUT must not be OFF. Check the volume of the instrument and the Tracker\'s own volume. Is there a note in the phrase and a chain in the song?'],
+                ['The sound is too quiet.', 'Hold [Master] and turn the jog wheel up to 0 DB. Open the Master Mix page ([Shift] + [Master]): LIMITER should be ON, and you can raise DRIVE. Also check the instrument\'s volume, each Game Boy\'s volume (F2 and F7) and your speakers.'],
+                ['The drums sound squashed.', 'Open the Master Mix page ([Shift] + [Master]) and watch REDUC while the music plays. Lower DRIVE a little, or make RELEASE longer.'],
                 ['The pads make no sound.', 'PRELISTEN on the Project page may be OFF. Turn it ON. Or turn [Rec] on and use the pads on the Phrase page.'],
                 ['The Synth page, the Wave page or the kits do not work.', 'They need <b>GB/LSDJ.GB</b> on the SD card. Check the name and the folder.'],
                 ['My kit sounds are missing on the Game Boy.', 'Use the <b>.gb</b> that PTSDJ exported, together with the .srm of the same name. Kit numbers must be 16 to 33. A song that uses a kit your ROM does not have plays noise.'],
@@ -49,7 +51,9 @@ def build():
                 ['Instrument', 'A sound you can play.'],
                 ['Kit', 'A set of up to 15 short recorded sounds.'],
                 ['Layer', 'Play two sounds at the same time.'],
+                ['Limiter', 'A guard that turns a loud sound down for a moment so it does not crackle.'],
                 ['LSDJ', 'Little Sound DJ, a music program for the Game Boy.'],
+                ['Master volume', 'One volume for everything you hear. Hold [Master] and turn the jog wheel.'],
                 ['Octave', 'Twelve half steps. The same note, but higher or lower.'],
                 ['Phrase', 'Sixteen steps. Where the notes live.'],
                 ['ROM', 'The program file for a Game Boy cartridge.'],
@@ -92,7 +96,10 @@ def build():
                 ['[Shift] + F8 (Project page)', 'Open the firmware window.'],
                 ['Hold F8', 'A pop-up about the page you are on.'],
                 ['F1 and F2 (while the pop-up shows)', 'Turn its pages back and forward.'],
-                ['[Master]', 'Show both Game Boys side by side.']], [2.6 * inch, BODY_W - 2.6 * inch])
+                ['[Master] (tap)', 'Show both Game Boys side by side.'],
+                ['[Master] (hold) + jog wheel', 'Master volume. The battery light turns into a meter.'],
+                ['[Shift] + [Master]', 'Open the Master Mix page: the limiter and the master volume.'],
+                ['Any page key (Master Mix page)', 'Leave the page and go to that page.']], [2.6 * inch, BODY_W - 2.6 * inch])
 
     s += H1('Appendix B: Limits')
     s += table([['Thing', 'How many'],
@@ -105,6 +112,7 @@ def build():
                 ['Grooves', '32 (00 to 1F), each with 16 steps'],
                 ['Synths', '16 (0 to F)'],
                 ['Tempo', '28 to FF (hex)'],
+                ['Master volume', '32 steps of 1.5 DB, from silent up to 0 DB'],
                 ['Songs in one save file', '32'],
                 ['Your own kits', '30 (kits 16 to 33) per Game Boy'],
                 ['Sounds in a kit', '15, and about 2.8 seconds in all'],
@@ -117,5 +125,5 @@ def build():
                    'LSDJ (Little Sound DJ) was made by Johan Kotlinski. PTSDJ does not include LSDJ. You need your own copy of the ROM.',
                    'PTSDJ is not made by or connected to Polyend or to the makers of LSDJ.',
                    'Normal Polyend Tracker projects are never touched by PTSDJ. You can always go back to the stock firmware.']),
-          H2('Version'), P('This guide matches PTSDJ version 1.0.1.')]
+          H2('Version'), P('This guide matches PTSDJ version 1.0.3.')]
     return s
