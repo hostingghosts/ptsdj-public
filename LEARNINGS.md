@@ -31,8 +31,7 @@ OpenTracker or SIDTracker, not by this repository.
    counting display.
 
 4. **The bootloader only accepts 24-character image names.** `PolyendTrac*.ptf`, exactly 24 characters: the bootloader
-   ignores longer names and then flashes a *random* file from `/Firmware` (`firmware-map.md`, *Image format*;
-   `APPROACH.md` §1). The 9 characters after `PolyendTrac` are free; this image is `PolyendTracGBTrkv010.ptf`. The
+   ignores longer names and then flashes a *random* file from `/Firmware` (`firmware-map.md`, *Image format*). The 9 characters after `PolyendTrac` are free; this image is `PolyendTracPTSDJv103.ptf`. The
    Makefile enforces the length with `$(error)`, but `isUpdateImageName()` in the app accepts 15-96 characters, so it does
    not (`firmware-map.md`). Every image must also pass `tools/check_image.py` (flash config FSEC 0xDE / FOPT 0xF9, sane
    vector table, nothing past 0xD6460, record types 00/01/02 only), which is what stops a bad build from locking the MCU
@@ -54,7 +53,7 @@ OpenTracker or SIDTracker, not by this repository.
   (`hardware.md`, *Timer resources*).
 * **Do not write the EEPROM while audio runs.** `eeprom_write_byte()` leaves HSRUN, halves the core clock, and its
   re-entry rewrites `SIM_CLKDIV1` with the SDRAM at 180 MHz; the HAL restores OUTDIV3 after each write (`hardware.md`,
-  *MCU and clocks*; `storage.md`, *Non-volatile settings*). Keep settings on the SD card (`DECISIONS.md` item 7).
+  *MCU and clocks*; `storage.md`, *Non-volatile settings*). Keep settings on the SD card.
 * **EEPROM byte 0 is the power and update flag**; the app area starts at byte 10, and if the `EEPROM` magic there is
   missing, stock reads the update flag as 1 (`firmware-map.md`; `storage.md`). Do not overwrite stock's config image
   blindly.
@@ -68,14 +67,13 @@ OpenTracker or SIDTracker, not by this repository.
 * **Recovery before testing, every session.** Keep only the stock image plus one test image in `/Firmware`, everything
   else elsewhere, because the rear reset button installs a *random* `.ptf`. Ways back: stock Config > Firmware update;
   `/Firmware/ot_restore.txt` naming the stock image (checked right after the SD mounts, before any other driver, renamed
-  `.done` so a bad image cannot loop); the reset button; the Polyend tool (`firmware-map.md`, *Way back to stock*;
-  `hardware-test-plan.md` §0).
+  `.done` so a bad image cannot loop); the reset button; the Polyend tool (`firmware-map.md`, *Way back to stock*).
 * **Host first, hardware last.** Simulator plus ASan/UBSan host tests catch most problems; the QEMU instruction counter
-  gave a floor, not cycles (`APPROACH.md`, *Simulator and host tests*; `audio.md`).
+  gave a floor, not cycles (`audio.md`).
 * **Licences.** SIDTracker and OpenTracker are MIT and may be used with attribution (`NOTICE.md`); GPL code (GoatTracker,
-  reSID, RMT) is not copied (`DECISIONS.md` items 2-3).
+  reSID, RMT) is not copied.
 
 ## Not verified, per the upstream docs
 Underrun counter on hardware, DMA channel numbers, mute polarity of PTD6, SDHC DMA into SDRAM, SRAM_L cache for DMA, and
 per-frame SPI time (`audio.md`, `hardware.md`, `storage.md`, `display.md`, *Unknowns*). Treat the first flash of this image
-as the first hardware test; follow `docs/upstream/hardware-test-plan.md` §0 first.
+as the first hardware test; follow `docs/HARDWARE_TEST.md` first.

@@ -1,5 +1,5 @@
-// make_presets: every pulse and noise instrument the demo songs use, once each, as .gbi library files (see Lsdj::packInstrument).
-//   make_presets <demos dir> <output dir>
+// make_presets: collects the pulse and noise instruments of the .lsdsng songs in a folder, once each, as .gbi library files (see Lsdj::packInstrument).
+//   make_presets <songs dir> <output dir>
 // Names: P001BASS = pulse number 1 (the most used), N001 = noise number 1. The most used sounds come first.
 #include <dirent.h>
 
@@ -100,7 +100,7 @@ void describe(Preset& p) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3) { std::fprintf(stderr, "usage: make_presets <demos> <out>\n"); return 1; }
+    if (argc < 3) { std::fprintf(stderr, "usage: make_presets <songs> <out>\n"); return 1; }
     std::map<std::string, Preset> all;
     DIR* d = opendir(argv[1]);
     if (!d) return 1;

@@ -2,7 +2,7 @@
 
 Plan §3: LCD controller, framebuffer / display-list model, update mechanism,
 RAM_G map, fonts, cost per frame. Sources: OpenTracker
-(`ReversedPolytracker-1.9x`, branch `opentracker`, HEAD `0849cb0`). Driver
+(commit `0849cb0`). Driver
 `reimpl/src/hal/ft81x.*`, reused as `src/platform/display/ft81x.*`.
 
 ## Controller and panel
@@ -122,4 +122,4 @@ field. `tests/app_test.cpp` (`display_list_fits_with_a_full_pattern`)
 estimates the words of every screen and page with a conservative
 `CMD_TEXT` cost and fails above 1800: worst case 1,322 (full pattern).
 The real count should be confirmed on the device (`REG_CMD_DL` after a
-full-pattern frame; `docs/hardware-test-plan.md` 5.4).
+full-pattern frame).

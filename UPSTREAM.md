@@ -10,7 +10,7 @@ project and Mac-session files, undo, the seven Atari screens, the old `Ui` shell
 all depended on the song), `atari_core`, the 6502 players and the Atari tests, plus `tools/release` and `tools/sidlink`
 (SID-product tooling). What was kept: `src/platform` and `third_party` unchanged (one macro renamed, see below),
 the `Screen` interface and colour/drawing helpers (`src/atw/ui/screen.h`, `frame.cpp`), the simulator, the host-test
-harness, `tools/check_image.py`, `tools/sync_hal.sh`, and `docs/upstream/`.
+harness, `tools/check_image.py`, `tools/sync_hal.sh`, and the hardware notes in `docs/upstream/`.
 
 Changes inside the kept hardware layer:
 * `src/platform/core/ui/fonts/fonts.h`: the build macro `ATARI_BUILD` is now `GB_BUILD` (same effect: the 126 KB custom font

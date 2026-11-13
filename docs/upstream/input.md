@@ -1,8 +1,7 @@
 # Input
 
 Plan §3: pad matrix scanning, buttons, jog wheel / encoder, power switch, pad
-LEDs, event timing. Sources: OpenTracker (`ReversedPolytracker-1.9x`, branch
-`opentracker`, HEAD `0849cb0`). Drivers `reimpl/src/hal/input.*` and
+LEDs, event timing. Sources: OpenTracker (commit `0849cb0`). Drivers `reimpl/src/hal/input.*` and
 `pad_leds.*`, reused as `src/platform/input/`.
 
 ## Interface

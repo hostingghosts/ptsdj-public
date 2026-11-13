@@ -1,14 +1,14 @@
 # Vendored platform code: provenance
 
 Copied from OpenTracker, our clean-room firmware for the same hardware
-(`~/Projects/ReversedPolytracker-1.9x`, branch `opentracker`, commit
+(branch `opentracker`, commit
 **`0849cb0`** = `c69d753` + `3b60137` open Roboto fonts + MIT licence).
 OpenTracker's own code is MIT (`LICENSE.OpenTracker` here); third-party
 code keeps its licence (`third_party/teensy3/LICENSE.txt`,
 `third_party/fatfs/LICENSE.txt`, `third_party/fonts/*`).
 
 `tools/sync_hal.sh [OPENTRACKER_REIMPL_DIR]` diffs every file below against
-the recorded commit. Fixes flow both ways by hand (APPROACH.md §1).
+the recorded commit. Fixes flow both ways by hand.
 
 ## File map (SIDTracker path <- OpenTracker `reimpl/` path)
 
@@ -49,7 +49,7 @@ Each is marked `SIDTracker local change (PROVENANCE.md)` in the source.
 
 3. `third_party/teensy3/usb_desc.h`: with `-DSIDT_USB_STRINGS` (the
    Makefile passes it) the USB manufacturer and product strings read
-   "SIDTracker" (DECISIONS.md 4). VID:PID stay 1209:0001, the pid.codes test
+   "SIDTracker". VID:PID stay 1209:0001, the pid.codes test
    PID, until a dedicated PID is registered (release blocker).
 
 4. `board.cpp`, `hal.h`: the stock power flag, ported by hand from
@@ -67,8 +67,8 @@ Each is marked `SIDTracker local change (PROVENANCE.md)` in the source.
 - `radio_si4703.*`: `board.cpp` parks the tuner in reset and calls
   `radio()` from `service()`, `softOff()` and `selectInput()`. SIDTracker
   never hands an `IRadio` to the app. Dropping it means editing
-  `board.cpp`; deferred until there is a reason (PLAN.md §3 "do not rewrite
-  working hardware support without a reason").
+  `board.cpp`; deferred until there is a reason (do not rewrite
+  working hardware support without one).
 - `audio_sgtl5000_dap.h`: the codec DAP (Master EQ) stays wired as in
   OpenTracker; SIDTracker never calls `applyMasterDsp`.
 - `nvstore_eeprom.*`: linked because `board.cpp` / `fw_update.cpp` use the

@@ -125,5 +125,8 @@ def build():
                    'LSDJ (Little Sound DJ) was made by Johan Kotlinski. PTSDJ does not include LSDJ. You need your own copy of the ROM.',
                    'PTSDJ is not made by or connected to Polyend or to the makers of LSDJ.',
                    'Normal Polyend Tracker projects are never touched by PTSDJ. You can always go back to the stock firmware.']),
+          H2('Warning: experimental software, no warranty'),
+          P('<b>PTSDJ is experimental. Do not use it unless you know what you are doing.</b> Installing or using it can damage your Tracker (it may stop starting), damage or corrupt SD cards, and lose or damage files, including other files on the same card. It can also play loudly, which can hurt your hearing and damage speakers and headphones. Exported songs and ROMs may not work on other hardware.'),
+          P('PTSDJ is provided <b>as is, with no warranty of any kind</b>, and with no support. To the greatest extent the law allows, its authors are not responsible for any damage or loss. You use it entirely at your own risk. Back up your SD card and your Tracker projects first, know how to go back to the stock firmware before you flash (Chapter 13), never turn off the power during an update, save or export, and turn the volume down before you connect speakers or headphones. The full disclaimer is in the README on GitHub.'),
           H2('Version'), P('This guide matches PTSDJ version 1.0.3.')]
     return s

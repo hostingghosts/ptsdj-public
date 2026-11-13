@@ -2,8 +2,7 @@
 
 Plan §3: MCU, clocks, memory map, timer and DMA resources, RAM left after
 the required services, pins, buses. Sources are in OpenTracker
-(`ReversedPolytracker-1.9x`, branch `opentracker`, HEAD `0849cb0`; see
-[current-state.md](current-state.md)). Constants live in
+(commit `0849cb0`). Constants live in
 `reimpl/src/hal/board.h`, reused as `src/platform/board.h`; every line there
 cites spec 01.
 

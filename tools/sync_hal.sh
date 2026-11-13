@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Diff the vendored OpenTracker files (src/platform/PROVENANCE.md) against an
 # OpenTracker checkout at the recorded commit.
-#   tools/sync_hal.sh [OPENTRACKER_REIMPL_DIR] [--commit SHA]
+#   tools/sync_hal.sh OPENTRACKER_REIMPL_DIR [--commit SHA]
 # Exit status 0 = identical except the documented local changes listed below.
 set -u
 here="$(cd "$(dirname "$0")/.." && pwd)"
-ot="${1:-$HOME/Projects/ReversedPolytracker-1.9x/reimpl}"
+ot="${1:?usage: tools/sync_hal.sh OPENTRACKER_REIMPL_DIR [--commit SHA]}"
 commit="0849cb0"
 [ "${2:-}" = "--commit" ] && commit="${3:?commit}"
 

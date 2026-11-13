@@ -6,6 +6,11 @@
 ![Hardware](https://img.shields.io/badge/hardware-Polyend%20Tracker%20(MK66)-2D3258)
 ![Licence](https://img.shields.io/badge/licence-MIT-8E2F5A)
 
+> [!CAUTION]
+> **EXPERIMENTAL FIRMWARE. DO NOT INSTALL IT UNLESS YOU KNOW EXACTLY WHAT YOU ARE DOING.**
+>
+> Using it can damage your Polyend Tracker, your SD cards and your files, and can hurt your hearing and your audio equipment. It is provided **"AS IS", with no warranty of any kind**. You use it **entirely at your own risk**. Read the full [disclaimer](#disclaimer-read-this-before-you-flash) below before you do anything else.
+
 PTSDJ replaces the Tracker's firmware with a Game Boy music maker. It runs two pretend Game Boys side by side (8 tracks), looks and works like [LSDJ](https://www.littlesounddj.com/) (Little Sound DJ), and exports your music as WAV files or as songs and ROMs that play on a real Game Boy. It is written from scratch and contains no LSDJ code.
 
 | | |
@@ -17,6 +22,7 @@ PTSDJ replaces the Tracker's firmware with a Game Boy music maker. It runs two p
 
 ## Contents
 
+- [Disclaimer: read this before you flash](#disclaimer-read-this-before-you-flash)
 - [What you get](#what-you-get)
 - [What you need](#what-you-need)
 - [Set up the SD card](#set-up-the-sd-card)
@@ -30,6 +36,47 @@ PTSDJ replaces the Tracker's firmware with a Game Boy music maker. It runs two p
 - [Documentation](#documentation)
 - [Status and known limits](#status-and-known-limits)
 - [Licence and credits](#licence-and-credits)
+
+## Disclaimer: read this before you flash
+
+**PTSDJ is experimental software. Do not install or use it unless you know what you are doing and you accept every risk described here. If you are not sure, do not install it.**
+
+### It is experimental
+
+- This is an early, personal project, not a finished product. It has bugs that are not yet known. It can freeze, crash, restart, behave unexpectedly, produce wrong or damaged audio, and corrupt files.
+- Only some of it has been tried on a real Tracker. The newest features (the master volume, the limiter and the Master Mix page in version 1.0.3) have **not** yet been tested on real hardware. Nothing here has been tested on every Tracker, every SD card, every power situation or every setup.
+- It is **not** made, tested, supported or approved by Polyend, Nintendo, or the makers of LSDJ, and it is not connected to them. Installing it may void your warranty or your right to support from Polyend or anyone else.
+
+### What can go wrong
+
+By installing or using PTSDJ you accept that it may cause, and you alone bear the risk of:
+
+- **Damage to your Tracker.** A failed, interrupted or faulty firmware update, a boot loop or a firmware bug can leave the Tracker unable to start (a "bricked" unit) or in need of repair. The ways back to the stock firmware described in this repository are not guaranteed to work in every situation.
+- **Damage to SD cards.** Cards can be corrupted, become unreadable, lose their filesystem or wear out faster. Never use a card that holds anything you cannot afford to lose.
+- **Loss or corruption of files.** This includes songs, projects, save banks, drum kits, samples, instruments and exports, and also **any other file on the same card**, including your normal Tracker projects and sample libraries.
+- **Damage to audio equipment and to hearing.** The firmware can play much louder than you expect, and the output stage (limiter and master volume) is new and unproven. Turn the volume right down **before** you connect speakers, headphones or a PA system, and raise it slowly. A sudden loud sound can damage speakers, amplifiers and your hearing.
+- **Problems on other hardware.** Exported songs and ROMs may not work, or may behave differently, on a real Game Boy, a flash cartridge or an emulator, and could in rare cases cause problems there. You must check them yourself.
+- **Lost time and lost work.** Anything you make with it may be lost or become unusable.
+
+### Before you use it
+
+1. **Back up everything.** Copy the whole SD card, and your Tracker projects, to your computer first. Use a spare card for PTSDJ if you can.
+2. **Know how to get back to the stock firmware before you flash.** Have the stock Polyend `.ptf` ready and read the steps in [Going back to the stock firmware](#going-back-to-the-stock-firmware) and in [`docs/HARDWARE_TEST.md`](docs/HARDWARE_TEST.md).
+3. **Never interrupt it.** Do not remove the card or turn off the power while the Tracker is updating, saving or exporting. Start an update only with a charged battery or stable power.
+4. **Start quietly.** Turn the volume down before the first start and whenever you change the Master Mix settings.
+5. **Do not rely on it.** Do not use it for live performances, paid work, or as the only copy of anything you care about.
+
+### No warranty, no liability
+
+PTSDJ is provided **"AS IS" and "AS AVAILABLE", without warranty of any kind**, whether express, implied or statutory. This includes, without limitation, any warranty of merchantability, fitness for a particular purpose, non-infringement, accuracy, reliability, availability, safety or freedom from errors and harmful behaviour. There is no support, no promise of updates, and no promise that problems will be fixed.
+
+To the **maximum extent permitted by law**, the authors and contributors are **not liable** for any damage, loss or claim of any kind, direct or indirect, including damage to or loss of hardware, SD cards, data, files, audio equipment, hearing, income or time, however it arises and whatever the legal theory, **even if they were told it could happen**. You use PTSDJ **entirely at your own risk** and you are **solely responsible** for what happens when you do. If you do not accept this, do not install or use it.
+
+Some places do not allow certain warranties or liabilities to be excluded, so parts of this notice may not apply to you. Nothing here excludes any liability that cannot be excluded by law. This notice adds to, and does not replace, the warranty disclaimer in the [MIT licence](LICENSE); where the two differ, the one that protects the authors more applies.
+
+### Your own copy of LSDJ
+
+PTSDJ does not include LSDJ and cannot work with the kit, synth and ROM-export features without it. You are responsible for having a legal copy and for following its licence and the laws where you live. Product and company names are the property of their owners and are used here only to describe compatibility.
 
 ## What you get
 
@@ -106,6 +153,9 @@ SD card (FAT32)
 > Files whose names start with `._` (the hidden files macOS leaves on cards) are ignored.
 
 ## Install the firmware
+
+> [!WARNING]
+> Installing replaces the Tracker's firmware. Back up your card first and read the [disclaimer](#disclaimer-read-this-before-you-flash). You do this at your own risk.
 
 1. Copy `PolyendTracPTSDJv103.ptf` into the `Firmware` folder on the card.
 2. Copy `ot_restore.txt` into the same folder. It holds **one line**, the exact name of the image, with nothing else: `PolyendTracPTSDJv103.ptf`. The release has this file ready.
@@ -240,7 +290,7 @@ The Manual and Quick Start are built from [`tools/manual`](tools/manual) with re
 
 ## Licence and credits
 
-**MIT.** The code and documents written for this project are released under the [MIT licence](LICENSE): use, change and share them freely, keeping the copyright notice.
+**MIT.** The code and documents written for this project are released under the [MIT licence](LICENSE): use, change and share them freely, keeping the copyright notice. The licence and the [disclaimer](#disclaimer-read-this-before-you-flash) both say the same thing: no warranty, use at your own risk.
 
 PTSDJ is built on other MIT-licensed work (OpenTracker, SIDTracker) and uses the PJRC Teensy core, FatFs and others, all listed with their licences in [`NOTICE.md`](NOTICE.md). It uses no code from Polyend's own Tracker firmware or from RASTER Music Tracker.
 

@@ -2,8 +2,7 @@
 
 Plan §3: image layout and limits, boot sequence, reusable entry points,
 whether the stock bootloader/update path can load SIDTracker safely, and the
-way back to stock. Sources: OpenTracker (`ReversedPolytracker-1.9x`, branch
-`opentracker`, HEAD `0849cb0`).
+way back to stock. Sources: OpenTracker (commit `0849cb0`).
 
 ## Image format and limits
 

@@ -2,7 +2,7 @@
 
 Plan §3: SD-card interface, filesystem support, throughput, non-volatile
 settings, and the native project file plan (plan §15). Sources: OpenTracker
-(`ReversedPolytracker-1.9x`, branch `opentracker`, HEAD `0849cb0`). Drivers
+(commit `0849cb0`). Drivers
 `reimpl/src/hal/sdhc.*`, `sd_storage.*`, `nvstore_eeprom.*`, reused as
 `src/platform/storage/`; FatFs as `third_party/fatfs`.
 

@@ -35,4 +35,6 @@ redistributed, its notice stays with it (see NOTICE.md):
 LSDJ (Little Sound DJ) is not part of this repository and is not covered by
 this licence. PTSDJ needs your own copy of the LSDJ ROM.
 
-Flashing any third-party firmware to a Polyend Tracker is at your own risk.
+THIS IS EXPERIMENTAL FIRMWARE. Flashing it to a Polyend Tracker, or using it with an SD card, files or audio
+equipment, is entirely at your own risk and can cause damage and loss. See the Disclaimer section of README.md,
+which also applies.

@@ -2,8 +2,7 @@
 
 Plan §21 Task 2: application → audio buffers → DMA → codec, with buffer
 size, sample rate, timing budget and the measured baseline. Sources:
-OpenTracker (`ReversedPolytracker-1.9x`, branch `opentracker`, HEAD
-`0849cb0`). Driver `reimpl/src/hal/audio_sgtl5000.*`, reused as
+OpenTracker (commit `0849cb0`). Driver `reimpl/src/hal/audio_sgtl5000.*`, reused as
 `src/platform/audio/audio_sgtl5000.*`.
 
 ## Chain
@@ -142,7 +141,7 @@ SIDTracker M0 benchmark page (plan §6), silent callback and test oscillator.
 APPROACH §2 estimated ≈ 400 cycles per output sample (≈ 53k per block, 10 %).
 The engine as built (`src/sid`, `src/audio`, `src/app/engine.cpp`) was
 measured two ways; the K66 column is filled in by the first hardware run
-(benchmark page, Shift+Master since 0.6.2; procedure in `docs/hardware-test-plan.md`).
+(SIDTracker's benchmark page).
 
 `make -C tests bench-m4` builds `tests/engine_bench.cpp` with the device
 compiler flags for Cortex-M4F and runs it under QEMU `mps2-an386 -icount`.
@@ -165,7 +164,7 @@ idle). The peaks are note starts and hard restarts, where rate-0 envelopes
 take two or three steps per sample. Already done after the first
 measurement: envelope fast paths (released / sustaining / attacking without
 per-hit loops) and inlining the oscillator into the chip loop (−30 %).
-Next candidates, to be decided on K66 numbers only (PLAN.md §6, §20): hot
+Next candidates, to be decided on K66 numbers only: hot
 code in RAM (`FASTRUN`), closed-form decay/release steps, skipping silent
 voices' waveform work. At the pessimistic CPI of 1.5 the stress case is
 ≈ 190k cycles (36 %), under the 70 % alarm with room for drums and one

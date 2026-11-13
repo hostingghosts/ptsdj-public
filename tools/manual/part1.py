@@ -4,6 +4,7 @@ def build():
     s = []
     # ---------------------------------------------------------------- 1
     s += H1('1. Welcome')
+    s += callout('care', '<b>PTSDJ is experimental firmware. Do not install it unless you know what you are doing.</b> It can damage your Tracker, your SD cards and your files, and loud sound can hurt your hearing and your speakers. Back up your SD card first, and turn the volume down before you start. It comes <b>as is, with no warranty</b>, and you use it entirely at your own risk. The full text is in the Disclaimer section of the README and in Appendix C.')
     s += [P('PTSDJ turns your Polyend Tracker into a music maker that works like the Game Boy program <b>LSDJ</b>. If you have never used LSDJ, that is fine. This manual starts at the beginning.'),
           P('You do not need to read music. You do not need to know how to code. You will press keys, watch the screen, and listen.'),
           H2('What can you do with PTSDJ?'),
