@@ -94,7 +94,7 @@ PTSDJ does not include LSDJ and cannot work with the kit, synth and ROM-export f
 | An original **Polyend Tracker (MK66)** | This firmware is for that hardware only. |
 | An **SD card formatted as FAT32** | PTSDJ keeps everything on the card. |
 | Your own copy of the **LSDJ ROM**, named `LSDJ.GB` | PTSDJ needs it for drum kits, the Synth page and the ROM export. **It is not included and cannot be.** It was developed and checked against LSDJ 9.4.2. |
-| The PTSDJ firmware file (`PolyendTracPTSDJv103.ptf`) | From the [Releases](https://github.com/hostingghosts/ptsdj-public/releases) page, or [build it yourself](#build-from-source). |
+| The PTSDJ firmware file (`PolyendTracPTSDJv103.ptf`) | From the [Releases](https://github.com/hostingghosts/ptsdj/releases) page, or [build it yourself](#build-from-source). |
 
 > [!IMPORTANT]
 > The card must be **FAT32**. The firmware cannot read exFAT, which is how many SDXC cards (64 GB and up) come formatted. If the Tracker does not see the card, reformat it as FAT32.
