@@ -4,7 +4,7 @@
 
 ![Version](https://img.shields.io/badge/version-1.0.3-8bac0f)
 ![Hardware](https://img.shields.io/badge/hardware-Polyend%20Tracker%20(MK66)-2D3258)
-![Licence](https://img.shields.io/badge/licence-personal%20use%20only-8E2F5A)
+![Licence](https://img.shields.io/badge/licence-MIT-8E2F5A)
 
 PTSDJ replaces the Tracker's firmware with a Game Boy music maker. It runs two pretend Game Boys side by side (8 tracks), looks and works like [LSDJ](https://www.littlesounddj.com/) (Little Sound DJ), and exports your music as WAV files or as songs and ROMs that play on a real Game Boy. It is written from scratch and contains no LSDJ code.
 
@@ -240,8 +240,8 @@ The Manual and Quick Start are built from [`tools/manual`](tools/manual) with re
 
 ## Licence and credits
 
-**Personal use only.** The code and documents written for this project are not open source: see [`LICENSE`](LICENSE). It is for your own use, not for sale.
+**MIT.** The code and documents written for this project are released under the [MIT licence](LICENSE): use, change and share them freely, keeping the copyright notice.
 
-PTSDJ is built on MIT-licensed work (OpenTracker, SIDTracker, the PJRC Teensy core, FatFs and others), listed with their licences in [`NOTICE.md`](NOTICE.md). It uses no code from Polyend's own Tracker firmware or from RASTER Music Tracker.
+PTSDJ is built on other MIT-licensed work (OpenTracker, SIDTracker) and uses the PJRC Teensy core, FatFs and others, all listed with their licences in [`NOTICE.md`](NOTICE.md). It uses no code from Polyend's own Tracker firmware or from RASTER Music Tracker.
 
 LSDJ (Little Sound DJ) is by Johan Kotlinski. PTSDJ does not include LSDJ and is not made by or connected to Polyend or to the makers of LSDJ.

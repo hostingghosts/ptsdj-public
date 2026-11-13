@@ -1,5 +1,5 @@
 # GB tracker firmware (LSDJ-style Game Boy tracker) for the original Polyend Tracker hardware (MK66FX1M0).
-# Personal use only; see LICENSE.
+# MIT licence; see LICENSE.
 #   make            -> build/gbtracker.hex and build/PolyendTracPTSDJv<ver>.ptf (24 chars)
 #   make SELFTEST=1 -> build/selftest/PolyendTracker_STst<N>.ptf: hardware selftest only
 #   make host-test  -> host unit tests (ASan/UBSan)
@@ -25,7 +25,7 @@ ifneq ($(shell printf '%s' '$(PTF_NAME)' | wc -c | tr -d ' '),24)
 $(error image name '$(PTF_NAME)' must be exactly 24 characters (docs/firmware-map.md))
 endif
 # USB identity: the pid.codes test VID:PID, strings "OpenTracker" (the default of third_party/teensy3/usb_desc.h; the
-# SIDTracker string override is not used). Personal use only, so no PID is registered.
+# SIDTracker string override is not used). No PID is registered for this project; anyone shipping a product needs their own.
 USB_ID    := -DOT_USB_VID=0x1209 -DOT_USB_PID=0x0001
 CORE      := third_party/teensy3
 CROSS     ?= arm-none-eabi-

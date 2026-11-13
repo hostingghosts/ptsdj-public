@@ -1,17 +1,38 @@
-Copyright (c) 2026 the owner of this repository. All rights reserved.
+MIT License
 
-PERSONAL USE ONLY. The code and documents written for this project (everything under src/atw,
-tests/, sim/scripts/, sim/src/main.cpp, the Makefiles, README.md, LEARNINGS.md and docs/HARDWARE_MAP.md)
-are not released under any open-source licence. No licence is granted to copy, modify, distribute, sell
-or publish them. This repository is not to be shared or pushed to a public place.
+Copyright (c) 2026 hostingghosts
 
-Third-party code keeps its own licence and is NOT covered by the notice above. Where it is redistributed
-inside this tree, its notice must stay with it (see NOTICE.md):
-  LICENSE.SIDTracker                  SIDTracker 0.2 (MIT, Marcin Spoczynski): the starting point
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----------------------------------------------------------------------------
+
+Third-party code in this repository keeps its own licence. Where it is
+redistributed, its notice stays with it (see NOTICE.md):
+
+  LICENSE.SIDTracker                  SIDTracker 0.2 (MIT, Marcin Spoczynski)
   src/platform/LICENSE.OpenTracker    OpenTracker (MIT): the hardware layer in src/platform, sim/src
   third_party/teensy3/LICENSE.txt     PJRC Teensy core
   third_party/fatfs/LICENSE.txt       FatFs
   third_party/fonts/                  Roboto fonts
   sim/third_party/                    DejaVu fonts and stb_image (licences alongside)
 
-No warranty. Flashing any third-party firmware to a Polyend Tracker is at your own risk.
+LSDJ (Little Sound DJ) is not part of this repository and is not covered by
+this licence. PTSDJ needs your own copy of the LSDJ ROM.
+
+Flashing any third-party firmware to a Polyend Tracker is at your own risk.

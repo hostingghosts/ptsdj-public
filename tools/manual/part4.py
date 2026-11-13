@@ -120,8 +120,8 @@ def build():
                 ['Instruments in the library', 'Up to 400 files']], [2.2 * inch, BODY_W - 2.2 * inch])
 
     s += H1('Appendix C: About PTSDJ')
-    s += [P('PTSDJ is a personal project that makes the Polyend Tracker work like a Game Boy music program. It is for your own use.'),
-          bullets(['PTSDJ is built on the open-source Polyend Tracker firmware, which allows <b>non-commercial</b> use only.',
+    s += [P('PTSDJ is a free, open-source project that makes the Polyend Tracker work like a Game Boy music program. You may use it and change it.'),
+          bullets(['PTSDJ is released under the <b>MIT licence</b>. Its hardware layer comes from OpenTracker, a clean-room firmware for the same Tracker, and it started from SIDTracker. Both are MIT-licensed too. The credits are in the file NOTICE.md in the source code.',
                    'LSDJ (Little Sound DJ) was made by Johan Kotlinski. PTSDJ does not include LSDJ. You need your own copy of the ROM.',
                    'PTSDJ is not made by or connected to Polyend or to the makers of LSDJ.',
                    'Normal Polyend Tracker projects are never touched by PTSDJ. You can always go back to the stock firmware.']),

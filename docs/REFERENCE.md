@@ -2,7 +2,7 @@
 
 The detailed notes behind the firmware, kept from the old README: how each page, key, file and format works. For what PTSDJ is and how to set it up, start with the [README](../README.md).
 
-LSDJ-style Game Boy tracker for the original Polyend Tracker (MK66). Personal use only (see `LICENSE`, `NOTICE.md`).
+LSDJ-style Game Boy tracker for the original Polyend Tracker (MK66). MIT licence (see `LICENSE`, `NOTICE.md`).
 
 State: song model + .lsdsng/.sav files, sequencer, GB sound chip, player (close to LSDJ 9.4.2, see `docs/LSDJ_FORMAT.md`), LSDJ-look
 screens (Song, Chain, Phrase, Instrument, Table, Groove, Project), 8 channels (two linked Game Boys, tracks 1-4 = song A, 5-8 = song B,

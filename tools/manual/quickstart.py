@@ -32,7 +32,7 @@ story += table([['Part', 'What it is'],
 story += [P('Each Game Boy has <b>4 tracks</b>: two beepy pulse tracks (PU1, PU2), one wave track (WAV), and one noise track (NOI). PTSDJ has <b>two</b> pretend Game Boys, so you get 8 tracks. Song A is tracks 1 to 4. Song B is tracks 5 to 8.')]
 story += [H2('What you need')]
 story += [bullets(['A Polyend Tracker (the original one) with PTSDJ loaded on it.', 'An SD card in the Tracker.', 'Your own copy of the LSDJ ROM file, named <b>LSDJ.GB</b>. You need it for drum kits and the synth page. PTSDJ does not come with it.', 'A real Game Boy, a flash cartridge, or an emulator, if you want to play your songs outside the Tracker.'])]
-story += callout('note', 'PTSDJ is for your own use. It is not for sale and it does not include any LSDJ code or files.')
+story += callout('note', 'PTSDJ is free and open source (MIT licence). It does not include any LSDJ code or files: you bring your own LSDJ ROM.')
 
 story += [PageBreak(), Paragraph('Step 1: Get ready', S['h1']), Rule(), Spacer(1, 6)]
 story += [H2('The SD card'), P('Make these folders on the SD card. Use capital letters like this:')]
