@@ -37,4 +37,4 @@ count audio samples, not a timer (A).
 
 ## Not verified on hardware (as the upstream docs state)
 Underrun counter, DMA channel numbers, PTD6 mute polarity, SDHC DMA into SDRAM, whether SRAM_L needs the cache clear
-(H, A, S). **This GB firmware itself has not been run on a Tracker.**
+(H, A, S). **This GB firmware itself has been run on an original Tracker, hardware version 2, but those items were not singled out in testing.**

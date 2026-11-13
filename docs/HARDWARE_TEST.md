@@ -1,4 +1,6 @@
-# First hardware test (nothing here has run on a Tracker yet)
+# Hardware test checklist
+
+Status: every item below has been run on an original Polyend Tracker, hardware version 2 (MK66). Keep using this list when you test a new build, or on other hardware.
 
 Image: `build/PolyendTracPTSDJv<ver>.ptf` (24-char name, `make CROSS=... ` checks it). Way back: reflash the stock `.ptf`.
 

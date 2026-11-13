@@ -44,7 +44,7 @@ PTSDJ replaces the Tracker's firmware with a Game Boy music maker. It runs two p
 ### It is experimental
 
 - This is an early, personal project, not a finished product. It has bugs that are not yet known. It can freeze, crash, restart, behave unexpectedly, produce wrong or damaged audio, and corrupt files.
-- Only some of it has been tried on a real Tracker. The newest features (the master volume, the limiter and the Master Mix page in version 1.0.3) have **not** yet been tested on real hardware. Nothing here has been tested on every Tracker, every SD card, every power situation or every setup.
+- It has been tested on one original Polyend Tracker, hardware version 2, including the newest features (the master volume, the limiter and the Master Mix page in version 1.0.3). It has not been tested on other Tracker hardware, on every SD card, in every power situation or with every setup.
 - It is **not** made, tested, supported or approved by Polyend, Nintendo, or the makers of LSDJ, and it is not connected to them. Installing it may void your warranty or your right to support from Polyend or anyone else.
 
 ### What can go wrong
